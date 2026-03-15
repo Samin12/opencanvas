@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --bg-0: #f3efe7;
+  --bg-1: #f8f5ee;
+  --bg-2: #ffffff;
+  --bg-3: #f1ede5;
+  --panel: rgba(250, 248, 242, 0.94);
+  --panel-strong: rgba(255, 253, 248, 0.98);
+  --line: rgba(148, 163, 184, 0.18);
+  --line-strong: rgba(100, 116, 139, 0.18);
+  --text: #24324a;
+  --text-dim: #7a8395;
+  --accent: #87966c;
+  --accent-soft: rgba(135, 150, 108, 0.12);
+  --accent-cool: #7b88a5;
+  --danger: #e11d48;
+  --shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+  font-family: "Avenir Next", "IBM Plex Sans", "Segoe UI", sans-serif;
+  background: linear-gradient(180deg, #faf8f3 0%, #f3eee4 100%);
+  color: var(--text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  background: linear-gradient(180deg, #faf8f3 0%, #f3eee4 100%);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+textarea {
+  resize: none;
+}
+
+.app-shell {
+  display: flex;
+  height: 100%;
+  padding: 18px;
+  gap: 0;
+}
+
+.glass-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(8px);
+}
+
+.terminal-pane .xterm {
+  height: 100%;
+  padding: 2px 2px 0;
+}
+
+.terminal-pane .xterm-viewport {
+  overflow-y: auto !important;
+  scrollbar-width: none;
+}
+
+.terminal-pane .xterm-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.collab-tldraw {
+  --tl-color-background: #f8f5ee;
+  --tl-color-grid: rgba(148, 163, 184, 0.08);
+}
+
+.collab-tldraw .tl-background {
+  background-color: transparent;
+}
+
+.collab-tldraw .tl-grid {
+  display: none;
+}
