@@ -40,6 +40,7 @@ export interface CanvasSurfaceHandle {
 
 type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 type BoardTool = 'hand' | 'select' | 'box' | 'arrow' | 'note' | 'draw'
+type ShortcutAction = BoardTool | 'terminal'
 type GestureLikeEvent = Event & {
   clientX?: number
   clientY?: number
@@ -82,20 +83,22 @@ const MAX_ZOOM = 1
 const MIN_TILE_WIDTH = 280
 const MIN_TILE_HEIGHT = 220
 const CAMERA_EPSILON = 0.001
-const BOARD_TOOL_BUTTONS: Array<{ id: BoardTool; label: string }> = [
-  { id: 'hand', label: 'Move' },
-  { id: 'select', label: 'Select' },
-  { id: 'box', label: 'Box' },
-  { id: 'arrow', label: 'Arrow' },
-  { id: 'note', label: 'Note' },
-  { id: 'draw', label: 'Draw' }
+const SHORTCUT_ITEMS: Array<{ action: ShortcutAction; key: string; label: string }> = [
+  { action: 'terminal', key: 'T', label: 'Terminal' },
+  { action: 'hand', key: 'M', label: 'Move' },
+  { action: 'select', key: 'V', label: 'Select' },
+  { action: 'box', key: 'B', label: 'Box' },
+  { action: 'arrow', key: 'A', label: 'Arrow' },
+  { action: 'note', key: 'N', label: 'Note' },
+  { action: 'draw', key: 'D', label: 'Draw' }
 ]
-const BOARD_TOOL_SHORTCUTS: Record<string, BoardTool> = {
+const BOARD_TOOL_SHORTCUTS: Record<string, ShortcutAction> = {
   a: 'arrow',
   b: 'box',
   d: 'draw',
   m: 'hand',
   n: 'note',
+  t: 'terminal',
   v: 'select'
 }
 
@@ -183,6 +186,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const canvasActiveRef = useRef(true)
     const stateRef = useRef(state)
     const [activeBoardTool, setActiveBoardTool] = useState<BoardTool>('hand')
+    const [selectedTileId, setSelectedTileId] = useState<string | null>(null)
     const [zoomIndicator, setZoomIndicator] = useState<string | null>(null)
 
     stateRef.current = state
@@ -424,10 +428,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
     function createTerminalNearCenter() {
       const { x, y } = centerWorldPosition(stateRef.current.tiles.length % 4)
+      const tileId = `tile-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
       appendTile(
         {
-          id: `tile-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          id: tileId,
           type: 'term',
           title: titleForTerminal(stateRef.current.tiles),
           x: snap(x),
@@ -439,25 +444,28 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         },
         { immediate: true }
       )
+      setSelectedTileId(tileId)
     }
 
     function spawnFileTile(file: FileTreeNode) {
       const fileKind = file.fileKind ?? 'code'
       const { x, y } = centerWorldPosition(stateRef.current.tiles.length % 5)
+      const tile = createTileFromFile(
+        {
+          fileKind,
+          name: file.name,
+          path: file.path
+        },
+        x - 180,
+        y - 120,
+        nextZIndex(stateRef.current.tiles)
+      )
 
       appendTile(
-        createTileFromFile(
-          {
-            fileKind,
-            name: file.name,
-            path: file.path
-          },
-          x - 180,
-          y - 120,
-          nextZIndex(stateRef.current.tiles)
-        ),
+        tile,
         { immediate: true }
       )
+      setSelectedTileId(tile.id)
     }
 
     function applyBoardTool(nextTool: BoardTool) {
@@ -476,6 +484,16 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       editor.setCurrentTool(nextTool)
+    }
+
+    function runShortcutAction(action: ShortcutAction) {
+      if (action === 'terminal') {
+        createTerminalNearCenter()
+        return
+      }
+
+      setSelectedTileId(null)
+      applyBoardTool(action)
     }
 
     function handleBoardMount(editor: Editor) {
@@ -672,12 +690,38 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
         const nextTool = BOARD_TOOL_SHORTCUTS[event.key.toLowerCase()]
 
+        if (event.key === 'Escape') {
+          if (selectedTileId) {
+            event.preventDefault()
+            setSelectedTileId(null)
+          }
+
+          return
+        }
+
+        if (event.key === 'Backspace' || event.key === 'Delete') {
+          const selectedShapeIds = editorRef.current?.getSelectedShapeIds() ?? []
+
+          if (selectedTileId) {
+            event.preventDefault()
+            deleteTile(selectedTileId)
+            return
+          }
+
+          if (selectedShapeIds.length > 0 && editorRef.current) {
+            event.preventDefault()
+            editorRef.current.deleteShapes(selectedShapeIds)
+          }
+
+          return
+        }
+
         if (!nextTool) {
           return
         }
 
         event.preventDefault()
-        applyBoardTool(nextTool)
+        runShortcutAction(nextTool)
       }
 
       window.addEventListener('pointerdown', handlePointerContext, true)
@@ -687,7 +731,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         window.removeEventListener('pointerdown', handlePointerContext, true)
         window.removeEventListener('keydown', handleKeyDown)
       }
-    }, [])
+    }, [selectedTileId])
 
     useEffect(() => {
       function handlePointerMove(event: PointerEvent) {
@@ -847,14 +891,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         },
         { immediate: true }
       )
+
+      if (selectedTileId === tileId) {
+        setSelectedTileId(null)
+      }
     }
 
     function createTerminalAt(clientX: number, clientY: number) {
       const point = pagePointFromClient(clientX, clientY)
+      const tileId = `tile-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
       appendTile(
         {
-          id: `tile-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          id: tileId,
           type: 'term',
           title: titleForTerminal(stateRef.current.tiles),
           x: snap(point.x),
@@ -866,6 +915,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         },
         { immediate: true }
       )
+      setSelectedTileId(tileId)
     }
 
     function handleDrop(event: React.DragEvent<HTMLDivElement>) {
@@ -878,10 +928,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       const parsed = JSON.parse(payload) as { fileKind: FileKind; name: string; path: string }
       const point = pagePointFromClient(event.clientX, event.clientY)
+      const tile = createTileFromFile(parsed, point.x, point.y, nextZIndex(stateRef.current.tiles))
 
-      appendTile(createTileFromFile(parsed, point.x, point.y, nextZIndex(stateRef.current.tiles)), {
-        immediate: true
-      })
+      appendTile(tile, { immediate: true })
+      setSelectedTileId(tile.id)
     }
 
     return (
@@ -890,6 +940,15 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         className={clsx(
           'canvas-surface relative h-full overflow-hidden rounded-[24px] border border-slate-300/80 bg-[#f8f5ee] touch-none [overscroll-behavior:none]'
         )}
+        onPointerDownCapture={(event) => {
+          const target = event.target as HTMLElement
+
+          if (target.closest('[data-tile-root="true"]') || target.closest('[data-canvas-ui="true"]')) {
+            return
+          }
+
+          setSelectedTileId(null)
+        }}
         onDoubleClick={(event: ReactMouseEvent<HTMLDivElement>) => {
           const target = event.target as HTMLElement
 
@@ -908,22 +967,44 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       >
         <div
           data-canvas-ui="true"
-          className="absolute left-5 top-5 z-[220] flex items-center gap-1 rounded-full border border-slate-300 bg-white/92 p-1 shadow-[0_10px_18px_rgba(15,23,42,0.10)] backdrop-blur"
+          className="absolute right-4 top-4 z-[220] w-[176px] rounded-[16px] border border-slate-300/90 bg-white/90 p-2 shadow-[0_12px_24px_rgba(15,23,42,0.10)] backdrop-blur"
         >
-          {BOARD_TOOL_BUTTONS.map((tool) => (
-            <button
-              key={tool.id}
-              className={clsx(
-                'rounded-full px-3 py-1.5 text-[11px] uppercase tracking-[0.18em] transition',
-                activeBoardTool === tool.id
-                  ? 'bg-slate-800 text-white'
-                  : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
-              )}
-              onClick={() => applyBoardTool(tool.id)}
-            >
-              {tool.label}
-            </button>
-          ))}
+          <div className="mb-2 text-[10px] uppercase tracking-[0.22em] text-slate-400">Canvas Keys</div>
+          <div className="grid grid-cols-1 gap-1">
+            {SHORTCUT_ITEMS.map((shortcut) => {
+              const isActive =
+                shortcut.action !== 'terminal' && activeBoardTool === shortcut.action
+
+              return (
+                <button
+                  key={shortcut.action}
+                  className={clsx(
+                    'flex items-center justify-between rounded-[10px] px-2 py-1.5 text-left transition',
+                    isActive
+                      ? 'bg-slate-800 text-white'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  )}
+                  onClick={() => runShortcutAction(shortcut.action)}
+                >
+                  <span className="text-[11px] uppercase tracking-[0.16em]">{shortcut.label}</span>
+                  <span
+                    className={clsx(
+                      'rounded-md border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.18em]',
+                      isActive
+                        ? 'border-white/25 bg-white/12 text-white'
+                        : 'border-slate-200 bg-white text-slate-500'
+                    )}
+                  >
+                    {shortcut.key}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          <div className="mt-2 flex items-center justify-between rounded-[10px] border border-slate-200 bg-slate-50 px-2 py-1.5 text-[10px] uppercase tracking-[0.16em] text-slate-500">
+            <span>Delete Selected</span>
+            <span className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 font-medium">⌫</span>
+          </div>
         </div>
 
         <div className="absolute inset-0">
@@ -961,7 +1042,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               <div
                 key={tile.id}
                 data-tile-root="true"
-                className="pointer-events-auto absolute overflow-hidden rounded-[10px] border border-slate-300 bg-[#fffdfa] shadow-[0_6px_14px_rgba(15,23,42,0.10)]"
+                className={clsx(
+                  'pointer-events-auto absolute overflow-hidden rounded-[10px] border bg-[#fffdfa] shadow-[0_6px_14px_rgba(15,23,42,0.10)]',
+                  selectedTileId === tile.id
+                    ? 'border-slate-500 shadow-[0_0_0_2px_rgba(71,85,105,0.18),0_6px_14px_rgba(15,23,42,0.10)]'
+                    : 'border-slate-300'
+                )}
                 style={{
                   left: tile.x,
                   top: tile.y,
@@ -969,7 +1055,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   height: tile.height,
                   zIndex: tile.zIndex
                 }}
-                onPointerDownCapture={() => bringTileToFront(tile.id)}
+                onPointerDownCapture={() => {
+                  setSelectedTileId(tile.id)
+                  bringTileToFront(tile.id)
+                }}
               >
                 <div
                   className="flex items-center justify-between border-b border-slate-200 bg-[#faf7f1] px-3 py-1.5"
@@ -1060,10 +1149,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 ))}
               </div>
             ))}
-        </div>
-
-        <div className="pointer-events-none absolute bottom-5 left-5 rounded-full border border-slate-300 bg-white/85 px-3 py-1.5 text-[11px] uppercase tracking-[0.22em] text-slate-500 backdrop-blur">
-          Move mode: double-click for terminal. Draw mode: boxes, arrows, notes, sketch.
         </div>
 
         {zoomIndicator ? (
