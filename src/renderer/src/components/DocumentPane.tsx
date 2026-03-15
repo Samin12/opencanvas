@@ -64,6 +64,13 @@ export function DocumentPane({
         if (!cancelled) {
           setDocument(nextDocument)
           setDraft(nextDocument.content)
+          setMode(
+            nextDocument.kind === 'note' && nextDocument.content.trim().length === 0
+              ? 'edit'
+              : supportsRichPreview
+                ? 'preview'
+                : 'edit'
+          )
           setStatus('idle')
         }
       } catch {

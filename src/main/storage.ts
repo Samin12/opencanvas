@@ -106,6 +106,9 @@ function sanitizeCanvasState(input: Partial<CanvasState> | undefined): CanvasSta
             width: typeof tile.width === 'number' ? tile.width : 440,
             height: typeof tile.height === 'number' ? tile.height : 540,
             zIndex: typeof tile.zIndex === 'number' ? tile.zIndex : index + 1,
+            contextTileIds: Array.isArray(tile.contextTileIds)
+              ? tile.contextTileIds.filter((value): value is string => typeof value === 'string')
+              : undefined,
             filePath: typeof tile.filePath === 'string' ? tile.filePath : undefined,
             sessionId: typeof tile.sessionId === 'string' ? tile.sessionId : undefined
           }))

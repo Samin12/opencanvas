@@ -11,6 +11,7 @@ export interface CanvasTile {
   width: number
   height: number
   zIndex: number
+  contextTileIds?: string[]
   filePath?: string
   sessionId?: string
 }
@@ -87,6 +88,12 @@ export interface CollaboratorApi {
   saveConfig: (config: AppConfig) => Promise<AppConfig>
   saveCanvasState: (state: CanvasState) => Promise<CanvasState>
   pickWorkspaceDirectory: () => Promise<string | null>
+  createWorkspaceNote: (workspacePath: string) => Promise<FileTreeNode>
+  moveWorkspaceNode: (
+    workspacePath: string,
+    sourcePath: string,
+    targetDirectoryPath: string
+  ) => Promise<FileTreeNode>
   readWorkspaceTree: (workspacePath: string) => Promise<FileTreeNode[]>
   readTextFile: (filePath: string) => Promise<TextFileDocument>
   writeTextFile: (filePath: string, content: string) => Promise<TextFileDocument>

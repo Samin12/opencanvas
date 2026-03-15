@@ -9,7 +9,14 @@ import {
   resizeTerminalSession,
   writeTerminalInput
 } from './terminals'
-import { readTextFileDocument, readWorkspaceTree, toFileUrl, writeTextFileDocument } from './workspaces'
+import {
+  createWorkspaceNote,
+  moveWorkspaceNode,
+  readTextFileDocument,
+  readWorkspaceTree,
+  toFileUrl,
+  writeTextFileDocument
+} from './workspaces'
 
 const { dialog, ipcMain } = electron
 
@@ -26,6 +33,14 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('config:save', async (_event, config: AppConfig) => saveConfig(config))
   ipcMain.handle('canvas:save', async (_event, state: CanvasState) => saveCanvasState(state))
   ipcMain.handle('workspace:tree', async (_event, workspacePath: string) => readWorkspaceTree(workspacePath))
+  ipcMain.handle('workspace:create-note', async (_event, workspacePath: string) =>
+    createWorkspaceNote(workspacePath)
+  )
+  ipcMain.handle(
+    'workspace:move-node',
+    async (_event, workspacePath: string, sourcePath: string, targetDirectoryPath: string) =>
+      moveWorkspaceNode(workspacePath, sourcePath, targetDirectoryPath)
+  )
   ipcMain.handle('file:read', async (_event, filePath: string) => readTextFileDocument(filePath))
   ipcMain.handle('file:write', async (_event, filePath: string, content: string) =>
     writeTextFileDocument(filePath, content)

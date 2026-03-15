@@ -24,6 +24,24 @@ function flattenFiles(nodes: FileTreeNode[]): FileTreeNode[] {
   return files
 }
 
+function findNodeByPath(nodes: FileTreeNode[], targetPath: string): FileTreeNode | null {
+  for (const node of nodes) {
+    if (node.path === targetPath) {
+      return node
+    }
+
+    if (node.children) {
+      const nestedMatch = findNodeByPath(node.children, targetPath)
+
+      if (nestedMatch) {
+        return nestedMatch
+      }
+    }
+  }
+
+  return null
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
@@ -167,6 +185,12 @@ export default function App() {
         return
       }
 
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n' && !isEditing) {
+        event.preventDefault()
+        void createRootNote()
+        return
+      }
+
       if (event.shiftKey && event.key === 'Enter' && !isEditing && viewerFile) {
         event.preventDefault()
         placeFileOnCanvas(viewerFile)
@@ -205,7 +229,7 @@ export default function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [searchOpen, viewerFile, placeFileOnCanvas])
+  }, [searchOpen, viewerFile, activeWorkspace])
 
   useEffect(() => {
     function handlePointerMove(event: PointerEvent) {
@@ -291,6 +315,27 @@ export default function App() {
     })
   }
 
+  async function refreshWorkspaceTree(workspacePath: string) {
+    setLoadingWorkspace(true)
+    setWorkspaceError(null)
+
+    try {
+      const tree = await window.collaborator.readWorkspaceTree(workspacePath)
+
+      startTransition(() => {
+        setWorkspaceTree(tree)
+      })
+
+      return tree
+    } catch {
+      setWorkspaceError('The workspace tree could not be read.')
+      setWorkspaceTree([])
+      return [] as FileTreeNode[]
+    } finally {
+      setLoadingWorkspace(false)
+    }
+  }
+
   async function removeActiveWorkspace() {
     if (!config || !activeWorkspace) {
       return
@@ -310,6 +355,60 @@ export default function App() {
 
   function previewFile(file: FileTreeNode) {
     setViewerFile(file)
+  }
+
+  async function createRootNote() {
+    if (!activeWorkspace) {
+      return
+    }
+
+    try {
+      const createdNode = await window.collaborator.createWorkspaceNote(activeWorkspace)
+      const nextTree = await refreshWorkspaceTree(activeWorkspace)
+
+      setViewerFile(findNodeByPath(nextTree, createdNode.path) ?? createdNode)
+    } catch {
+      setWorkspaceError('A new note could not be created in the workspace root.')
+    }
+  }
+
+  async function moveFileIntoDirectory(sourcePath: string, targetDirectoryPath: string) {
+    if (!activeWorkspace) {
+      return
+    }
+
+    try {
+      const movedNode = await window.collaborator.moveWorkspaceNode(
+        activeWorkspace,
+        sourcePath,
+        targetDirectoryPath
+      )
+      const nextTree = await refreshWorkspaceTree(activeWorkspace)
+      const nextNode = findNodeByPath(nextTree, movedNode.path) ?? movedNode
+
+      if (viewerFile?.path === sourcePath) {
+        setViewerFile(nextNode)
+      }
+
+      if (canvasState) {
+        const nextCanvasState: CanvasState = {
+          ...canvasState,
+          tiles: canvasState.tiles.map((tile) =>
+            tile.filePath === sourcePath
+              ? {
+                  ...tile,
+                  filePath: nextNode.path,
+                  title: nextNode.name
+                }
+              : tile
+          )
+        }
+
+        handleCanvasStateChange(nextCanvasState, { immediate: true })
+      }
+    } catch {
+      setWorkspaceError('That file could not be moved into the selected folder.')
+    }
   }
 
   function placeFileOnCanvas(file: FileTreeNode) {
@@ -372,7 +471,11 @@ export default function App() {
             darkMode={darkMode}
             loadingWorkspace={loadingWorkspace}
             onAddWorkspace={() => void addWorkspace()}
+            onCreateNote={() => void createRootNote()}
             onCreateTerminal={createTerminal}
+            onMoveFile={(sourcePath, targetDirectoryPath) =>
+              void moveFileIntoDirectory(sourcePath, targetDirectoryPath)
+            }
             onOpenSearch={() => setSearchOpen(true)}
             onPlaceFile={placeFileOnCanvas}
             onRemoveWorkspace={() => void removeActiveWorkspace()}

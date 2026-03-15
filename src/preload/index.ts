@@ -63,6 +63,15 @@ const api: CollaboratorApi = {
   saveCanvasState: (state: CanvasState) =>
     ipcRenderer.invoke('canvas:save', state) as Promise<CanvasState>,
   pickWorkspaceDirectory: () => ipcRenderer.invoke('workspace:pick') as Promise<string | null>,
+  createWorkspaceNote: (workspacePath: string) =>
+    ipcRenderer.invoke('workspace:create-note', workspacePath) as Promise<FileTreeNode>,
+  moveWorkspaceNode: (workspacePath: string, sourcePath: string, targetDirectoryPath: string) =>
+    ipcRenderer.invoke(
+      'workspace:move-node',
+      workspacePath,
+      sourcePath,
+      targetDirectoryPath
+    ) as Promise<FileTreeNode>,
   readWorkspaceTree: (workspacePath: string) =>
     ipcRenderer.invoke('workspace:tree', workspacePath) as Promise<FileTreeNode[]>,
   readTextFile: (filePath: string) =>

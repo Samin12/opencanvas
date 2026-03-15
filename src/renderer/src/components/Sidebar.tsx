@@ -87,7 +87,9 @@ interface SidebarProps {
   darkMode: boolean
   loadingWorkspace: boolean
   onAddWorkspace: () => void
+  onCreateNote: () => void
   onCreateTerminal: () => void
+  onMoveFile: (sourcePath: string, targetDirectoryPath: string) => void
   onOpenSearch: () => void
   onPlaceFile: (node: FileTreeNode) => void
   onRemoveWorkspace: () => void
@@ -105,7 +107,9 @@ export function Sidebar({
   darkMode,
   loadingWorkspace,
   onAddWorkspace,
+  onCreateNote,
   onCreateTerminal,
+  onMoveFile,
   onOpenSearch,
   onPlaceFile,
   onRemoveWorkspace,
@@ -174,10 +178,17 @@ export function Sidebar({
 
           <div className="flex gap-2">
             <button
-              className="flex-1 rounded-2xl border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-sm font-medium text-[var(--text)] transition hover:bg-[var(--surface-1)]"
+              className="rounded-2xl border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-sm font-medium text-[var(--text)] transition hover:bg-[var(--surface-1)]"
               onClick={onAddWorkspace}
             >
               Add Workspace
+            </button>
+            <button
+              className="flex-1 rounded-2xl border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-sm font-medium text-[var(--text)] transition hover:bg-[var(--surface-1)] disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={onCreateNote}
+              disabled={!activeWorkspacePath}
+            >
+              New Note
             </button>
             <button
               className="rounded-2xl border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-sm text-[var(--text)] transition hover:bg-[var(--surface-1)]"
@@ -213,6 +224,7 @@ export function Sidebar({
             activeFilePath={activeFilePath}
             darkMode={darkMode}
             nodes={workspaceTree}
+            onMoveFile={onMoveFile}
             onPlaceFile={onPlaceFile}
             onSelectFile={onSelectFile}
           />

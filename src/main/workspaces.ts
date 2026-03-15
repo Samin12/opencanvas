@@ -1,5 +1,5 @@
-import { lstat, mkdir, readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
-import { basename, dirname, extname } from 'node:path'
+import { lstat, mkdir, readdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import type { FileKind, FileTreeNode, TextFileDocument } from '../shared/types'
@@ -21,6 +21,35 @@ export function detectFileKind(filePath: string): FileKind {
   }
 
   return 'code'
+}
+
+function isWithinWorkspace(workspacePath: string, targetPath: string) {
+  const workspaceRoot = resolve(workspacePath)
+  const candidatePath = resolve(targetPath)
+  const relativePath = relative(workspaceRoot, candidatePath)
+
+  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath))
+}
+
+async function pathExists(targetPath: string) {
+  try {
+    await stat(targetPath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function createUniquePath(directoryPath: string, baseName: string, extension: string) {
+  let suffix = 1
+  let candidatePath = join(directoryPath, `${baseName}${extension}`)
+
+  while (await pathExists(candidatePath)) {
+    suffix += 1
+    candidatePath = join(directoryPath, `${baseName} ${suffix}${extension}`)
+  }
+
+  return candidatePath
 }
 
 async function resolveStats(targetPath: string) {
@@ -92,6 +121,16 @@ async function buildNode(targetPath: string): Promise<FileTreeNode | null> {
   }
 }
 
+async function ensureFileNode(targetPath: string) {
+  const node = await buildNode(targetPath)
+
+  if (!node || node.kind !== 'file') {
+    throw new Error('Expected a file node')
+  }
+
+  return node
+}
+
 export async function readWorkspaceTree(workspacePath: string): Promise<FileTreeNode[]> {
   const entries = await readdir(workspacePath, { withFileTypes: true })
 
@@ -129,6 +168,49 @@ export async function writeTextFileDocument(
   await mkdir(dirname(filePath), { recursive: true })
   await writeFile(filePath, content, 'utf8')
   return readTextFileDocument(filePath)
+}
+
+export async function createWorkspaceNote(workspacePath: string): Promise<FileTreeNode> {
+  const targetPath = await createUniquePath(workspacePath, 'Untitled', '.md')
+
+  await writeTextFileDocument(targetPath, '')
+
+  return ensureFileNode(targetPath)
+}
+
+export async function moveWorkspaceNode(
+  workspacePath: string,
+  sourcePath: string,
+  targetDirectoryPath: string
+): Promise<FileTreeNode> {
+  const resolvedWorkspacePath = resolve(workspacePath)
+  const resolvedSourcePath = resolve(sourcePath)
+  const resolvedTargetDirectoryPath = resolve(targetDirectoryPath)
+
+  if (
+    !isWithinWorkspace(resolvedWorkspacePath, resolvedSourcePath) ||
+    !isWithinWorkspace(resolvedWorkspacePath, resolvedTargetDirectoryPath)
+  ) {
+    throw new Error('Move target is outside the active workspace')
+  }
+
+  const targetDirectoryStats = await stat(resolvedTargetDirectoryPath)
+
+  if (!targetDirectoryStats.isDirectory()) {
+    throw new Error('Move target must be a directory')
+  }
+
+  if (dirname(resolvedSourcePath) === resolvedTargetDirectoryPath) {
+    return ensureFileNode(resolvedSourcePath)
+  }
+
+  const extension = extname(resolvedSourcePath)
+  const baseName = basename(resolvedSourcePath, extension)
+  const targetPath = await createUniquePath(resolvedTargetDirectoryPath, baseName, extension)
+
+  await rename(resolvedSourcePath, targetPath)
+
+  return ensureFileNode(targetPath)
 }
 
 export function toFileUrl(filePath: string): string {

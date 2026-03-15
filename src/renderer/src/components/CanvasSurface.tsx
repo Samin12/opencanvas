@@ -196,10 +196,137 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const canvasActiveRef = useRef(true)
     const stateRef = useRef(state)
     const [activeBoardTool, setActiveBoardTool] = useState<BoardTool>('hand')
+    const [linkSourceTileId, setLinkSourceTileId] = useState<string | null>(null)
     const [selectedTileId, setSelectedTileId] = useState<string | null>(null)
     const [zoomIndicator, setZoomIndicator] = useState<string | null>(null)
 
     stateRef.current = state
+
+    function tileById(tileId: string | null) {
+      if (!tileId) {
+        return null
+      }
+
+      return stateRef.current.tiles.find((tile) => tile.id === tileId) ?? null
+    }
+
+    function isContextSourceTile(tile: CanvasTile | null): tile is CanvasTile {
+      return Boolean(tile && tile.type !== 'term' && tile.filePath)
+    }
+
+    function contextTilesForTerminal(tile: CanvasTile) {
+      if (tile.type !== 'term') {
+        return []
+      }
+
+      return (tile.contextTileIds ?? [])
+        .map((contextTileId) => tileById(contextTileId))
+        .filter(isContextSourceTile)
+    }
+
+    function toggleLinkMode(tileId: string) {
+      const tile = tileById(tileId)
+
+      if (!isContextSourceTile(tile)) {
+        return
+      }
+
+      setSelectedTileId(tileId)
+      setLinkSourceTileId((current) => (current === tileId ? null : tileId))
+    }
+
+    function attachContextTile(sourceTileId: string, terminalTileId: string) {
+      const sourceTile = tileById(sourceTileId)
+      const terminalTile = tileById(terminalTileId)
+
+      if (!isContextSourceTile(sourceTile) || !terminalTile || terminalTile.type !== 'term') {
+        return
+      }
+
+      const nextContextTileIds = Array.from(
+        new Set([...(terminalTile.contextTileIds ?? []), sourceTileId])
+      )
+
+      updateState(
+        {
+          ...stateRef.current,
+          tiles: stateRef.current.tiles.map((tile) =>
+            tile.id === terminalTileId
+              ? {
+                  ...tile,
+                  contextTileIds: nextContextTileIds
+                }
+              : tile
+          )
+        },
+        { immediate: true }
+      )
+      setSelectedTileId(terminalTileId)
+      setLinkSourceTileId(null)
+    }
+
+    function detachContextTile(terminalTileId: string, sourceTileId: string) {
+      updateState(
+        {
+          ...stateRef.current,
+          tiles: stateRef.current.tiles.map((tile) =>
+            tile.id === terminalTileId
+              ? {
+                  ...tile,
+                  contextTileIds: (tile.contextTileIds ?? []).filter(
+                    (contextTileId) => contextTileId !== sourceTileId
+                  )
+                }
+              : tile
+          )
+        },
+        { immediate: true }
+      )
+    }
+
+    function buildClaudeContextPrompt(terminalTileId: string) {
+      const terminalTile = tileById(terminalTileId)
+
+      if (!terminalTile || terminalTile.type !== 'term') {
+        return ''
+      }
+
+      const contextPaths = Array.from(
+        new Set(
+          contextTilesForTerminal(terminalTile)
+            .map((tile) => tile.filePath)
+            .filter((value): value is string => Boolean(value))
+        )
+      )
+
+      if (contextPaths.length === 0) {
+        return ''
+      }
+
+      return [
+        'Use these workspace files as context for this Claude Code session:',
+        '',
+        ...contextPaths.map((filePath) => `- ${filePath}`),
+        '',
+        'Read them before responding and keep them in working context.'
+      ].join('\n')
+    }
+
+    function pasteClaudeContext(terminalTileId: string) {
+      const terminalTile = tileById(terminalTileId)
+
+      if (!terminalTile || terminalTile.type !== 'term' || !terminalTile.sessionId) {
+        return
+      }
+
+      const prompt = buildClaudeContextPrompt(terminalTileId)
+
+      if (!prompt) {
+        return
+      }
+
+      window.collaborator.writeTerminalInput(terminalTile.sessionId, prompt)
+    }
 
     function updateState(nextState: CanvasState, options?: { immediate?: boolean }) {
       onStateChange(nextState, options)
@@ -702,6 +829,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         const nextTool = BOARD_TOOL_SHORTCUTS[lowerKey]
 
         if (event.key === 'Escape') {
+          if (linkSourceTileId) {
+            event.preventDefault()
+            setLinkSourceTileId(null)
+            return
+          }
+
           if (selectedTileId) {
             event.preventDefault()
             setSelectedTileId(null)
@@ -733,6 +866,16 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           return
         }
 
+        if (lowerKey === 'l' && selectedTileId) {
+          const selectedTile = tileById(selectedTileId)
+
+          if (isContextSourceTile(selectedTile)) {
+            event.preventDefault()
+            toggleLinkMode(selectedTileId)
+            return
+          }
+        }
+
         if (!nextTool) {
           return
         }
@@ -748,7 +891,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         window.removeEventListener('pointerdown', handlePointerContext, true)
         window.removeEventListener('keydown', handleKeyDown)
       }
-    }, [selectedTileId])
+    }, [linkSourceTileId, selectedTileId])
 
     useEffect(() => {
       function handlePointerMove(event: PointerEvent) {
@@ -904,13 +1047,28 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       updateState(
         {
           ...stateRef.current,
-          tiles: stateRef.current.tiles.filter((tile) => tile.id !== tileId)
+          tiles: stateRef.current.tiles
+            .filter((tile) => tile.id !== tileId)
+            .map((tile) =>
+              tile.type === 'term'
+                ? {
+                    ...tile,
+                    contextTileIds: (tile.contextTileIds ?? []).filter(
+                      (contextTileId) => contextTileId !== tileId
+                    )
+                  }
+                : tile
+            )
         },
         { immediate: true }
       )
 
       if (selectedTileId === tileId) {
         setSelectedTileId(null)
+      }
+
+      if (linkSourceTileId === tileId) {
+        setLinkSourceTileId(null)
       }
     }
 
@@ -963,6 +1121,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       appendTile(tile, { immediate: true })
       setSelectedTileId(tile.id)
     }
+
+    const activeLinkSourceTile = tileById(linkSourceTileId)
+    const linkSourceTile = isContextSourceTile(activeLinkSourceTile) ? activeLinkSourceTile : null
+    const terminalConnections = state.tiles.flatMap((terminalTile) => {
+      if (terminalTile.type !== 'term') {
+        return []
+      }
+
+      return contextTilesForTerminal(terminalTile).map((sourceTile) => ({
+        sourceTile,
+        terminalTile
+      }))
+    })
 
     return (
       <div
@@ -1039,11 +1210,18 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 })}
               </div>
               <div className="border-t border-[color:var(--line)] py-2 text-[10px] uppercase tracking-[0.16em] text-[var(--text-faint)]">
-                Paste or drop images, video, or URLs. Delete removes the current tile or shape.
+                Shift+T opens a terminal. Select a file tile and press L to link it to a terminal.
               </div>
             </div>
           </div>
         </div>
+
+        {linkSourceTile ? (
+          <div className="pointer-events-none absolute left-4 top-4 z-[210] rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-1.5 text-[11px] font-medium tracking-[0.16em] text-[var(--text-dim)] backdrop-blur">
+            Linking <span className="text-[var(--text)]">{linkSourceTile.title}</span>. Click
+            Attach Here on a terminal or press Esc to cancel.
+          </div>
+        ) : null}
 
         <div className="absolute inset-0">
           <Tldraw
@@ -1072,31 +1250,62 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             transform: `translate(${state.viewport.panX}px, ${state.viewport.panY}px) scale(${state.viewport.zoom})`
           }}
         >
+          <svg className="absolute inset-0 h-full w-full" style={{ overflow: 'visible' }}>
+            {terminalConnections.map(({ sourceTile, terminalTile }) => {
+              const startX = sourceTile.x + sourceTile.width
+              const startY = sourceTile.y + sourceTile.height / 2
+              const endX = terminalTile.x
+              const endY = terminalTile.y + terminalTile.height / 2
+              const controlOffset = Math.max(80, Math.abs(endX - startX) * 0.4)
+
+              return (
+                <g key={`${sourceTile.id}:${terminalTile.id}`}>
+                  <path
+                    d={`M ${startX} ${startY} C ${startX + controlOffset} ${startY}, ${endX - controlOffset} ${endY}, ${endX} ${endY}`}
+                    fill="none"
+                    stroke="var(--link-line)"
+                    strokeDasharray="8 6"
+                    strokeLinecap="round"
+                    strokeWidth={2}
+                  />
+                  <circle cx={startX} cy={startY} fill="var(--link-line)" r={4} />
+                  <circle cx={endX} cy={endY} fill="var(--link-line)" r={4} />
+                </g>
+              )
+            })}
+          </svg>
+
           {state.tiles
             .slice()
             .sort((left, right) => left.zIndex - right.zIndex)
             .map((tile) => (
-              <div
-                key={tile.id}
-                data-tile-root="true"
-                className={clsx(
-                  'pointer-events-auto absolute overflow-hidden rounded-[10px] border bg-[var(--surface-0)] shadow-[0_6px_14px_rgba(15,23,42,0.10)]',
-                  selectedTileId === tile.id
-                    ? 'border-[color:var(--line-strong)] shadow-[0_0_0_2px_rgba(71,85,105,0.18),0_6px_14px_rgba(15,23,42,0.10)]'
-                    : 'border-[color:var(--line)]'
-                )}
-                style={{
-                  left: tile.x,
-                  top: tile.y,
-                  width: tile.width,
-                  height: tile.height,
-                  zIndex: tile.zIndex
-                }}
-                onPointerDownCapture={() => {
-                  setSelectedTileId(tile.id)
-                  bringTileToFront(tile.id)
-                }}
-              >
+              (() => {
+                const contextTiles = tile.type === 'term' ? contextTilesForTerminal(tile) : []
+                const isPendingLinkSource = linkSourceTileId === tile.id
+
+                return (
+                  <div
+                    key={tile.id}
+                    data-tile-root="true"
+                    className={clsx(
+                      'pointer-events-auto absolute overflow-hidden rounded-[10px] border bg-[var(--surface-0)] shadow-[0_6px_14px_rgba(15,23,42,0.10)]',
+                      selectedTileId === tile.id
+                        ? 'border-[color:var(--line-strong)] shadow-[0_0_0_2px_rgba(71,85,105,0.18),0_6px_14px_rgba(15,23,42,0.10)]'
+                        : 'border-[color:var(--line)]',
+                      isPendingLinkSource && 'border-[color:var(--link-line)]'
+                    )}
+                    style={{
+                      left: tile.x,
+                      top: tile.y,
+                      width: tile.width,
+                      height: tile.height,
+                      zIndex: tile.zIndex
+                    }}
+                    onPointerDownCapture={() => {
+                      setSelectedTileId(tile.id)
+                      bringTileToFront(tile.id)
+                    }}
+                  >
                 <div
                   className="flex items-center justify-between border-b border-[color:var(--line)] bg-[var(--surface-1)] px-3 py-1.5"
                   onPointerDown={(event) => {
@@ -1129,16 +1338,49 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   <div className="flex items-center gap-2">
                     {tile.filePath ? (
                       <button
+                        className={clsx(
+                          'rounded-full border px-2 py-1 text-[10px] font-medium uppercase tracking-[0.16em] transition',
+                          isPendingLinkSource
+                            ? 'border-[color:var(--link-line)] bg-[color:var(--link-line-soft)] text-[color:var(--link-line)]'
+                            : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'
+                        )}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        title="Link this file tile to a terminal"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          toggleLinkMode(tile.id)
+                        }}
+                      >
+                        Link
+                      </button>
+                    ) : null}
+                    {tile.type === 'term' && linkSourceTile && linkSourceTile.id !== tile.id ? (
+                      <button
+                        className="rounded-full border border-[color:var(--link-line)] bg-[color:var(--link-line-soft)] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-[color:var(--link-line)] transition hover:brightness-95"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        title="Attach the pending file tile to this terminal"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          attachContextTile(linkSourceTile.id, tile.id)
+                        }}
+                      >
+                        Attach Here
+                      </button>
+                    ) : null}
+                    {tile.filePath ? (
+                      <button
                         className="flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] text-[12px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                        onPointerDown={(event) => event.stopPropagation()}
                         title="Open preview"
-                        onClick={() =>
+                        onClick={(event) => {
+                          event.stopPropagation()
                           onOpenFile({
                             kind: 'file',
                             name: tile.title,
                             path: tile.filePath as string,
                             fileKind: tile.type as FileKind
                           })
-                        }
+                        }}
                       >
                         ↗
                       </button>
@@ -1146,7 +1388,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     <button
                       className="flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] text-[14px] leading-none text-[var(--text-dim)] transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
                       title="Close tile"
-                      onClick={() => deleteTile(tile.id)}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        deleteTile(tile.id)
+                      }}
                     >
                       ×
                     </button>
@@ -1155,11 +1401,58 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
                 <div className="h-[calc(100%-37px)] p-2">
                   {tile.type === 'term' ? (
-                    <TerminalPane
-                      cwd={activeWorkspacePath}
-                      darkMode={darkMode}
-                      sessionId={tile.sessionId as string}
-                    />
+                    <div className="flex h-full min-h-0 flex-col gap-2">
+                      <div
+                        className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-1)] px-2 py-1.5"
+                        data-terminal-control="true"
+                        onPointerDown={(event) => event.stopPropagation()}
+                      >
+                        {contextTiles.length === 0 ? (
+                          <div className="text-[11px] text-[var(--text-dim)]">
+                            {linkSourceTile
+                              ? 'Ready to attach the selected file tile to this terminal.'
+                              : 'No linked context yet. Select a file tile and press L to link it.'}
+                          </div>
+                        ) : (
+                          contextTiles.map((contextTile) => (
+                            <div
+                              key={contextTile.id}
+                              className="flex items-center gap-1 rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[10px] text-[var(--text-dim)]"
+                            >
+                              <span className="max-w-[120px] truncate">{contextTile.title}</span>
+                              <button
+                                className="rounded-full px-1 text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                                title="Remove linked context"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  detachContextTile(tile.id, contextTile.id)
+                                }}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))
+                        )}
+                        <button
+                          className="ml-auto rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
+                          disabled={contextTiles.length === 0}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            pasteClaudeContext(tile.id)
+                          }}
+                        >
+                          Paste Claude Context
+                        </button>
+                      </div>
+
+                      <div className="min-h-0 flex-1">
+                        <TerminalPane
+                          cwd={activeWorkspacePath}
+                          darkMode={darkMode}
+                          sessionId={tile.sessionId as string}
+                        />
+                      </div>
+                    </div>
                   ) : (
                     <DocumentPane
                       fileKind={tile.type as FileKind}
@@ -1188,7 +1481,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     }}
                   />
                 ))}
-              </div>
+                  </div>
+                )
+              })()
             ))}
         </div>
 
