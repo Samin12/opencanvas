@@ -6,6 +6,7 @@ import type { FileTreeNode } from '@shared/types'
 
 interface FileTreeProps {
   activeFilePath: string | null
+  darkMode: boolean
   nodes: FileTreeNode[]
   onPlaceFile: (node: FileTreeNode) => void
   onSelectFile: (node: FileTreeNode) => void
@@ -13,7 +14,13 @@ interface FileTreeProps {
 
 const INDENT = 14
 
-export function FileTree({ activeFilePath, nodes, onPlaceFile, onSelectFile }: FileTreeProps) {
+export function FileTree({
+  activeFilePath,
+  darkMode,
+  nodes,
+  onPlaceFile,
+  onSelectFile
+}: FileTreeProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
@@ -42,12 +49,12 @@ export function FileTree({ activeFilePath, nodes, onPlaceFile, onSelectFile }: F
       return (
         <div key={node.path}>
           <button
-            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-white/70"
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-[var(--text-dim)] transition hover:bg-[var(--surface-1)]"
             style={{ paddingLeft: 12 + depth * INDENT }}
             onClick={() => toggleDirectory(node.path)}
           >
-            <span className="text-xs text-slate-400">{isExpanded ? '▾' : '▸'}</span>
-            <span className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] uppercase tracking-[0.2em] text-slate-400">
+            <span className="text-xs text-[var(--text-faint)]">{isExpanded ? '▾' : '▸'}</span>
+            <span className="rounded-md border border-[color:var(--line)] bg-[var(--surface-0)] px-1.5 py-0.5 text-[10px] uppercase tracking-[0.2em] text-[var(--text-faint)]">
               Dir
             </span>
             <span className="truncate">{node.name}</span>
@@ -77,22 +84,35 @@ export function FileTree({ activeFilePath, nodes, onPlaceFile, onSelectFile }: F
         className={clsx(
           'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm transition',
           activeFilePath === node.path
-            ? 'bg-slate-200/70 text-slate-800 ring-1 ring-slate-300'
-            : 'text-slate-700 hover:bg-white/70'
+            ? 'bg-[var(--surface-selected)] text-[var(--text)] ring-1 ring-[color:var(--line-strong)]'
+            : 'text-[var(--text-dim)] hover:bg-[var(--surface-1)]'
         )}
         style={{ paddingLeft: 12 + depth * INDENT }}
         onClick={() => onSelectFile(node)}
-        onDoubleClick={() => onPlaceFile(node)}
-        title="Click to preview. Double-click to place on canvas."
+        onDoubleClick={(event) => {
+          event.preventDefault()
+          onPlaceFile(node)
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && event.shiftKey) {
+            event.preventDefault()
+            onPlaceFile(node)
+          }
+        }}
+        title="Click to preview. Double-click or Shift+Enter to place on canvas."
       >
         <span
           className={clsx(
             'rounded-md border px-1.5 py-0.5 text-[10px] uppercase tracking-[0.2em]',
             node.fileKind === 'note'
-              ? 'border-lime-200 bg-lime-50 text-lime-700'
+              ? darkMode
+                ? 'border-lime-800/80 bg-lime-950/40 text-lime-300'
+                : 'border-lime-200 bg-lime-50 text-lime-700'
               : node.fileKind === 'image'
-                ? 'border-sky-200 bg-sky-50 text-sky-700'
-                : 'border-slate-200 bg-white text-slate-500'
+                ? darkMode
+                  ? 'border-sky-800/80 bg-sky-950/40 text-sky-300'
+                  : 'border-sky-200 bg-sky-50 text-sky-700'
+                : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-faint)]'
           )}
         >
           {node.fileKind}
@@ -104,7 +124,7 @@ export function FileTree({ activeFilePath, nodes, onPlaceFile, onSelectFile }: F
 
   if (nodes.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 p-4 text-sm text-slate-500">
+      <div className="rounded-2xl border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-1)] p-4 text-sm text-[var(--text-dim)]">
         This workspace is empty.
       </div>
     )

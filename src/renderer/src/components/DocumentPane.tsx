@@ -121,7 +121,7 @@ export function DocumentPane({
     return (
       <div
         className={clsx(
-          'flex h-full items-center justify-center rounded-[16px] border border-slate-200 bg-[#fffdfa] text-sm text-slate-500',
+          'flex h-full items-center justify-center rounded-[16px] border border-[color:var(--line)] bg-[var(--surface-0)] text-sm text-[var(--text-dim)]',
           variant === 'viewer' ? 'rounded-[16px]' : 'rounded-[10px]'
         )}
       >
@@ -134,14 +134,14 @@ export function DocumentPane({
     return (
       <div
         className={clsx(
-          'flex h-full items-center justify-center overflow-hidden bg-[#faf7f0]',
-          variant === 'viewer' ? 'rounded-[16px] border border-slate-200' : 'rounded-[10px]'
+          'flex h-full items-center justify-center overflow-hidden bg-[var(--surface-1)]',
+          variant === 'viewer' ? 'rounded-[16px] border border-[color:var(--line)]' : 'rounded-[10px]'
         )}
       >
         {imageUrl ? (
           <img src={imageUrl} alt="" className="h-full w-full object-contain" />
         ) : (
-          <div className="text-sm text-slate-500">Loading image…</div>
+          <div className="text-sm text-[var(--text-dim)]">Loading image…</div>
         )}
       </div>
     )
@@ -152,20 +152,22 @@ export function DocumentPane({
   return (
     <div
       className={clsx(
-        'relative flex h-full min-h-0 flex-col bg-[#fffdfa]',
-        variant === 'viewer' ? 'rounded-[16px] border border-slate-200' : 'rounded-[10px]'
+        'relative flex h-full min-h-0 flex-col bg-[var(--surface-0)]',
+        variant === 'viewer' ? 'rounded-[16px] border border-[color:var(--line)]' : 'rounded-[10px]'
       )}
     >
       {variant === 'viewer' ? (
-        <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2 text-[11px] uppercase tracking-[0.2em] text-slate-400">
+        <div className="flex items-center justify-between border-b border-[color:var(--line)] px-3 py-2 text-[11px] uppercase tracking-[0.2em] text-[var(--text-faint)]">
           <div>{supportsRichPreview ? 'Markdown Preview' : 'Code Surface'}</div>
           <div className="flex items-center gap-2">
             {supportsRichPreview ? (
-              <div className="flex items-center rounded-full border border-slate-200 bg-white p-0.5 text-[10px] tracking-[0.18em] text-slate-500">
+              <div className="flex items-center rounded-full border border-[color:var(--line)] bg-[var(--surface-1)] p-0.5 text-[10px] tracking-[0.18em] text-[var(--text-dim)]">
                 <button
                   className={clsx(
                     'rounded-full px-2.5 py-1 transition',
-                    mode === 'preview' ? 'bg-slate-800 text-white' : 'hover:bg-slate-100'
+                    mode === 'preview'
+                      ? 'bg-[var(--text)] text-[var(--surface-0)]'
+                      : 'hover:bg-[var(--surface-2)]'
                   )}
                   onClick={() => void switchMode('preview')}
                 >
@@ -174,7 +176,9 @@ export function DocumentPane({
                 <button
                   className={clsx(
                     'rounded-full px-2.5 py-1 transition',
-                    mode === 'edit' ? 'bg-slate-800 text-white' : 'hover:bg-slate-100'
+                    mode === 'edit'
+                      ? 'bg-[var(--text)] text-[var(--surface-0)]'
+                      : 'hover:bg-[var(--surface-2)]'
                   )}
                   onClick={() => void switchMode('edit')}
                 >
@@ -185,7 +189,7 @@ export function DocumentPane({
             <span>{status === 'saving' ? 'Saving' : document ? 'Live file' : 'Loading'}</span>
             {mode === 'edit' || !supportsRichPreview ? (
               <button
-                className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] text-slate-600 transition hover:bg-slate-50"
+                className="rounded-full border border-[color:var(--line)] bg-[var(--surface-1)] px-2 py-1 text-[10px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)]"
                 onClick={() => void save()}
               >
                 Save
@@ -197,7 +201,7 @@ export function DocumentPane({
       {supportsRichPreview && variant === 'tile' ? (
         <div className="pointer-events-none absolute right-3 top-3 z-10 flex items-center gap-2">
           <button
-            className="pointer-events-auto rounded-full border border-slate-200 bg-white/92 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-slate-500 shadow-[0_4px_10px_rgba(15,23,42,0.06)] transition hover:bg-slate-50"
+            className="pointer-events-auto rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-[var(--text-dim)] shadow-[0_4px_10px_rgba(15,23,42,0.06)] transition hover:bg-[var(--surface-1)]"
             onClick={() => void switchMode(mode === 'preview' ? 'edit' : 'preview')}
           >
             {mode === 'preview' ? 'Edit' : 'Preview'}
@@ -208,7 +212,7 @@ export function DocumentPane({
         <div
           data-scroll-lock="true"
           className={clsx(
-            'markdown-preview min-h-0 flex-1 overflow-y-auto text-slate-800',
+            'markdown-preview min-h-0 flex-1 overflow-y-auto text-[var(--text)]',
             variant === 'viewer' ? 'px-6 py-5 text-[16px]' : 'px-5 py-4 text-[13px]'
           )}
           onWheel={(event) => {
@@ -244,7 +248,7 @@ export function DocumentPane({
           data-scroll-lock="true"
           spellCheck={fileKind === 'note'}
           className={clsx(
-            'min-h-0 flex-1 bg-transparent leading-6 text-slate-800 outline-none',
+            'min-h-0 flex-1 bg-transparent leading-6 text-[var(--text)] outline-none',
             variant === 'viewer' ? 'px-4 py-4' : 'px-5 py-4',
             variant === 'viewer' ? 'text-[15px]' : 'text-[13px]',
             fileKind === 'note'

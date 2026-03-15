@@ -26,6 +26,7 @@ import { TerminalPane } from './TerminalPane'
 
 interface CanvasSurfaceProps {
   activeWorkspacePath: string | null
+  darkMode: boolean
   onOpenFile: (node: FileTreeNode) => void
   onStateChange: (state: CanvasState, options?: { immediate?: boolean }) => void
   state: CanvasState
@@ -175,15 +176,15 @@ function createTileFromFile(
     title: file.name,
     x: snap(x),
     y: snap(y),
-    width: isImage ? 420 : isNote ? 300 : 520,
-    height: isImage ? 320 : isNote ? 360 : 420,
+    width: isImage ? 420 : isNote ? 360 : 520,
+    height: isImage ? 320 : isNote ? 440 : 420,
     zIndex,
     filePath: file.path
   }
 }
 
 export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>(
-  function CanvasSurface({ activeWorkspacePath, onOpenFile, onStateChange, state }, ref) {
+  function CanvasSurface({ activeWorkspacePath, darkMode, onOpenFile, onStateChange, state }, ref) {
     const containerRef = useRef<HTMLDivElement>(null)
     const editorRef = useRef<Editor | null>(null)
     const interactionRef = useRef<InteractionState | null>(null)
@@ -967,7 +968,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       <div
         ref={containerRef}
         className={clsx(
-          'canvas-surface relative h-full overflow-hidden rounded-[24px] border border-slate-300/80 bg-[#f8f5ee] touch-none [overscroll-behavior:none]'
+          'canvas-surface relative h-full overflow-hidden rounded-[24px] border border-[color:var(--line-strong)] bg-[var(--canvas-bg)] touch-none [overscroll-behavior:none]'
         )}
         onPointerDownCapture={(event) => {
           const target = event.target as HTMLElement
@@ -998,12 +999,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           data-canvas-ui="true"
           className="group absolute right-4 top-4 z-[220]"
         >
-          <div className="flex min-h-10 w-10 origin-top-right items-start overflow-hidden rounded-full border border-slate-300/90 bg-white/92 shadow-[0_10px_22px_rgba(15,23,42,0.08)] backdrop-blur transition-[width,max-height,border-radius] duration-200 ease-out max-h-10 group-hover:w-[332px] group-hover:max-h-[220px] group-hover:rounded-[18px] group-focus-within:w-[332px] group-focus-within:max-h-[220px] group-focus-within:rounded-[18px]">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center self-start text-[13px] font-semibold tracking-[0.2em] text-slate-500">
+          <div className="flex min-h-10 w-10 origin-top-right items-start overflow-hidden rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] shadow-[0_10px_22px_rgba(15,23,42,0.08)] backdrop-blur transition-[width,max-height,border-radius] duration-200 ease-out max-h-10 group-hover:w-[332px] group-hover:max-h-[220px] group-hover:rounded-[18px] group-focus-within:w-[332px] group-focus-within:max-h-[220px] group-focus-within:rounded-[18px]">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center self-start text-[13px] font-semibold tracking-[0.2em] text-[var(--text-dim)]">
               ?
             </div>
             <div className="min-w-0 flex-1 self-stretch pr-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-              <div className="pt-2 text-[10px] uppercase tracking-[0.22em] text-slate-400">Canvas Keys</div>
+              <div className="pt-2 text-[10px] uppercase tracking-[0.22em] text-[var(--text-faint)]">Canvas Keys</div>
               <div className="mt-1.5 grid grid-cols-3 gap-1.5 pb-2">
                 {SHORTCUT_ITEMS.map((shortcut) => {
                   const isActive =
@@ -1015,8 +1016,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       className={clsx(
                         'flex items-center justify-between rounded-[10px] border px-2 py-1.5 text-left transition',
                         isActive
-                          ? 'border-slate-800 bg-slate-800 text-white'
-                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'
+                          ? 'border-[color:var(--text)] bg-[var(--text)] text-[var(--surface-0)]'
+                          : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:text-[var(--text)]'
                       )}
                       onClick={() => runShortcutAction(shortcut.action)}
                     >
@@ -1028,7 +1029,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                           'shrink-0 rounded-md border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.16em]',
                           isActive
                             ? 'border-white/25 bg-white/12 text-white'
-                            : 'border-slate-200 bg-slate-50 text-slate-500'
+                            : 'border-[color:var(--line)] bg-[var(--surface-1)] text-[var(--text-faint)]'
                         )}
                       >
                         {shortcut.key}
@@ -1037,7 +1038,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   )
                 })}
               </div>
-              <div className="border-t border-slate-200/80 py-2 text-[10px] uppercase tracking-[0.16em] text-slate-400">
+              <div className="border-t border-[color:var(--line)] py-2 text-[10px] uppercase tracking-[0.16em] text-[var(--text-faint)]">
                 Paste or drop images, video, or URLs. Delete removes the current tile or shape.
               </div>
             </div>
@@ -1047,9 +1048,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         <div className="absolute inset-0">
           <Tldraw
             autoFocus={false}
-            className="collab-tldraw"
+            className={clsx('collab-tldraw', darkMode && 'theme-dark')}
             hideUi
-            inferDarkMode={false}
+            inferDarkMode={darkMode}
             maxAssetSize={1024 * 1024 * 256}
             onMount={handleBoardMount}
           />
@@ -1059,7 +1060,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           className="pointer-events-none absolute inset-0"
           style={{
             backgroundImage:
-              'radial-gradient(circle, rgba(148, 163, 184, 0.26) 0.9px, transparent 1.15px)',
+              'radial-gradient(circle, var(--canvas-dot) 0.9px, transparent 1.15px)',
             backgroundSize: `${GRID_SIZE * state.viewport.zoom}px ${GRID_SIZE * state.viewport.zoom}px`,
             backgroundPosition: `${state.viewport.panX}px ${state.viewport.panY}px`
           }}
@@ -1079,10 +1080,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 key={tile.id}
                 data-tile-root="true"
                 className={clsx(
-                  'pointer-events-auto absolute overflow-hidden rounded-[10px] border bg-[#fffdfa] shadow-[0_6px_14px_rgba(15,23,42,0.10)]',
+                  'pointer-events-auto absolute overflow-hidden rounded-[10px] border bg-[var(--surface-0)] shadow-[0_6px_14px_rgba(15,23,42,0.10)]',
                   selectedTileId === tile.id
-                    ? 'border-slate-500 shadow-[0_0_0_2px_rgba(71,85,105,0.18),0_6px_14px_rgba(15,23,42,0.10)]'
-                    : 'border-slate-300'
+                    ? 'border-[color:var(--line-strong)] shadow-[0_0_0_2px_rgba(71,85,105,0.18),0_6px_14px_rgba(15,23,42,0.10)]'
+                    : 'border-[color:var(--line)]'
                 )}
                 style={{
                   left: tile.x,
@@ -1097,7 +1098,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 }}
               >
                 <div
-                  className="flex items-center justify-between border-b border-slate-200 bg-[#faf7f1] px-3 py-1.5"
+                  className="flex items-center justify-between border-b border-[color:var(--line)] bg-[var(--surface-1)] px-3 py-1.5"
                   onPointerDown={(event) => {
                     if (event.button !== 0) {
                       return
@@ -1118,8 +1119,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   }}
                 >
                   <div className="min-w-0">
-                    <div className="truncate text-[11px] font-medium text-slate-700">{tile.title}</div>
-                    <div className="truncate text-[10px] uppercase tracking-[0.18em] text-slate-400">
+                    <div className="truncate text-[11px] font-medium text-[var(--text)]">{tile.title}</div>
+                    <div className="truncate text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">
                       {tile.type === 'term'
                         ? tile.sessionId
                         : tile.filePath?.replace(/^.*\//, '')}
@@ -1128,7 +1129,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   <div className="flex items-center gap-2">
                     {tile.filePath ? (
                       <button
-                        className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-[12px] text-slate-500 transition hover:bg-amber-50 hover:text-slate-700"
+                        className="flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] text-[12px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
                         title="Open preview"
                         onClick={() =>
                           onOpenFile({
@@ -1143,7 +1144,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       </button>
                     ) : null}
                     <button
-                      className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-[14px] leading-none text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+                      className="flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] text-[14px] leading-none text-[var(--text-dim)] transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
                       title="Close tile"
                       onClick={() => deleteTile(tile.id)}
                     >
@@ -1154,7 +1155,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
                 <div className="h-[calc(100%-37px)] p-2">
                   {tile.type === 'term' ? (
-                    <TerminalPane cwd={activeWorkspacePath} sessionId={tile.sessionId as string} />
+                    <TerminalPane
+                      cwd={activeWorkspacePath}
+                      darkMode={darkMode}
+                      sessionId={tile.sessionId as string}
+                    />
                   ) : (
                     <DocumentPane
                       fileKind={tile.type as FileKind}
@@ -1188,7 +1193,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         </div>
 
         {zoomIndicator ? (
-          <div className="pointer-events-none absolute bottom-5 right-5 rounded-full border border-amber-200 bg-white/90 px-3 py-1.5 text-[11px] font-medium tracking-[0.2em] text-amber-700 backdrop-blur">
+          <div className="pointer-events-none absolute bottom-5 right-5 rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-1.5 text-[11px] font-medium tracking-[0.2em] text-[var(--text-dim)] backdrop-blur">
             {zoomIndicator}
           </div>
         ) : null}

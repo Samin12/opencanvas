@@ -1,5 +1,6 @@
 import { startTransition, useEffect, useRef, useState } from 'react'
 
+import clsx from 'clsx'
 import type { AppConfig, CanvasState, FileTreeNode } from '@shared/types'
 
 import { CanvasSurface, type CanvasSurfaceHandle } from './components/CanvasSurface'
@@ -37,10 +38,14 @@ export default function App() {
   const [workspaceTree, setWorkspaceTree] = useState<FileTreeNode[]>([])
   const [viewerFile, setViewerFile] = useState<FileTreeNode | null>(null)
   const [sidebarWidth, setSidebarWidth] = useState(320)
+  const [darkMode, setDarkMode] = useState(false)
+  const [canvasCollapsed, setCanvasCollapsed] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [loadingWorkspace, setLoadingWorkspace] = useState(false)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [bootError, setBootError] = useState<string | null>(null)
+  const [pendingPlacementFile, setPendingPlacementFile] = useState<FileTreeNode | null>(null)
+  const [pendingTerminalCreation, setPendingTerminalCreation] = useState(false)
 
   const activeWorkspace = config ? config.workspaces[config.activeWorkspace] ?? null : null
   const flatFiles = flattenFiles(workspaceTree)
@@ -59,6 +64,8 @@ export default function App() {
         setConfig(payload.config)
         setCanvasState(payload.canvasState)
         setSidebarWidth(payload.config.ui.sidebarWidth)
+        setDarkMode(payload.config.ui.darkMode)
+        setCanvasCollapsed(payload.config.ui.canvasCollapsed)
       } catch {
         if (!cancelled) {
           setBootError('The app state could not be loaded. Delete corrupted state or restart.')
@@ -113,6 +120,16 @@ export default function App() {
   }, [activeWorkspace])
 
   useEffect(() => {
+    document.documentElement.classList.toggle('theme-dark', darkMode)
+    document.body.classList.toggle('theme-dark', darkMode)
+
+    return () => {
+      document.documentElement.classList.remove('theme-dark')
+      document.body.classList.remove('theme-dark')
+    }
+  }, [darkMode])
+
+  useEffect(() => {
     if (!canvasState) {
       return
     }
@@ -152,6 +169,12 @@ export default function App() {
         return
       }
 
+      if (event.shiftKey && event.key === 'Enter' && !isEditing && viewerFile) {
+        event.preventDefault()
+        placeFileOnCanvas(viewerFile)
+        return
+      }
+
       if ((event.metaKey || event.ctrlKey) && !isEditing) {
         if (event.key === '=' || event.key === '+') {
           event.preventDefault()
@@ -184,7 +207,7 @@ export default function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [searchOpen])
+  }, [searchOpen, viewerFile, placeFileOnCanvas])
 
   useEffect(() => {
     function handlePointerMove(event: PointerEvent) {
@@ -224,11 +247,46 @@ export default function App() {
     }
   }, [config, sidebarWidth])
 
+  useEffect(() => {
+    if (canvasCollapsed || !pendingPlacementFile || !canvasRef.current) {
+      return
+    }
+
+    canvasRef.current.spawnFileTile(pendingPlacementFile)
+    setViewerFile(pendingPlacementFile)
+    setPendingPlacementFile(null)
+  }, [canvasCollapsed, pendingPlacementFile])
+
+  useEffect(() => {
+    if (canvasCollapsed || !pendingTerminalCreation || !canvasRef.current) {
+      return
+    }
+
+    canvasRef.current.createTerminal()
+    setPendingTerminalCreation(false)
+  }, [canvasCollapsed, pendingTerminalCreation])
+
   async function persistConfig(nextConfig: AppConfig) {
     setConfig(nextConfig)
     const saved = await window.collaborator.saveConfig(nextConfig)
     setConfig(saved)
     setSidebarWidth(saved.ui.sidebarWidth)
+    setDarkMode(saved.ui.darkMode)
+    setCanvasCollapsed(saved.ui.canvasCollapsed)
+  }
+
+  async function persistUi(nextUi: Partial<AppConfig['ui']>) {
+    if (!config) {
+      return
+    }
+
+    await persistConfig({
+      ...config,
+      ui: {
+        ...config.ui,
+        ...nextUi
+      }
+    })
   }
 
   async function addWorkspace() {
@@ -276,8 +334,30 @@ export default function App() {
   }
 
   function placeFileOnCanvas(file: FileTreeNode) {
+    if (canvasCollapsed) {
+      setPendingPlacementFile(file)
+      setCanvasCollapsed(false)
+      void persistUi({
+        canvasCollapsed: false
+      })
+      return
+    }
+
     canvasRef.current?.spawnFileTile(file)
     setViewerFile(file)
+  }
+
+  function createTerminal() {
+    if (canvasCollapsed) {
+      setPendingTerminalCreation(true)
+      setCanvasCollapsed(false)
+      void persistUi({
+        canvasCollapsed: false
+      })
+      return
+    }
+
+    canvasRef.current?.createTerminal()
   }
 
   function handleCanvasStateChange(nextState: CanvasState, options?: { immediate?: boolean }) {
@@ -293,8 +373,10 @@ export default function App() {
       <div className="app-shell">
         <div className="glass-panel flex flex-1 items-center justify-center rounded-[32px] text-center">
           <div className="max-w-lg p-8">
-            <div className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Boot Error</div>
-            <div className="mt-4 text-2xl font-semibold text-slate-800">{bootError}</div>
+            <div className="text-[11px] uppercase tracking-[0.25em] text-[var(--text-faint)]">
+              Boot Error
+            </div>
+            <div className="mt-4 text-2xl font-semibold text-[var(--text)]">{bootError}</div>
           </div>
         </div>
       </div>
@@ -305,7 +387,9 @@ export default function App() {
     return (
       <div className="app-shell">
         <div className="glass-panel flex flex-1 items-center justify-center rounded-[32px]">
-          <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Initializing…</div>
+          <div className="text-sm uppercase tracking-[0.25em] text-[var(--text-faint)]">
+            Initializing…
+          </div>
         </div>
       </div>
     )
@@ -314,13 +398,21 @@ export default function App() {
   return (
     <div className="app-shell">
       <div className="flex h-full min-w-0 flex-1">
-        <div style={{ width: sidebarWidth }} className="min-w-[260px] max-w-[520px]">
+        <div
+          style={canvasCollapsed ? undefined : { width: sidebarWidth }}
+          className={clsx(
+            'min-w-[260px]',
+            canvasCollapsed ? 'flex-1' : 'max-w-[520px]'
+          )}
+        >
           <Sidebar
             activeFilePath={viewerFile?.path ?? null}
+            canvasCollapsed={canvasCollapsed}
             config={config}
+            darkMode={darkMode}
             loadingWorkspace={loadingWorkspace}
             onAddWorkspace={() => void addWorkspace()}
-            onCreateTerminal={() => canvasRef.current?.createTerminal()}
+            onCreateTerminal={createTerminal}
             onOpenSearch={() => setSearchOpen(true)}
             onPlaceFile={placeFileOnCanvas}
             onRemoveWorkspace={() => void removeActiveWorkspace()}
@@ -331,39 +423,58 @@ export default function App() {
                 activeWorkspace: index
               })
             }
+            onToggleCanvas={() => {
+              const nextCollapsed = !canvasCollapsed
+              setCanvasCollapsed(nextCollapsed)
+              void persistUi({
+                canvasCollapsed: nextCollapsed
+              })
+            }}
+            onToggleDarkMode={() => {
+              const nextDarkMode = !darkMode
+              setDarkMode(nextDarkMode)
+              void persistUi({
+                darkMode: nextDarkMode
+              })
+            }}
             workspaceTree={workspaceTree}
           />
         </div>
 
-        <div
-          className="w-3 cursor-col-resize"
-          onPointerDown={(event) => {
-            resizeRef.current = {
-              startX: event.clientX,
-              startWidth: sidebarWidth
-            }
-          }}
-        />
+        {canvasCollapsed ? null : (
+          <>
+            <div
+              className="w-3 cursor-col-resize"
+              onPointerDown={(event) => {
+                resizeRef.current = {
+                  startX: event.clientX,
+                  startWidth: sidebarWidth
+                }
+              }}
+            />
 
-        <main className="relative min-w-0 flex-1">
-          <CanvasSurface
-            activeWorkspacePath={activeWorkspace}
-            ref={canvasRef}
-            onOpenFile={previewFile}
-            onStateChange={handleCanvasStateChange}
-            state={canvasState}
-          />
-          <ViewerOverlay
-            file={viewerFile}
-            onClose={() => setViewerFile(null)}
-            onPlaceOnCanvas={placeFileOnCanvas}
-          />
-          {workspaceError ? (
-            <div className="glass-panel absolute right-4 top-4 z-[260] rounded-2xl border border-rose-200 px-4 py-3 text-sm text-rose-700">
-              {workspaceError}
-            </div>
-          ) : null}
-        </main>
+            <main className="relative min-w-0 flex-1">
+              <CanvasSurface
+                activeWorkspacePath={activeWorkspace}
+                darkMode={darkMode}
+                ref={canvasRef}
+                onOpenFile={previewFile}
+                onStateChange={handleCanvasStateChange}
+                state={canvasState}
+              />
+              <ViewerOverlay
+                file={viewerFile}
+                onClose={() => setViewerFile(null)}
+                onPlaceOnCanvas={placeFileOnCanvas}
+              />
+              {workspaceError ? (
+                <div className="glass-panel absolute right-4 top-4 z-[260] rounded-2xl border border-rose-200 px-4 py-3 text-sm text-rose-700">
+                  {workspaceError}
+                </div>
+              ) : null}
+            </main>
+          </>
+        )}
       </div>
 
       <SearchDialog

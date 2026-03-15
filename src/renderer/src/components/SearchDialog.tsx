@@ -37,9 +37,9 @@ export function SearchDialog({ files, open, onClose, onSelect }: SearchDialogPro
     .slice(0, 40)
 
   return (
-    <div className="absolute inset-0 z-[300] flex items-start justify-center bg-white/65 px-6 py-20 backdrop-blur-sm">
+    <div className="absolute inset-0 z-[300] flex items-start justify-center bg-[color:var(--overlay)] px-6 py-20 backdrop-blur-sm">
       <div className="glass-panel w-full max-w-2xl rounded-[28px] p-4">
-        <div className="mb-4 text-[11px] uppercase tracking-[0.25em] text-slate-400">
+        <div className="mb-4 text-[11px] uppercase tracking-[0.25em] text-[var(--text-faint)]">
           Workspace Search
         </div>
         <input
@@ -55,26 +55,26 @@ export function SearchDialog({ files, open, onClose, onSelect }: SearchDialogPro
               onSelect(results[0])
             }
           }}
-          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-800 outline-none focus:border-amber-300"
+          className="w-full rounded-2xl border border-[color:var(--line)] bg-[var(--surface-0)] px-4 py-3 text-base text-[var(--text)] outline-none focus:border-[color:var(--accent)]"
           placeholder="Search files by name or path"
         />
         <div className="mt-4 max-h-[56vh] space-y-2 overflow-auto">
           {results.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 p-4 text-sm text-slate-500">
+            <div className="rounded-2xl border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-1)] p-4 text-sm text-[var(--text-dim)]">
               No files match this query.
             </div>
           ) : (
             results.map((file) => (
               <button
                 key={file.path}
-                className="flex w-full items-start justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:bg-amber-50"
+                className="flex w-full items-start justify-between rounded-2xl border border-[color:var(--line)] bg-[var(--surface-0)] px-4 py-3 text-left transition hover:bg-[var(--surface-1)]"
                 onClick={() => onSelect(file)}
               >
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-slate-800">{file.name}</div>
-                  <div className="truncate text-xs text-slate-500">{file.path}</div>
+                  <div className="truncate text-sm font-medium text-[var(--text)]">{file.name}</div>
+                  <div className="truncate text-xs text-[var(--text-dim)]">{file.path}</div>
                 </div>
-                <div className="rounded-full border border-slate-200 px-2 py-1 text-[10px] uppercase tracking-[0.25em] text-slate-500">
+                <div className="rounded-full border border-[color:var(--line)] px-2 py-1 text-[10px] uppercase tracking-[0.25em] text-[var(--text-faint)]">
                   {file.fileKind}
                 </div>
               </button>

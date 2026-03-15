@@ -1,3 +1,4 @@
+import clsx from 'clsx'
 import type { AppConfig, FileTreeNode } from '@shared/types'
 
 import { FileTree } from './FileTree'
@@ -9,7 +10,9 @@ function workspaceLabel(workspacePath: string): string {
 
 interface SidebarProps {
   activeFilePath: string | null
+  canvasCollapsed: boolean
   config: AppConfig
+  darkMode: boolean
   loadingWorkspace: boolean
   onAddWorkspace: () => void
   onCreateTerminal: () => void
@@ -18,12 +21,16 @@ interface SidebarProps {
   onRemoveWorkspace: () => void
   onSelectFile: (node: FileTreeNode) => void
   onSelectWorkspace: (index: number) => void
+  onToggleCanvas: () => void
+  onToggleDarkMode: () => void
   workspaceTree: FileTreeNode[]
 }
 
 export function Sidebar({
   activeFilePath,
+  canvasCollapsed,
   config,
+  darkMode,
   loadingWorkspace,
   onAddWorkspace,
   onCreateTerminal,
@@ -32,32 +39,62 @@ export function Sidebar({
   onRemoveWorkspace,
   onSelectFile,
   onSelectWorkspace,
+  onToggleCanvas,
+  onToggleDarkMode,
   workspaceTree
 }: SidebarProps) {
   const activeWorkspacePath = config.workspaces[config.activeWorkspace] ?? null
 
   return (
     <aside className="glass-panel flex h-full min-w-0 flex-col rounded-[28px]">
-      <div className="border-b border-slate-200 px-4 pb-4 pt-5">
+      <div className="border-b border-[color:var(--line)] px-4 pb-4 pt-5">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <div className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Navigator</div>
-            <h1 className="mt-2 text-xl font-semibold tracking-tight text-slate-800">
+            <div className="text-[11px] uppercase tracking-[0.25em] text-[var(--text-faint)]">
+              Navigator
+            </div>
+            <h1 className="mt-2 text-xl font-semibold tracking-tight text-[var(--text)]">
               Collaborator Clone
             </h1>
           </div>
-          <button
-            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition hover:bg-slate-50"
-            onClick={onOpenSearch}
-          >
-            Search
-          </button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              className="rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-1.5 text-xs text-[var(--text-dim)] transition hover:bg-[var(--surface-1)]"
+              onClick={onOpenSearch}
+            >
+              Search
+            </button>
+            <button
+              className={clsx(
+                'rounded-full border px-3 py-1.5 text-xs transition',
+                canvasCollapsed
+                  ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                  : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:bg-[var(--surface-1)]'
+              )}
+              onClick={onToggleCanvas}
+            >
+              {canvasCollapsed ? 'Show Canvas' : 'Hide Canvas'}
+            </button>
+            <button
+              className={clsx(
+                'rounded-full border px-3 py-1.5 text-xs transition',
+                darkMode
+                  ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                  : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:bg-[var(--surface-1)]'
+              )}
+              onClick={onToggleDarkMode}
+            >
+              {darkMode ? 'Light Mode' : 'Dark Mode'}
+            </button>
+          </div>
         </div>
 
         <div className="space-y-2">
-          <div className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Workspace</div>
+          <div className="text-[11px] uppercase tracking-[0.25em] text-[var(--text-faint)]">
+            Workspace
+          </div>
           <select
-            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-amber-300"
+            className="w-full rounded-2xl border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2.5 text-sm text-[var(--text)] outline-none transition focus:border-[color:var(--accent)]"
             value={config.activeWorkspace}
             onChange={(event) => onSelectWorkspace(Number(event.target.value))}
             disabled={config.workspaces.length === 0}
@@ -75,23 +112,23 @@ export function Sidebar({
 
           <div className="flex gap-2">
             <button
-              className="flex-1 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              className="flex-1 rounded-2xl border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-sm font-medium text-[var(--text)] transition hover:bg-[var(--surface-1)]"
               onClick={onAddWorkspace}
             >
               Add Workspace
             </button>
             <button
-              className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
+              className="rounded-2xl border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-sm text-[var(--text)] transition hover:bg-[var(--surface-1)]"
               onClick={onCreateTerminal}
             >
               New Terminal
             </button>
           </div>
 
-          <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/70 px-3 py-3 text-xs text-slate-500">
+          <div className="flex items-center justify-between rounded-2xl border border-[color:var(--line)] bg-[var(--surface-1)] px-3 py-3 text-xs text-[var(--text-dim)]">
             <span className="truncate">{activeWorkspacePath ?? 'Add a folder to start building a spatial workspace.'}</span>
             <button
-              className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-2.5 py-1 text-[11px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] disabled:cursor-not-allowed disabled:opacity-40"
               onClick={onRemoveWorkspace}
               disabled={!activeWorkspacePath}
             >
@@ -103,23 +140,24 @@ export function Sidebar({
 
       <div className="min-h-0 flex-1 overflow-auto px-3 py-4">
         <div className="mb-3 flex items-center justify-between px-1">
-          <div className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Files</div>
-          {loadingWorkspace ? <div className="text-xs text-slate-400">Refreshing…</div> : null}
+          <div className="text-[11px] uppercase tracking-[0.25em] text-[var(--text-faint)]">Files</div>
+          {loadingWorkspace ? <div className="text-xs text-[var(--text-faint)]">Refreshing…</div> : null}
         </div>
-        <div className="mb-3 rounded-2xl border border-slate-200 bg-white/70 px-3 py-2 text-xs text-slate-500">
-          Click a file to preview it. Double-click to place another version on the canvas.
+        <div className="mb-3 rounded-2xl border border-[color:var(--line)] bg-[var(--surface-1)] px-3 py-2 text-xs text-[var(--text-dim)]">
+          Click a file to preview it. Double-click or press Shift+Enter to open a fresh tile on the canvas.
         </div>
         {activeWorkspacePath ? (
           <FileTree
             activeFilePath={activeFilePath}
+            darkMode={darkMode}
             nodes={workspaceTree}
             onPlaceFile={onPlaceFile}
             onSelectFile={onSelectFile}
           />
         ) : (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 p-4 text-sm text-slate-500">
-            Add a workspace with <span className="text-slate-700">Cmd+Shift+O</span> to populate the
-            navigator.
+          <div className="rounded-2xl border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-1)] p-4 text-sm text-[var(--text-dim)]">
+            Add a workspace with <span className="text-[var(--text)]">Cmd+Shift+O</span> to populate
+            the navigator.
           </div>
         )}
       </div>

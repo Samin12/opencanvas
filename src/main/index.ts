@@ -75,7 +75,7 @@ async function createMainWindow(): Promise<void> {
     minWidth: 1120,
     minHeight: 760,
     show: false,
-    backgroundColor: '#f6f1e8',
+    backgroundColor: config.ui.darkMode ? '#0d141c' : '#f6f1e8',
     titleBarStyle: 'hiddenInset',
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
