@@ -41,8 +41,8 @@ export interface AppConfig {
   activeWorkspace: number
   windowState: WindowState
   ui: {
-    canvasCollapsed: boolean
     darkMode: boolean
+    sidebarCollapsed: boolean
     sidebarWidth: number
   }
 }

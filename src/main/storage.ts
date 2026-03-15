@@ -19,8 +19,8 @@ const DEFAULT_CONFIG: AppConfig = {
   activeWorkspace: 0,
   windowState: DEFAULT_WINDOW_STATE,
   ui: {
-    canvasCollapsed: false,
     darkMode: false,
+    sidebarCollapsed: false,
     sidebarWidth: 320
   }
 }
@@ -78,8 +78,11 @@ function sanitizeConfig(input: Partial<AppConfig> | undefined): AppConfig {
     activeWorkspace,
     windowState: sanitizeWindowState(input?.windowState),
     ui: {
-      canvasCollapsed: Boolean(input?.ui?.canvasCollapsed),
       darkMode: Boolean(input?.ui?.darkMode),
+      sidebarCollapsed:
+        typeof input?.ui?.sidebarCollapsed === 'boolean'
+          ? input.ui.sidebarCollapsed
+          : Boolean((input?.ui as { canvasCollapsed?: boolean } | undefined)?.canvasCollapsed),
       sidebarWidth:
         typeof input?.ui?.sidebarWidth === 'number'
           ? Math.min(Math.max(input.ui.sidebarWidth, 240), 480)

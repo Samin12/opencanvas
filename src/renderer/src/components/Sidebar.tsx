@@ -10,7 +10,6 @@ function workspaceLabel(workspacePath: string): string {
 
 interface SidebarProps {
   activeFilePath: string | null
-  canvasCollapsed: boolean
   config: AppConfig
   darkMode: boolean
   loadingWorkspace: boolean
@@ -21,14 +20,14 @@ interface SidebarProps {
   onRemoveWorkspace: () => void
   onSelectFile: (node: FileTreeNode) => void
   onSelectWorkspace: (index: number) => void
-  onToggleCanvas: () => void
+  onToggleSidebar: () => void
   onToggleDarkMode: () => void
+  sidebarCollapsed: boolean
   workspaceTree: FileTreeNode[]
 }
 
 export function Sidebar({
   activeFilePath,
-  canvasCollapsed,
   config,
   darkMode,
   loadingWorkspace,
@@ -39,8 +38,9 @@ export function Sidebar({
   onRemoveWorkspace,
   onSelectFile,
   onSelectWorkspace,
-  onToggleCanvas,
+  onToggleSidebar,
   onToggleDarkMode,
+  sidebarCollapsed,
   workspaceTree
 }: SidebarProps) {
   const activeWorkspacePath = config.workspaces[config.activeWorkspace] ?? null
@@ -67,13 +67,13 @@ export function Sidebar({
             <button
               className={clsx(
                 'rounded-full border px-3 py-1.5 text-xs transition',
-                canvasCollapsed
+                sidebarCollapsed
                   ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
                   : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:bg-[var(--surface-1)]'
               )}
-              onClick={onToggleCanvas}
+              onClick={onToggleSidebar}
             >
-              {canvasCollapsed ? 'Show Canvas' : 'Hide Canvas'}
+              {sidebarCollapsed ? 'Show Sidebar' : 'Hide Sidebar'}
             </button>
             <button
               className={clsx(

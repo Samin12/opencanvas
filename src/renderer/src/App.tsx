@@ -39,13 +39,11 @@ export default function App() {
   const [viewerFile, setViewerFile] = useState<FileTreeNode | null>(null)
   const [sidebarWidth, setSidebarWidth] = useState(320)
   const [darkMode, setDarkMode] = useState(false)
-  const [canvasCollapsed, setCanvasCollapsed] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [loadingWorkspace, setLoadingWorkspace] = useState(false)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [bootError, setBootError] = useState<string | null>(null)
-  const [pendingPlacementFile, setPendingPlacementFile] = useState<FileTreeNode | null>(null)
-  const [pendingTerminalCreation, setPendingTerminalCreation] = useState(false)
 
   const activeWorkspace = config ? config.workspaces[config.activeWorkspace] ?? null : null
   const flatFiles = flattenFiles(workspaceTree)
@@ -65,7 +63,7 @@ export default function App() {
         setCanvasState(payload.canvasState)
         setSidebarWidth(payload.config.ui.sidebarWidth)
         setDarkMode(payload.config.ui.darkMode)
-        setCanvasCollapsed(payload.config.ui.canvasCollapsed)
+        setSidebarCollapsed(payload.config.ui.sidebarCollapsed)
       } catch {
         if (!cancelled) {
           setBootError('The app state could not be loaded. Delete corrupted state or restart.')
@@ -247,32 +245,13 @@ export default function App() {
     }
   }, [config, sidebarWidth])
 
-  useEffect(() => {
-    if (canvasCollapsed || !pendingPlacementFile || !canvasRef.current) {
-      return
-    }
-
-    canvasRef.current.spawnFileTile(pendingPlacementFile)
-    setViewerFile(pendingPlacementFile)
-    setPendingPlacementFile(null)
-  }, [canvasCollapsed, pendingPlacementFile])
-
-  useEffect(() => {
-    if (canvasCollapsed || !pendingTerminalCreation || !canvasRef.current) {
-      return
-    }
-
-    canvasRef.current.createTerminal()
-    setPendingTerminalCreation(false)
-  }, [canvasCollapsed, pendingTerminalCreation])
-
   async function persistConfig(nextConfig: AppConfig) {
     setConfig(nextConfig)
     const saved = await window.collaborator.saveConfig(nextConfig)
     setConfig(saved)
     setSidebarWidth(saved.ui.sidebarWidth)
     setDarkMode(saved.ui.darkMode)
-    setCanvasCollapsed(saved.ui.canvasCollapsed)
+    setSidebarCollapsed(saved.ui.sidebarCollapsed)
   }
 
   async function persistUi(nextUi: Partial<AppConfig['ui']>) {
@@ -334,29 +313,11 @@ export default function App() {
   }
 
   function placeFileOnCanvas(file: FileTreeNode) {
-    if (canvasCollapsed) {
-      setPendingPlacementFile(file)
-      setCanvasCollapsed(false)
-      void persistUi({
-        canvasCollapsed: false
-      })
-      return
-    }
-
     canvasRef.current?.spawnFileTile(file)
     setViewerFile(file)
   }
 
   function createTerminal() {
-    if (canvasCollapsed) {
-      setPendingTerminalCreation(true)
-      setCanvasCollapsed(false)
-      void persistUi({
-        canvasCollapsed: false
-      })
-      return
-    }
-
     canvasRef.current?.createTerminal()
   }
 
@@ -399,15 +360,14 @@ export default function App() {
     <div className="app-shell">
       <div className="flex h-full min-w-0 flex-1">
         <div
-          style={canvasCollapsed ? undefined : { width: sidebarWidth }}
+          style={sidebarCollapsed ? { width: 0 } : { width: sidebarWidth }}
           className={clsx(
-            'min-w-[260px]',
-            canvasCollapsed ? 'flex-1' : 'max-w-[520px]'
+            'overflow-hidden transition-[width,opacity] duration-200',
+            sidebarCollapsed ? 'pointer-events-none w-0 opacity-0' : 'min-w-[260px] max-w-[520px] opacity-100'
           )}
         >
           <Sidebar
             activeFilePath={viewerFile?.path ?? null}
-            canvasCollapsed={canvasCollapsed}
             config={config}
             darkMode={darkMode}
             loadingWorkspace={loadingWorkspace}
@@ -423,11 +383,11 @@ export default function App() {
                 activeWorkspace: index
               })
             }
-            onToggleCanvas={() => {
-              const nextCollapsed = !canvasCollapsed
-              setCanvasCollapsed(nextCollapsed)
+            onToggleSidebar={() => {
+              const nextCollapsed = !sidebarCollapsed
+              setSidebarCollapsed(nextCollapsed)
               void persistUi({
-                canvasCollapsed: nextCollapsed
+                sidebarCollapsed: nextCollapsed
               })
             }}
             onToggleDarkMode={() => {
@@ -437,44 +397,56 @@ export default function App() {
                 darkMode: nextDarkMode
               })
             }}
+            sidebarCollapsed={sidebarCollapsed}
             workspaceTree={workspaceTree}
           />
         </div>
 
-        {canvasCollapsed ? null : (
-          <>
-            <div
-              className="w-3 cursor-col-resize"
-              onPointerDown={(event) => {
-                resizeRef.current = {
-                  startX: event.clientX,
-                  startWidth: sidebarWidth
-                }
-              }}
-            />
-
-            <main className="relative min-w-0 flex-1">
-              <CanvasSurface
-                activeWorkspacePath={activeWorkspace}
-                darkMode={darkMode}
-                ref={canvasRef}
-                onOpenFile={previewFile}
-                onStateChange={handleCanvasStateChange}
-                state={canvasState}
-              />
-              <ViewerOverlay
-                file={viewerFile}
-                onClose={() => setViewerFile(null)}
-                onPlaceOnCanvas={placeFileOnCanvas}
-              />
-              {workspaceError ? (
-                <div className="glass-panel absolute right-4 top-4 z-[260] rounded-2xl border border-rose-200 px-4 py-3 text-sm text-rose-700">
-                  {workspaceError}
-                </div>
-              ) : null}
-            </main>
-          </>
+        {sidebarCollapsed ? null : (
+          <div
+            className="w-3 cursor-col-resize"
+            onPointerDown={(event) => {
+              resizeRef.current = {
+                startX: event.clientX,
+                startWidth: sidebarWidth
+              }
+            }}
+          />
         )}
+
+        <main className="relative min-w-0 flex-1">
+          {sidebarCollapsed ? (
+            <button
+              className="glass-panel absolute left-4 top-4 z-[270] rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-1.5 text-xs text-[var(--text-dim)] transition hover:bg-[var(--surface-1)]"
+              onClick={() => {
+                setSidebarCollapsed(false)
+                void persistUi({
+                  sidebarCollapsed: false
+                })
+              }}
+            >
+              Show Sidebar
+            </button>
+          ) : null}
+          <CanvasSurface
+            activeWorkspacePath={activeWorkspace}
+            darkMode={darkMode}
+            ref={canvasRef}
+            onOpenFile={previewFile}
+            onStateChange={handleCanvasStateChange}
+            state={canvasState}
+          />
+          <ViewerOverlay
+            file={viewerFile}
+            onClose={() => setViewerFile(null)}
+            onPlaceOnCanvas={placeFileOnCanvas}
+          />
+          {workspaceError ? (
+            <div className="glass-panel absolute right-4 top-4 z-[260] rounded-2xl border border-rose-200 px-4 py-3 text-sm text-rose-700">
+              {workspaceError}
+            </div>
+          ) : null}
+        </main>
       </div>
 
       <SearchDialog
