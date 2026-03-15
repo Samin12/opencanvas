@@ -4,6 +4,7 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent
 } from 'react'
@@ -39,7 +40,7 @@ export interface CanvasSurfaceHandle {
 }
 
 type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
-type BoardTool = 'hand' | 'select' | 'box' | 'arrow' | 'note' | 'draw'
+type BoardTool = 'hand' | 'select' | 'box' | 'arrow' | 'text' | 'note' | 'draw' | 'frame'
 type ShortcutAction = BoardTool | 'terminal'
 type GestureLikeEvent = Event & {
   clientX?: number
@@ -83,22 +84,26 @@ const MAX_ZOOM = 1
 const MIN_TILE_WIDTH = 280
 const MIN_TILE_HEIGHT = 220
 const CAMERA_EPSILON = 0.001
+const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
 const SHORTCUT_ITEMS: Array<{ action: ShortcutAction; key: string; label: string }> = [
-  { action: 'terminal', key: 'T', label: 'Terminal' },
+  { action: 'terminal', key: 'Shift+T', label: 'Terminal' },
   { action: 'hand', key: 'M', label: 'Move' },
   { action: 'select', key: 'V', label: 'Select' },
   { action: 'box', key: 'B', label: 'Box' },
   { action: 'arrow', key: 'A', label: 'Arrow' },
+  { action: 'text', key: 'T', label: 'Text' },
   { action: 'note', key: 'N', label: 'Note' },
-  { action: 'draw', key: 'D', label: 'Draw' }
+  { action: 'draw', key: 'D', label: 'Draw' },
+  { action: 'frame', key: 'F', label: 'Frame' }
 ]
-const BOARD_TOOL_SHORTCUTS: Record<string, ShortcutAction> = {
+const BOARD_TOOL_SHORTCUTS: Record<string, BoardTool> = {
   a: 'arrow',
   b: 'box',
   d: 'draw',
+  f: 'frame',
   m: 'hand',
   n: 'note',
-  t: 'terminal',
+  t: 'text',
   v: 'select'
 }
 
@@ -108,6 +113,10 @@ function clamp(value: number, min: number, max: number) {
 
 function snap(value: number) {
   return Math.round(value / GRID_SIZE) * GRID_SIZE
+}
+
+function hasCollaboratorFilePayload(dataTransfer: DataTransfer | null) {
+  return Boolean(dataTransfer && Array.from(dataTransfer.types).includes(COLLABORATOR_FILE_MIME))
 }
 
 function viewportToCamera(viewport: CanvasState['viewport']) {
@@ -688,7 +697,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           return
         }
 
-        const nextTool = BOARD_TOOL_SHORTCUTS[event.key.toLowerCase()]
+        const lowerKey = event.key.toLowerCase()
+        const nextTool = BOARD_TOOL_SHORTCUTS[lowerKey]
 
         if (event.key === 'Escape') {
           if (selectedTileId) {
@@ -713,6 +723,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             editorRef.current.deleteShapes(selectedShapeIds)
           }
 
+          return
+        }
+
+        if (lowerKey === 't' && event.shiftKey) {
+          event.preventDefault()
+          runShortcutAction('terminal')
           return
         }
 
@@ -918,9 +934,22 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       setSelectedTileId(tileId)
     }
 
-    function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    function handleDragOverCapture(event: ReactDragEvent<HTMLDivElement>) {
+      if (!hasCollaboratorFilePayload(event.dataTransfer)) {
+        return
+      }
+
       event.preventDefault()
-      const payload = event.dataTransfer.getData('application/x-collaborator-file')
+    }
+
+    function handleDropCapture(event: ReactDragEvent<HTMLDivElement>) {
+      if (!hasCollaboratorFilePayload(event.dataTransfer)) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      const payload = event.dataTransfer.getData(COLLABORATOR_FILE_MIME)
 
       if (!payload) {
         return
@@ -962,48 +991,56 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
           createTerminalAt(event.clientX, event.clientY)
         }}
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={handleDrop}
+        onDragOverCapture={handleDragOverCapture}
+        onDropCapture={handleDropCapture}
       >
         <div
           data-canvas-ui="true"
-          className="absolute right-4 top-4 z-[220] w-[176px] rounded-[16px] border border-slate-300/90 bg-white/90 p-2 shadow-[0_12px_24px_rgba(15,23,42,0.10)] backdrop-blur"
+          className="group absolute right-4 top-4 z-[220]"
         >
-          <div className="mb-2 text-[10px] uppercase tracking-[0.22em] text-slate-400">Canvas Keys</div>
-          <div className="grid grid-cols-1 gap-1">
-            {SHORTCUT_ITEMS.map((shortcut) => {
-              const isActive =
-                shortcut.action !== 'terminal' && activeBoardTool === shortcut.action
+          <div className="flex h-10 w-10 items-center overflow-hidden rounded-full border border-slate-300/90 bg-white/92 shadow-[0_10px_22px_rgba(15,23,42,0.08)] backdrop-blur transition-[width,border-radius] duration-200 group-hover:w-[332px] group-hover:rounded-[18px] group-focus-within:w-[332px] group-focus-within:rounded-[18px]">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center text-[13px] font-semibold tracking-[0.2em] text-slate-500">
+              ?
+            </div>
+            <div className="min-w-0 flex-1 pr-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+              <div className="pt-2 text-[10px] uppercase tracking-[0.22em] text-slate-400">Canvas Keys</div>
+              <div className="mt-1.5 grid grid-cols-3 gap-1.5 pb-2">
+                {SHORTCUT_ITEMS.map((shortcut) => {
+                  const isActive =
+                    shortcut.action !== 'terminal' && activeBoardTool === shortcut.action
 
-              return (
-                <button
-                  key={shortcut.action}
-                  className={clsx(
-                    'flex items-center justify-between rounded-[10px] px-2 py-1.5 text-left transition',
-                    isActive
-                      ? 'bg-slate-800 text-white'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  )}
-                  onClick={() => runShortcutAction(shortcut.action)}
-                >
-                  <span className="text-[11px] uppercase tracking-[0.16em]">{shortcut.label}</span>
-                  <span
-                    className={clsx(
-                      'rounded-md border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.18em]',
-                      isActive
-                        ? 'border-white/25 bg-white/12 text-white'
-                        : 'border-slate-200 bg-white text-slate-500'
-                    )}
-                  >
-                    {shortcut.key}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-          <div className="mt-2 flex items-center justify-between rounded-[10px] border border-slate-200 bg-slate-50 px-2 py-1.5 text-[10px] uppercase tracking-[0.16em] text-slate-500">
-            <span>Delete Selected</span>
-            <span className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 font-medium">⌫</span>
+                  return (
+                    <button
+                      key={shortcut.action}
+                      className={clsx(
+                        'flex items-center justify-between rounded-[10px] border px-2 py-1.5 text-left transition',
+                        isActive
+                          ? 'border-slate-800 bg-slate-800 text-white'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'
+                      )}
+                      onClick={() => runShortcutAction(shortcut.action)}
+                    >
+                      <span className="truncate pr-2 text-[10px] uppercase tracking-[0.14em]">
+                        {shortcut.label}
+                      </span>
+                      <span
+                        className={clsx(
+                          'shrink-0 rounded-md border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.16em]',
+                          isActive
+                            ? 'border-white/25 bg-white/12 text-white'
+                            : 'border-slate-200 bg-slate-50 text-slate-500'
+                        )}
+                      >
+                        {shortcut.key}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="border-t border-slate-200/80 py-2 text-[10px] uppercase tracking-[0.16em] text-slate-400">
+                Paste or drop images, video, or URLs. Delete removes the current tile or shape.
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1013,6 +1050,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             className="collab-tldraw"
             hideUi
             inferDarkMode={false}
+            maxAssetSize={1024 * 1024 * 256}
             onMount={handleBoardMount}
           />
         </div>
