@@ -998,11 +998,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           data-canvas-ui="true"
           className="group absolute right-4 top-4 z-[220]"
         >
-          <div className="flex h-10 w-10 items-center overflow-hidden rounded-full border border-slate-300/90 bg-white/92 shadow-[0_10px_22px_rgba(15,23,42,0.08)] backdrop-blur transition-[width,border-radius] duration-200 group-hover:w-[332px] group-hover:rounded-[18px] group-focus-within:w-[332px] group-focus-within:rounded-[18px]">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center text-[13px] font-semibold tracking-[0.2em] text-slate-500">
+          <div className="flex min-h-10 w-10 origin-top-right items-start overflow-hidden rounded-full border border-slate-300/90 bg-white/92 shadow-[0_10px_22px_rgba(15,23,42,0.08)] backdrop-blur transition-[width,max-height,border-radius] duration-200 ease-out max-h-10 group-hover:w-[332px] group-hover:max-h-[220px] group-hover:rounded-[18px] group-focus-within:w-[332px] group-focus-within:max-h-[220px] group-focus-within:rounded-[18px]">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center self-start text-[13px] font-semibold tracking-[0.2em] text-slate-500">
               ?
             </div>
-            <div className="min-w-0 flex-1 pr-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+            <div className="min-w-0 flex-1 self-stretch pr-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
               <div className="pt-2 text-[10px] uppercase tracking-[0.22em] text-slate-400">Canvas Keys</div>
               <div className="mt-1.5 grid grid-cols-3 gap-1.5 pb-2">
                 {SHORTCUT_ITEMS.map((shortcut) => {
@@ -1058,12 +1058,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         <div
           className="pointer-events-none absolute inset-0"
           style={{
-            backgroundImage: `
-              radial-gradient(circle, rgba(148, 163, 184, 0.2) 0.7px, transparent 1px),
-              radial-gradient(circle, rgba(100, 116, 139, 0.12) 1.1px, transparent 1.4px)
-            `,
-            backgroundSize: `${GRID_SIZE * state.viewport.zoom}px ${GRID_SIZE * state.viewport.zoom}px, ${MAJOR_GRID * state.viewport.zoom}px ${MAJOR_GRID * state.viewport.zoom}px`,
-            backgroundPosition: `${state.viewport.panX}px ${state.viewport.panY}px, ${state.viewport.panX}px ${state.viewport.panY}px`
+            backgroundImage:
+              'radial-gradient(circle, rgba(148, 163, 184, 0.26) 0.9px, transparent 1.15px)',
+            backgroundSize: `${GRID_SIZE * state.viewport.zoom}px ${GRID_SIZE * state.viewport.zoom}px`,
+            backgroundPosition: `${state.viewport.panX}px ${state.viewport.panY}px`
           }}
         />
 
