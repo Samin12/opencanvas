@@ -16,6 +16,7 @@ const MAX_BUFFER_SIZE = 200_000
 const TMUX_SOCKET_NAME = 'collaborator-clone'
 const TERMINAL_SESSIONS_DIRECTORY = join(APP_DIRECTORY, 'terminal-sessions')
 const TMUX_CONFIG_PATH = join(APP_DIRECTORY, 'tmux.conf')
+const CLAUDE_START_COMMAND = process.env.COLLABORATOR_CLAUDE_COMMAND ?? 'claude'
 const TMUX_BINARY_CANDIDATES = [
   process.env.COLLABORATOR_TMUX_BIN,
   'tmux',
@@ -245,6 +246,8 @@ export function createOrAttachTerminalSession(options: {
   const persisted = readPersistedTerminalSession(options.sessionId)
   const cwd = resolveSessionCwd(options)
   const tmuxSessionName = persisted?.tmuxSessionName ?? tmuxSessionNameFor(options.sessionId)
+  const sessionAlreadyExists = tmuxSessionExists(tmuxBinary, tmuxSessionName)
+  const shouldAutoLaunchClaude = !sessionAlreadyExists && Boolean(options.cwd && existsSync(options.cwd))
   ensureNodePtyHelperPermissions()
   const pty = nodePty.spawn(
     tmuxBinary,
@@ -288,6 +291,18 @@ export function createOrAttachTerminalSession(options: {
   })
 
   sessions.set(options.sessionId, session)
+
+  if (shouldAutoLaunchClaude) {
+    setTimeout(() => {
+      const activeSession = sessions.get(session.sessionId)
+
+      if (!activeSession) {
+        return
+      }
+
+      activeSession.pty.write(`${CLAUDE_START_COMMAND}\r`)
+    }, 180)
+  }
 
   return {
     sessionId: session.sessionId,

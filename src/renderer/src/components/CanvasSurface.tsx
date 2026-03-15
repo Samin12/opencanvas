@@ -49,6 +49,11 @@ type GestureLikeEvent = Event & {
   preventDefault: () => void
   scale: number
 }
+type DragConnectionState = {
+  currentX: number
+  currentY: number
+  sourceTileId: string
+}
 
 type InteractionState =
   | {
@@ -193,9 +198,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       originClientY: number
       startZoom: number
     } | null>(null)
+    const dragConnectionRef = useRef<DragConnectionState | null>(null)
     const canvasActiveRef = useRef(true)
     const stateRef = useRef(state)
     const [activeBoardTool, setActiveBoardTool] = useState<BoardTool>('hand')
+    const [dragConnection, setDragConnection] = useState<DragConnectionState | null>(null)
     const [linkSourceTileId, setLinkSourceTileId] = useState<string | null>(null)
     const [selectedTileId, setSelectedTileId] = useState<string | null>(null)
     const [zoomIndicator, setZoomIndicator] = useState<string | null>(null)
@@ -224,6 +231,29 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         .filter(isContextSourceTile)
     }
 
+    function connectorCenterForTile(tile: CanvasTile) {
+      return {
+        x: tile.type === 'term' ? tile.x - 10 : tile.x + tile.width + 10,
+        y: tile.y + tile.height / 2
+      }
+    }
+
+    function setActiveDragConnection(nextConnection: DragConnectionState | null) {
+      dragConnectionRef.current = nextConnection
+      setDragConnection(nextConnection)
+    }
+
+    function terminalConnectorIdFromTarget(target: EventTarget | null) {
+      if (!(target instanceof HTMLElement)) {
+        return null
+      }
+
+      const connector = target.closest<HTMLElement>('[data-terminal-connector-id]')
+      const terminalConnectorId = connector?.dataset.terminalConnectorId
+
+      return typeof terminalConnectorId === 'string' ? terminalConnectorId : null
+    }
+
     function toggleLinkMode(tileId: string) {
       const tile = tileById(tileId)
 
@@ -233,6 +263,25 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       setSelectedTileId(tileId)
       setLinkSourceTileId((current) => (current === tileId ? null : tileId))
+    }
+
+    function beginConnectionDrag(tileId: string, event: ReactPointerEvent<HTMLDivElement>) {
+      const tile = tileById(tileId)
+
+      if (!isContextSourceTile(tile)) {
+        return
+      }
+
+      const { x, y } = connectorCenterForTile(tile)
+
+      event.stopPropagation()
+      setSelectedTileId(tileId)
+      setLinkSourceTileId(tileId)
+      setActiveDragConnection({
+        sourceTileId: tileId,
+        currentX: x,
+        currentY: y
+      })
     }
 
     function attachContextTile(sourceTileId: string, terminalTileId: string) {
@@ -284,7 +333,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       )
     }
 
-    function buildClaudeContextPrompt(terminalTileId: string) {
+    function buildClaudeCodeContextPrompt(terminalTileId: string) {
       const terminalTile = tileById(terminalTileId)
 
       if (!terminalTile || terminalTile.type !== 'term') {
@@ -295,7 +344,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         new Set(
           contextTilesForTerminal(terminalTile)
             .map((tile) => tile.filePath)
-            .filter((value): value is string => Boolean(value))
+            .filter((filePath): filePath is string => typeof filePath === 'string')
         )
       )
 
@@ -312,20 +361,20 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       ].join('\n')
     }
 
-    function pasteClaudeContext(terminalTileId: string) {
+    function pasteClaudeCodeContext(terminalTileId: string) {
       const terminalTile = tileById(terminalTileId)
 
       if (!terminalTile || terminalTile.type !== 'term' || !terminalTile.sessionId) {
         return
       }
 
-      const prompt = buildClaudeContextPrompt(terminalTileId)
+      const prompt = buildClaudeCodeContextPrompt(terminalTileId)
 
       if (!prompt) {
         return
       }
 
-      window.collaborator.writeTerminalInput(terminalTile.sessionId, prompt)
+      window.collaborator.writeTerminalInput(terminalTile.sessionId, `${prompt}\n`)
     }
 
     function updateState(nextState: CanvasState, options?: { immediate?: boolean }) {
@@ -436,6 +485,29 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       const normalizedDelta = normalizeWheelDelta(deltaY, deltaMode)
       const zoomFactor = Math.exp(-normalizedDelta * 0.0025)
       zoomAt(clientX, clientY, stateRef.current.viewport.zoom * zoomFactor)
+    }
+
+    function zoomAroundCenter(nextZoom: number) {
+      const container = containerRef.current
+
+      if (!container) {
+        return
+      }
+
+      const rect = container.getBoundingClientRect()
+      zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, nextZoom)
+    }
+
+    function zoomByFactor(factor: number) {
+      zoomAroundCenter(stateRef.current.viewport.zoom * factor)
+    }
+
+    function resetViewportZoom() {
+      setViewport({
+        ...stateRef.current.viewport,
+        zoom: 1
+      })
+      showZoom(1)
     }
 
     function pinchOrigin(clientX?: number, clientY?: number) {
@@ -707,29 +779,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         spawnFileTile(file)
       },
       zoomIn: () => {
-        const container = containerRef.current
-        if (!container) {
-          return
-        }
-
-        const rect = container.getBoundingClientRect()
-        zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, stateRef.current.viewport.zoom * 1.1)
+        zoomByFactor(1.1)
       },
       zoomOut: () => {
-        const container = containerRef.current
-        if (!container) {
-          return
-        }
-
-        const rect = container.getBoundingClientRect()
-        zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, stateRef.current.viewport.zoom * 0.9)
+        zoomByFactor(0.9)
       },
       resetZoom: () => {
-        setViewport({
-          ...stateRef.current.viewport,
-          zoom: 1
-        })
-        showZoom(1)
+        resetViewportZoom()
       }
     }))
 
@@ -898,6 +954,16 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         const interaction = interactionRef.current
 
         if (!interaction) {
+          if (dragConnectionRef.current) {
+            const point = pagePointFromClient(event.clientX, event.clientY)
+
+            setActiveDragConnection({
+              ...dragConnectionRef.current,
+              currentX: point.x,
+              currentY: point.y
+            })
+          }
+
           return
         }
 
@@ -975,7 +1041,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         })
       }
 
-      function handlePointerUp() {
+      function handlePointerUp(event: PointerEvent) {
+        if (dragConnectionRef.current) {
+          const terminalTileId = terminalConnectorIdFromTarget(event.target)
+
+          if (terminalTileId) {
+            attachContextTile(dragConnectionRef.current.sourceTileId, terminalTileId)
+          } else {
+            setLinkSourceTileId(null)
+          }
+
+          setActiveDragConnection(null)
+        }
+
         const interaction = interactionRef.current
 
         if (!interaction) {
@@ -1070,6 +1148,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       if (linkSourceTileId === tileId) {
         setLinkSourceTileId(null)
       }
+
+      if (dragConnectionRef.current?.sourceTileId === tileId) {
+        setActiveDragConnection(null)
+      }
     }
 
     function createTerminalAt(clientX: number, clientY: number) {
@@ -1124,6 +1206,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
     const activeLinkSourceTile = tileById(linkSourceTileId)
     const linkSourceTile = isContextSourceTile(activeLinkSourceTile) ? activeLinkSourceTile : null
+    const zoomLabel = `${Math.round(state.viewport.zoom * 100)}%`
+    const canZoomIn = state.viewport.zoom < MAX_ZOOM - CAMERA_EPSILON
+    const canZoomOut = state.viewport.zoom > MIN_ZOOM + CAMERA_EPSILON
     const terminalConnections = state.tiles.flatMap((terminalTile) => {
       if (terminalTile.type !== 'term') {
         return []
@@ -1210,7 +1295,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 })}
               </div>
               <div className="border-t border-[color:var(--line)] py-2 text-[10px] uppercase tracking-[0.16em] text-[var(--text-faint)]">
-                Shift+T opens a terminal. Select a file tile and press L to link it to a terminal.
+                Drag from a file dot to a terminal dot. Connected files become Claude Code context.
               </div>
             </div>
           </div>
@@ -1218,8 +1303,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
         {linkSourceTile ? (
           <div className="pointer-events-none absolute left-4 top-4 z-[210] rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-1.5 text-[11px] font-medium tracking-[0.16em] text-[var(--text-dim)] backdrop-blur">
-            Linking <span className="text-[var(--text)]">{linkSourceTile.title}</span>. Click
-            Attach Here on a terminal or press Esc to cancel.
+            Drag <span className="text-[var(--text)]">{linkSourceTile.title}</span> into a terminal
+            dot, or press Esc to cancel.
           </div>
         ) : null}
 
@@ -1252,10 +1337,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         >
           <svg className="absolute inset-0 h-full w-full" style={{ overflow: 'visible' }}>
             {terminalConnections.map(({ sourceTile, terminalTile }) => {
-              const startX = sourceTile.x + sourceTile.width
-              const startY = sourceTile.y + sourceTile.height / 2
-              const endX = terminalTile.x
-              const endY = terminalTile.y + terminalTile.height / 2
+              const start = connectorCenterForTile(sourceTile)
+              const end = connectorCenterForTile(terminalTile)
+              const startX = start.x
+              const startY = start.y
+              const endX = end.x
+              const endY = end.y
               const controlOffset = Math.max(80, Math.abs(endX - startX) * 0.4)
 
               return (
@@ -1273,6 +1360,35 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 </g>
               )
             })}
+            {dragConnection ? (() => {
+              const sourceTile = tileById(dragConnection.sourceTileId)
+
+              if (!isContextSourceTile(sourceTile)) {
+                return null
+              }
+
+              const start = connectorCenterForTile(sourceTile)
+              const end = {
+                x: dragConnection.currentX,
+                y: dragConnection.currentY
+              }
+              const controlOffset = Math.max(80, Math.abs(end.x - start.x) * 0.4)
+
+              return (
+                <g key={`drag:${dragConnection.sourceTileId}`}>
+                  <path
+                    d={`M ${start.x} ${start.y} C ${start.x + controlOffset} ${start.y}, ${end.x - controlOffset} ${end.y}, ${end.x} ${end.y}`}
+                    fill="none"
+                    stroke="var(--link-line)"
+                    strokeDasharray="8 6"
+                    strokeLinecap="round"
+                    strokeWidth={2}
+                  />
+                  <circle cx={start.x} cy={start.y} fill="var(--link-line)" r={4} />
+                  <circle cx={end.x} cy={end.y} fill="var(--link-line)" opacity={0.75} r={4} />
+                </g>
+              )
+            })() : null}
           </svg>
 
           {state.tiles
@@ -1281,14 +1397,23 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             .map((tile) => (
               (() => {
                 const contextTiles = tile.type === 'term' ? contextTilesForTerminal(tile) : []
+                const isContextSource = isContextSourceTile(tile)
                 const isPendingLinkSource = linkSourceTileId === tile.id
+                const connectorLabel =
+                  tile.type === 'term'
+                    ? linkSourceTile && linkSourceTile.id !== tile.id
+                      ? `Attach ${linkSourceTile.title} to ${tile.title}`
+                      : contextTiles.length > 0
+                        ? `${tile.title} has linked context`
+                        : `${tile.title} terminal connector`
+                    : `Connect ${tile.title} to a terminal`
 
                 return (
                   <div
                     key={tile.id}
                     data-tile-root="true"
                     className={clsx(
-                      'pointer-events-auto absolute overflow-hidden rounded-[10px] border bg-[var(--surface-0)] shadow-[0_6px_14px_rgba(15,23,42,0.10)]',
+                      'pointer-events-auto absolute overflow-visible rounded-[10px] border bg-[var(--surface-0)] shadow-[0_6px_14px_rgba(15,23,42,0.10)]',
                       selectedTileId === tile.id
                         ? 'border-[color:var(--line-strong)] shadow-[0_0_0_2px_rgba(71,85,105,0.18),0_6px_14px_rgba(15,23,42,0.10)]'
                         : 'border-[color:var(--line)]',
@@ -1306,8 +1431,48 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       bringTileToFront(tile.id)
                     }}
                   >
+                {(tile.type === 'term' || isContextSource) ? (
+                  <div
+                    data-terminal-connector-id={tile.type === 'term' ? tile.id : undefined}
+                    className={clsx(
+                      'absolute top-1/2 z-20 h-5 w-5 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_4px_10px_rgba(56,189,248,0.28)] transition',
+                      tile.type === 'term' ? 'left-[-11px]' : 'right-[-11px]',
+                      tile.type === 'term'
+                        ? linkSourceTile && linkSourceTile.id !== tile.id
+                          ? 'bg-[color:var(--link-line)] scale-110'
+                          : contextTiles.length > 0
+                            ? 'bg-[color:var(--link-line)]'
+                            : 'bg-[color:var(--link-line)]'
+                        : isPendingLinkSource
+                          ? 'bg-[color:var(--link-line)] scale-110'
+                          : 'bg-[color:var(--link-line)]'
+                    )}
+                    title={connectorLabel}
+                    onPointerDown={(event) => {
+                      event.stopPropagation()
+
+                      if (tile.type === 'term') {
+                        return
+                      }
+
+                      beginConnectionDrag(tile.id, event)
+                    }}
+                    onClick={(event) => {
+                      event.stopPropagation()
+
+                      if (tile.type === 'term' && linkSourceTile && linkSourceTile.id !== tile.id) {
+                        attachContextTile(linkSourceTile.id, tile.id)
+                        return
+                      }
+
+                      if (tile.type !== 'term') {
+                        toggleLinkMode(tile.id)
+                      }
+                    }}
+                  />
+                ) : null}
                 <div
-                  className="flex items-center justify-between border-b border-[color:var(--line)] bg-[var(--surface-1)] px-3 py-1.5"
+                  className="flex items-center justify-between rounded-t-[10px] border-b border-[color:var(--line)] bg-[var(--surface-1)] px-3 py-1.5"
                   onPointerDown={(event) => {
                     if (event.button !== 0) {
                       return
@@ -1336,37 +1501,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {tile.filePath ? (
-                      <button
-                        className={clsx(
-                          'rounded-full border px-2 py-1 text-[10px] font-medium uppercase tracking-[0.16em] transition',
-                          isPendingLinkSource
-                            ? 'border-[color:var(--link-line)] bg-[color:var(--link-line-soft)] text-[color:var(--link-line)]'
-                            : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]'
-                        )}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        title="Link this file tile to a terminal"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          toggleLinkMode(tile.id)
-                        }}
-                      >
-                        Link
-                      </button>
-                    ) : null}
-                    {tile.type === 'term' && linkSourceTile && linkSourceTile.id !== tile.id ? (
-                      <button
-                        className="rounded-full border border-[color:var(--link-line)] bg-[color:var(--link-line-soft)] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-[color:var(--link-line)] transition hover:brightness-95"
-                        onPointerDown={(event) => event.stopPropagation()}
-                        title="Attach the pending file tile to this terminal"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          attachContextTile(linkSourceTile.id, tile.id)
-                        }}
-                      >
-                        Attach Here
-                      </button>
-                    ) : null}
                     {tile.filePath ? (
                       <button
                         className="flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] text-[12px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
@@ -1410,8 +1544,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                         {contextTiles.length === 0 ? (
                           <div className="text-[11px] text-[var(--text-dim)]">
                             {linkSourceTile
-                              ? 'Ready to attach the selected file tile to this terminal.'
-                              : 'No linked context yet. Select a file tile and press L to link it.'}
+                              ? 'Drop the dragged connector on this terminal dot to attach it.'
+                              : 'Drag a blue dot from a file tile into this terminal to build Claude Code context.'}
                           </div>
                         ) : (
                           contextTiles.map((contextTile) => (
@@ -1438,10 +1572,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                           disabled={contextTiles.length === 0}
                           onClick={(event) => {
                             event.stopPropagation()
-                            pasteClaudeContext(tile.id)
+                            pasteClaudeCodeContext(tile.id)
                           }}
                         >
-                          Paste Claude Context
+                          Paste Claude Code Context
                         </button>
                       </div>
 
@@ -1488,10 +1622,48 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         </div>
 
         {zoomIndicator ? (
-          <div className="pointer-events-none absolute bottom-5 right-5 rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-1.5 text-[11px] font-medium tracking-[0.2em] text-[var(--text-dim)] backdrop-blur">
+          <div className="pointer-events-none absolute bottom-[4.5rem] right-4 z-[220] rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-1.5 text-[11px] font-medium tracking-[0.2em] text-[var(--text-dim)] backdrop-blur">
             {zoomIndicator}
           </div>
         ) : null}
+
+        <div
+          data-canvas-ui="true"
+          className="absolute bottom-4 right-4 z-[220] flex items-center gap-1 rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] p-1 shadow-[0_10px_22px_rgba(15,23,42,0.08)] backdrop-blur"
+        >
+          <button
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] text-lg leading-none text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
+            aria-label="Zoom out"
+            disabled={!canZoomOut}
+            onClick={() => {
+              zoomByFactor(0.9)
+            }}
+            title="Zoom out"
+          >
+            -
+          </button>
+          <button
+            className="min-w-16 rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-[11px] font-medium tracking-[0.18em] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]"
+            aria-label="Reset zoom"
+            onClick={() => {
+              resetViewportZoom()
+            }}
+            title="Reset zoom"
+          >
+            {zoomLabel}
+          </button>
+          <button
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] text-lg leading-none text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
+            aria-label="Zoom in"
+            disabled={!canZoomIn}
+            onClick={() => {
+              zoomByFactor(1.1)
+            }}
+            title="Zoom in"
+          >
+            +
+          </button>
+        </div>
       </div>
     )
   }

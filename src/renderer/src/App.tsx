@@ -365,8 +365,10 @@ export default function App() {
     try {
       const createdNode = await window.collaborator.createWorkspaceNote(activeWorkspace)
       const nextTree = await refreshWorkspaceTree(activeWorkspace)
+      const nextNode = findNodeByPath(nextTree, createdNode.path) ?? createdNode
 
-      setViewerFile(findNodeByPath(nextTree, createdNode.path) ?? createdNode)
+      canvasRef.current?.spawnFileTile(nextNode)
+      setViewerFile(null)
     } catch {
       setWorkspaceError('A new note could not be created in the workspace root.')
     }

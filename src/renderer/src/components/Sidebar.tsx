@@ -14,6 +14,35 @@ function SearchIcon() {
   )
 }
 
+function AddWorkspaceIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4.5 w-4.5 fill-none stroke-current stroke-[1.35]">
+      <path d="M2.25 4.25A1.75 1.75 0 0 1 4 2.5H6.5L8 4h4A1.75 1.75 0 0 1 13.75 5.75V11.75A1.75 1.75 0 0 1 12 13.5H4A1.75 1.75 0 0 1 2.25 11.75V4.25Z" strokeLinejoin="round" />
+      <path d="M11 8H8M9.5 6.5V9.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function NewNoteIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4.5 w-4.5 fill-none stroke-current stroke-[1.35]">
+      <path d="M4 2.25H9.25L12.5 5.5V12A1.75 1.75 0 0 1 10.75 13.75H4A1.75 1.75 0 0 1 2.25 12V4A1.75 1.75 0 0 1 4 2.25Z" strokeLinejoin="round" />
+      <path d="M9 2.75V5.75H12" strokeLinejoin="round" />
+      <path d="M8 8H5M8 10.5H5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function NewTerminalIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4.5 w-4.5 fill-none stroke-current stroke-[1.35]">
+      <rect x="2" y="2.5" width="12" height="11" rx="2" />
+      <path d="M4.5 6L6.75 8L4.5 10" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.25 10H11.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function SidebarIcon({ collapsed }: { collapsed: boolean }) {
   return (
     <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.3]">
@@ -51,23 +80,30 @@ function ThemeIcon({ darkMode }: { darkMode: boolean }) {
 function ActionIconButton({
   active = false,
   children,
+  className,
+  disabled = false,
   label,
   onClick
 }: {
   active?: boolean
   children: ReactNode
+  className?: string
+  disabled?: boolean
   label: string
   onClick: () => void
 }) {
   return (
     <button
       aria-label={label}
+      disabled={disabled}
       title={label}
       className={clsx(
         'flex h-8 w-8 items-center justify-center rounded-full border transition',
         active
           ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
-          : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:bg-[var(--surface-1)]'
+          : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:bg-[var(--surface-1)]',
+        'disabled:cursor-not-allowed disabled:opacity-40',
+        className
       )}
       onClick={onClick}
     >
@@ -177,25 +213,29 @@ export function Sidebar({
           </select>
 
           <div className="flex gap-2">
-            <button
-              className="rounded-2xl border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-sm font-medium text-[var(--text)] transition hover:bg-[var(--surface-1)]"
+            <ActionIconButton
+              className="h-10 w-10 rounded-2xl"
+              label="Add Workspace"
               onClick={onAddWorkspace}
             >
-              Add Workspace
-            </button>
-            <button
-              className="flex-1 rounded-2xl border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-sm font-medium text-[var(--text)] transition hover:bg-[var(--surface-1)] disabled:cursor-not-allowed disabled:opacity-40"
-              onClick={onCreateNote}
+              <AddWorkspaceIcon />
+            </ActionIconButton>
+            <ActionIconButton
+              className="h-10 w-10 rounded-2xl"
               disabled={!activeWorkspacePath}
+              label="New Note"
+              onClick={onCreateNote}
             >
-              New Note
-            </button>
-            <button
-              className="rounded-2xl border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-sm text-[var(--text)] transition hover:bg-[var(--surface-1)]"
+              <NewNoteIcon />
+            </ActionIconButton>
+            <ActionIconButton
+              className="h-10 w-10 rounded-2xl"
+              disabled={!activeWorkspacePath}
+              label="New Terminal"
               onClick={onCreateTerminal}
             >
-              New Terminal
-            </button>
+              <NewTerminalIcon />
+            </ActionIconButton>
           </div>
 
           <div className="flex items-center justify-between rounded-2xl border border-[color:var(--line)] bg-[var(--surface-1)] px-3 py-3 text-xs text-[var(--text-dim)]">
