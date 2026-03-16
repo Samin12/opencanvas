@@ -11,7 +11,11 @@ import type {
 
 import { CanvasSurface, type CanvasSurfaceHandle } from './components/CanvasSurface'
 import { HoverTooltip } from './components/HoverTooltip'
-import { SearchDialog } from './components/SearchDialog'
+import {
+  SearchDialog,
+  type SearchDialogResult,
+  type SearchScope
+} from './components/SearchDialog'
 import { Sidebar } from './components/Sidebar'
 import { ViewerOverlay } from './components/ViewerOverlay'
 import { keyboardShortcutsBlocked } from './utils/keyboard'
@@ -152,13 +156,28 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [sidebarSide, setSidebarSide] = useState<SidebarSide>('left')
   const [searchOpen, setSearchOpen] = useState(false)
+  const [searchScope, setSearchScope] = useState<SearchScope>('workspace')
+  const [globalSearchFiles, setGlobalSearchFiles] = useState<SearchDialogResult[]>([])
+  const [globalSearchLoading, setGlobalSearchLoading] = useState(false)
   const [loadingWorkspace, setLoadingWorkspace] = useState(false)
+  const [pendingSearchResult, setPendingSearchResult] = useState<SearchDialogResult | null>(null)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [bootError, setBootError] = useState<string | null>(null)
   const [terminalDependencies, setTerminalDependencies] = useState<TerminalDependencyState | null>(null)
 
   const activeWorkspace = config ? config.workspaces[config.activeWorkspace] ?? null : null
   const flatFiles = useMemo(() => flattenFiles(workspaceTree), [workspaceTree])
+  const workspaceSearchFiles = useMemo(
+    () =>
+      activeWorkspace
+        ? flatFiles.map((file) => ({
+            file,
+            workspacePath: activeWorkspace
+          }))
+        : [],
+    [activeWorkspace, flatFiles]
+  )
+  const searchFiles = searchScope === 'all-workspaces' ? globalSearchFiles : workspaceSearchFiles
   const selectedTreeNode = useMemo(
     () => (selectedTreePath ? findNodeByPath(workspaceTree, selectedTreePath) : null),
     [selectedTreePath, workspaceTree]
@@ -347,6 +366,77 @@ export default function App() {
   }, [activeWorkspace])
 
   useEffect(() => {
+    if (!searchOpen || searchScope !== 'all-workspaces') {
+      setGlobalSearchLoading(false)
+      return
+    }
+
+    let cancelled = false
+    const workspacePaths = config?.workspaces ?? []
+    const currentWorkspacePath = activeWorkspace
+    const currentWorkspaceTree = workspaceTree
+
+    setGlobalSearchLoading(true)
+
+    void (async () => {
+      const settledResults = await Promise.allSettled(
+        workspacePaths.map(async (workspacePath) => {
+          const tree =
+            workspacePath === currentWorkspacePath
+              ? currentWorkspaceTree
+              : await window.collaborator.readWorkspaceTree(workspacePath)
+
+          return flattenFiles(tree).map((file) => ({
+            file,
+            workspacePath
+          }))
+        })
+      )
+
+      if (cancelled) {
+        return
+      }
+
+      const nextResults: SearchDialogResult[] = []
+      let failureCount = 0
+
+      for (const result of settledResults) {
+        if (result.status === 'fulfilled') {
+          nextResults.push(...result.value)
+        } else {
+          failureCount += 1
+        }
+      }
+
+      setGlobalSearchFiles(nextResults)
+      setGlobalSearchLoading(false)
+
+      if (failureCount > 0) {
+        setWorkspaceError(
+          failureCount === workspacePaths.length
+            ? 'Opened workspaces could not be indexed for search.'
+            : 'Some opened workspaces could not be indexed for search.'
+        )
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeWorkspace, config, searchOpen, searchScope, workspaceTree])
+
+  useEffect(() => {
+    if (!pendingSearchResult || loadingWorkspace || activeWorkspace !== pendingSearchResult.workspacePath) {
+      return
+    }
+
+    const nextNode = findNodeByPath(workspaceTree, pendingSearchResult.file.path)
+
+    previewFile(nextNode?.kind === 'file' ? nextNode : pendingSearchResult.file)
+    setPendingSearchResult(null)
+  }, [activeWorkspace, loadingWorkspace, pendingSearchResult, workspaceTree])
+
+  useEffect(() => {
     document.documentElement.classList.toggle('theme-dark', darkMode)
     document.body.classList.toggle('theme-dark', darkMode)
 
@@ -416,11 +506,16 @@ export default function App() {
         }
       }
 
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        (event.key.toLowerCase() === 'k' || event.key.toLowerCase() === 'o')
-      ) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
+        setSearchScope('workspace')
+        setSearchOpen(true)
+        return
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'o') {
+        event.preventDefault()
+        setSearchScope('all-workspaces')
         setSearchOpen(true)
         return
       }
@@ -957,7 +1052,10 @@ export default function App() {
               }
               onOpenWorkspacePath={() => void openActiveWorkspacePath()}
               onMoveSidebar={setSidebarPlacement}
-              onOpenSearch={() => setSearchOpen(true)}
+              onOpenSearch={() => {
+                setSearchScope('workspace')
+                setSearchOpen(true)
+              }}
               onPlaceFile={placeFileOnCanvas}
               onRemoveWorkspace={() => void removeActiveWorkspace()}
               onSelectNode={selectWorkspaceNode}
@@ -1105,7 +1203,10 @@ export default function App() {
               }
               onOpenWorkspacePath={() => void openActiveWorkspacePath()}
               onMoveSidebar={setSidebarPlacement}
-              onOpenSearch={() => setSearchOpen(true)}
+              onOpenSearch={() => {
+                setSearchScope('workspace')
+                setSearchOpen(true)
+              }}
               onPlaceFile={placeFileOnCanvas}
               onRemoveWorkspace={() => void removeActiveWorkspace()}
               onSelectNode={selectWorkspaceNode}
@@ -1140,13 +1241,32 @@ export default function App() {
       </div>
 
       <SearchDialog
-        files={flatFiles}
+        loading={searchScope === 'all-workspaces' ? globalSearchLoading : false}
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
-        onSelect={(file) => {
-          previewFile(file)
+        onSelect={(result) => {
           setSearchOpen(false)
+
+          if (!config || result.workspacePath === activeWorkspace) {
+            previewFile(result.file)
+            return
+          }
+
+          const nextWorkspaceIndex = config.workspaces.indexOf(result.workspacePath)
+
+          if (nextWorkspaceIndex === -1) {
+            previewFile(result.file)
+            return
+          }
+
+          setPendingSearchResult(result)
+          void persistConfig({
+            ...config,
+            activeWorkspace: nextWorkspaceIndex
+          })
         }}
+        results={searchFiles}
+        scope={searchScope}
       />
     </div>
   )

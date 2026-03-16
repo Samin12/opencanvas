@@ -820,7 +820,7 @@ function SidebarComponent({
       <div className="shrink-0 border-t border-[color:var(--line)] bg-[var(--surface-2)] px-3.5 py-3">
         <div className="grid grid-cols-5 gap-2">
           <ActionIconButton
-            label="Search Files"
+            label="Search Workspace"
             onClick={onOpenSearch}
             shortcut={SEARCH_SHORTCUT_KEY}
           >

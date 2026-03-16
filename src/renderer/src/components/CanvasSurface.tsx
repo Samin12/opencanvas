@@ -137,6 +137,7 @@ const MAJOR_GRID = GRID_SIZE * 4
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 2
 const WHEEL_GESTURE_LOCK_MS = 180
+const POINTER_SCROLL_ACTIVATION_WINDOW_MS = 400
 const MIN_TILE_WIDTH = 280
 const MIN_TILE_HEIGHT = 220
 const CAMERA_EPSILON = 0.001
@@ -285,6 +286,24 @@ function scrollLockElementFromTarget(
   }
 
   return null
+}
+
+function wheelCaptureElementFromTarget(
+  target: EventTarget | null,
+  boundary: HTMLElement
+): HTMLElement | null {
+  return (
+    scrollLockElementFromTarget(target, boundary) ??
+    elementMatchingSelectorFromTarget(target, boundary, NATIVE_WHEEL_SELECTOR)
+  )
+}
+
+function elementsShareCaptureChain(candidate: HTMLElement | null, active: HTMLElement | null) {
+  if (!candidate || !active) {
+    return false
+  }
+
+  return candidate === active || candidate.contains(active) || active.contains(candidate)
 }
 
 function firstScrollableDescendant(root: HTMLElement): HTMLElement | null {
@@ -538,6 +557,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const wheelGestureTimerRef = useRef<number | null>(null)
     const dragConnectionRef = useRef<DragConnectionState | null>(null)
     const canvasActiveRef = useRef(true)
+    const activeScrollCaptureElementRef = useRef<HTMLElement | null>(null)
+    const lastPointerScrollActivationAtRef = useRef(0)
     const stateRef = useRef(state)
     const drawColorRef = useRef<TLDefaultColorStyle>('black')
     const [activeBoardTool, setActiveBoardTool] = useState<BoardTool>('hand')
@@ -1006,6 +1027,21 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       return owner
     }
 
+    function currentActiveScrollCaptureElement() {
+      const element = activeScrollCaptureElementRef.current
+
+      if (!element) {
+        return null
+      }
+
+      if (!element.isConnected) {
+        activeScrollCaptureElementRef.current = null
+        return null
+      }
+
+      return element
+    }
+
     function extendWheelGestureOwner(owner: WheelGestureOwner) {
       wheelGestureOwnerRef.current = owner
 
@@ -1031,16 +1067,18 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       const scrollLockElement = scrollLockElementFromTarget(target, container)
-      const scrollableElement = scrollableElementFromTarget(target, container)
+      const activeScrollCaptureElement = currentActiveScrollCaptureElement()
 
-      if (scrollableElement && canScrollElementForDelta(scrollableElement, deltaX, deltaY)) {
-        return {
-          kind: 'element',
-          element: scrollableElement
+      if (scrollLockElement && elementsShareCaptureChain(scrollLockElement, activeScrollCaptureElement)) {
+        const scrollableElement = scrollableElementFromTarget(target, container)
+
+        if (scrollableElement && canScrollElementForDelta(scrollableElement, deltaX, deltaY)) {
+          return {
+            kind: 'element',
+            element: scrollableElement
+          }
         }
-      }
 
-      if (scrollLockElement) {
         return {
           kind: 'element',
           element: scrollableElement ?? firstScrollableDescendant(scrollLockElement) ?? scrollLockElement
@@ -1528,14 +1566,21 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         const container = containerRef.current
         const targetInsideCanvas =
           event.target instanceof Node && (container?.contains(event.target) ?? false)
+        const scrollLockElement =
+          container && targetInsideCanvas ? scrollLockElementFromTarget(event.target, container) : null
         const activeWheelOwner = currentWheelGestureOwner()
         const nativeWheelElement =
           container && targetInsideCanvas
             ? elementMatchingSelectorFromTarget(event.target, container, NATIVE_WHEEL_SELECTOR)
             : null
+        const activeScrollCaptureElement = currentActiveScrollCaptureElement()
 
         if (!event.ctrlKey && !event.metaKey) {
-          if (nativeWheelElement) {
+          if (
+            scrollLockElement &&
+            nativeWheelElement &&
+            elementsShareCaptureChain(nativeWheelElement, activeScrollCaptureElement)
+          ) {
             clearWheelGestureOwner()
             return
           }
@@ -1667,10 +1712,29 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       function handlePointerContext(event: PointerEvent) {
+        const container = containerRef.current
+        const targetNode = event.target as Node | null
+        const targetInsideCanvas = Boolean(container && targetNode && container.contains(targetNode))
+
+        lastPointerScrollActivationAtRef.current = targetInsideCanvas ? Date.now() : 0
+        activeScrollCaptureElementRef.current =
+          container && targetInsideCanvas ? wheelCaptureElementFromTarget(event.target, container) : null
         syncBoardKeyboardFocus(event.target)
       }
 
       function handleFocusIn(event: FocusEvent) {
+        const container = containerRef.current
+        const targetNode = event.target as Node | null
+        const targetInsideCanvas = Boolean(container && targetNode && container.contains(targetNode))
+
+        if (
+          container &&
+          targetInsideCanvas &&
+          Date.now() - lastPointerScrollActivationAtRef.current <= POINTER_SCROLL_ACTIVATION_WINDOW_MS
+        ) {
+          activeScrollCaptureElementRef.current = wheelCaptureElementFromTarget(event.target, container)
+        }
+
         syncBoardKeyboardFocus(event.target)
       }
 
