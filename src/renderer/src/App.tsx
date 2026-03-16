@@ -899,7 +899,7 @@ export default function App() {
           {sidebarCollapsed && !viewerFile ? (
             <div
               className={clsx(
-                'glass-panel absolute top-3 z-[270] flex items-center gap-1 rounded-[6px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] p-1.5',
+                'app-drag-region glass-panel absolute top-3 z-[270] flex items-center gap-1 rounded-[6px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] p-1.5',
                 sidebarSide === 'left' ? 'left-3' : 'right-3'
               )}
             >
@@ -909,7 +909,7 @@ export default function App() {
                 shortcut={SIDEBAR_LEFT_SHORTCUT_KEY}
               >
                 <button
-                  className="flex h-10 w-10 items-center justify-center rounded-[4px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                  className="app-no-drag flex h-10 w-10 items-center justify-center rounded-[4px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
                   aria-label="Open sidebar on the left"
                   data-managed-tooltip="custom"
                   data-shortcut={SIDEBAR_LEFT_SHORTCUT_KEY ?? undefined}
@@ -924,7 +924,7 @@ export default function App() {
                 shortcut={SIDEBAR_RIGHT_SHORTCUT_KEY}
               >
                 <button
-                  className="flex h-10 w-10 items-center justify-center rounded-[4px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                  className="app-no-drag flex h-10 w-10 items-center justify-center rounded-[4px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
                   aria-label="Open sidebar on the right"
                   data-managed-tooltip="custom"
                   data-shortcut={SIDEBAR_RIGHT_SHORTCUT_KEY ?? undefined}

@@ -504,8 +504,9 @@ function SidebarComponent({
 
   return (
     <aside className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-r border-[color:var(--line)] bg-[var(--surface-1)]">
-      <div className="shrink-0 border-b border-[color:var(--line)] px-3.5 pb-3 pt-[40px]">
-        <div className="flex items-start gap-2.5">
+      <div className="relative shrink-0 border-b border-[color:var(--line)] px-3.5 pb-3 pt-[40px]">
+        <div aria-hidden="true" className="app-drag-region absolute inset-x-0 top-0 h-10" />
+        <div className="app-drag-region flex items-start gap-2.5">
           <img
             src={logoMark}
             alt="Open Canvas logo"
@@ -519,7 +520,7 @@ function SidebarComponent({
               Open Canvas
             </h1>
           </div>
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="app-no-drag flex shrink-0 items-center gap-1">
             <HeaderIconButton
               active={sidebarSide === 'left'}
               label="Dock navigator on the left"
@@ -546,7 +547,7 @@ function SidebarComponent({
           </div>
         </div>
 
-        <div className="mt-3 space-y-2">
+        <div className="app-no-drag mt-3 space-y-2">
           <div className="flex items-stretch gap-2">
             <div className="relative min-w-0 flex-1">
               <select
