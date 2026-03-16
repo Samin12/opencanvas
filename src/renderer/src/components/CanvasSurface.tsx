@@ -1643,7 +1643,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         activeOwner: WheelGestureOwner | null,
         resolvedOwner: WheelGestureOwner
       ) {
-        return !activeOwner
+        if (!activeOwner) {
+          return true
+        }
+
+        if (resolvedOwner.kind === 'board') {
+          return true
+        }
+
+        if (activeOwner.kind === 'board') {
+          return false
+        }
+
+        return activeOwner.element !== resolvedOwner.element
       }
 
       function handleGlobalWheel(event: WheelEvent) {
@@ -1655,19 +1667,28 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           container && targetInsideCanvas
             ? elementMatchingSelectorFromTarget(event.target, container, NATIVE_WHEEL_SELECTOR)
             : null
+        const normalizedDeltaX = normalizeWheelDelta(event.deltaX, event.deltaMode)
+        const normalizedDeltaY = normalizeWheelDelta(event.deltaY, event.deltaMode)
 
         if (!event.ctrlKey && !event.metaKey) {
           if (nativeWheelElement) {
-            clearWheelGestureOwner()
-            return
+            const nativeScrollableElement = container
+              ? scrollableElementFromTarget(event.target, container)
+              : null
+
+            if (
+              nativeScrollableElement &&
+              canScrollElementForDelta(nativeScrollableElement, normalizedDeltaX, normalizedDeltaY)
+            ) {
+              clearWheelGestureOwner()
+              return
+            }
           }
 
           if (!targetInsideCanvas && !activeWheelOwner) {
             return
           }
 
-          const normalizedDeltaX = normalizeWheelDelta(event.deltaX, event.deltaMode)
-          const normalizedDeltaY = normalizeWheelDelta(event.deltaY, event.deltaMode)
           const resolvedOwner = resolveWheelGestureOwner(
             event.target,
             normalizedDeltaX,
