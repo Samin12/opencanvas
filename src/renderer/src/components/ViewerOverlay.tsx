@@ -50,6 +50,10 @@ function viewerKindLabel(file: FileTreeNode): string {
     return 'Video'
   }
 
+  if (file.fileKind === 'pdf') {
+    return 'PDF'
+  }
+
   return 'Code'
 }
 

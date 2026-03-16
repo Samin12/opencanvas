@@ -101,7 +101,24 @@ function VideoIcon() {
   )
 }
 
-function iconToneClasses(kind: 'directory' | 'note' | 'code' | 'image' | 'video', darkMode: boolean) {
+function PdfIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+    >
+      <path d="M4 2.5H8.9L12.5 6.05V12A1.5 1.5 0 0 1 11 13.5H4A1.5 1.5 0 0 1 2.5 12V4A1.5 1.5 0 0 1 4 2.5Z" />
+      <path d="M8.7 2.75V6H12" />
+      <path d="M4.9 10.95h.85a.9.9 0 1 0 0-1.8H4.9v2.7" />
+      <path d="M7.35 11.85V9.15H8a1.35 1.35 0 1 1 0 2.7h-.65Z" />
+      <path d="M10.9 9.15H9.4v2.7" />
+      <path d="M9.4 10.45H10.55" />
+    </svg>
+  )
+}
+
+function iconToneClasses(kind: 'directory' | 'note' | 'code' | 'image' | 'video' | 'pdf', darkMode: boolean) {
   if (kind === 'directory') {
     return darkMode ? 'text-[#d8d9d4]' : 'text-[#53584f]'
   }
@@ -118,6 +135,10 @@ function iconToneClasses(kind: 'directory' | 'note' | 'code' | 'image' | 'video'
     return darkMode ? 'text-[#f6b26b]' : 'text-[#c76d28]'
   }
 
+  if (kind === 'pdf') {
+    return darkMode ? 'text-[#ff9d9d]' : 'text-[#c45151]'
+  }
+
   return darkMode ? 'text-[#c1c5bd]' : 'text-[#70756c]'
 }
 
@@ -129,7 +150,9 @@ export function FileKindIcon({
   fileKind: FileTreeNode['fileKind']
 }) {
   const kind =
-    fileKind === 'note' || fileKind === 'image' || fileKind === 'video' ? fileKind : 'code'
+    fileKind === 'note' || fileKind === 'image' || fileKind === 'video' || fileKind === 'pdf'
+      ? fileKind
+      : 'code'
 
   return (
     <span className={clsx('flex h-4.5 w-4.5 items-center justify-center', iconToneClasses(kind, darkMode))}>
@@ -139,6 +162,8 @@ export function FileKindIcon({
         <ImageIcon />
       ) : kind === 'video' ? (
         <VideoIcon />
+      ) : kind === 'pdf' ? (
+        <PdfIcon />
       ) : (
         <CodeIcon />
       )}

@@ -19,6 +19,7 @@ import {
 } from './components/SearchDialog'
 import { Sidebar } from './components/Sidebar'
 import { ViewerOverlay } from './components/ViewerOverlay'
+import { extractPastedUrl } from './utils/embedTiles'
 import { keyboardShortcutsBlocked } from './utils/keyboard'
 import { installButtonTooltipSync } from './utils/buttonTooltips'
 
@@ -614,20 +615,29 @@ export default function App() {
       )
       const file = imageItem?.getAsFile()
 
-      if (!file) {
+      if (file) {
+        event.preventDefault()
+        event.stopPropagation()
+
+        void (async () => {
+          const importedNode = await importWorkspaceImageFile(file)
+
+          if (importedNode) {
+            canvasRef.current?.spawnFileTile(importedNode)
+          }
+        })()
+        return
+      }
+
+      const pastedUrl = extractPastedUrl(event.clipboardData)
+
+      if (!pastedUrl) {
         return
       }
 
       event.preventDefault()
       event.stopPropagation()
-
-      void (async () => {
-        const importedNode = await importWorkspaceImageFile(file)
-
-        if (importedNode) {
-          canvasRef.current?.spawnFileTile(importedNode)
-        }
-      })()
+      canvasRef.current?.spawnEmbedTile(pastedUrl.canonicalUrl)
     }
 
     window.addEventListener('paste', handlePaste, true)
@@ -909,6 +919,33 @@ export default function App() {
       return importedNode
     } catch {
       setWorkspaceError('The image could not be saved into the active workspace.')
+      return null
+    }
+  }
+
+  async function importWorkspaceAssetFile(file: File): Promise<FileTreeNode | null> {
+    if (!activeWorkspace) {
+      setWorkspaceError('Add a workspace before dropping media or PDFs onto the canvas.')
+      return null
+    }
+
+    if (typeof window.collaborator.importWorkspaceAsset !== 'function') {
+      setWorkspaceError('Restart Open Canvas once to enable PDF and media imports.')
+      return null
+    }
+
+    try {
+      const importedNode = await window.collaborator.importWorkspaceAsset(activeWorkspace, {
+        bytes: Array.from(new Uint8Array(await file.arrayBuffer())),
+        fileName: file.name,
+        mimeType: file.type
+      })
+
+      setWorkspaceError(null)
+
+      return importedNode
+    } catch {
+      setWorkspaceError('That media file could not be saved into the active workspace.')
       return null
     }
   }
@@ -1208,6 +1245,7 @@ export default function App() {
             onConvertStickyNoteToMarkdown={(content) =>
               createWorkspaceMarkdownNote({ initialContent: content })
             }
+            onImportAssetFile={importWorkspaceAssetFile}
             onImportImageFile={importWorkspaceImageFile}
             onOpenFile={previewFile}
             onStateChange={handleCanvasStateChange}
