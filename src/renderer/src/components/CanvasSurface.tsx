@@ -111,13 +111,13 @@ const CAMERA_EPSILON = 0.001
 const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
 const SCROLL_LOCK_SELECTOR = '[data-scroll-lock="true"]'
 const SHORTCUT_ITEMS: Array<{ action: ShortcutAction; key: string; label: string }> = [
-  { action: 'terminal', key: 'Shift+T', label: 'Terminal' },
+  { action: 'terminal', key: 'Shift+T', label: 'New Terminal' },
   { action: 'hand', key: 'M', label: 'Move' },
   { action: 'select', key: 'V', label: 'Select' },
   { action: 'box', key: 'B', label: 'Box' },
   { action: 'arrow', key: 'A', label: 'Arrow' },
   { action: 'text', key: 'T', label: 'Text' },
-  { action: 'note', key: 'N', label: 'Note' },
+  { action: 'note', key: 'N', label: 'Canvas Note' },
   { action: 'draw', key: 'D', label: 'Draw' },
   { action: 'frame', key: 'F', label: 'Frame' }
 ]
@@ -1450,15 +1450,15 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           data-canvas-ui="true"
           className="group absolute right-3 top-3 z-[220]"
         >
-          <div className="flex min-h-10 w-10 origin-top-right items-start overflow-hidden rounded-[10px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] shadow-[0_10px_22px_rgba(15,23,42,0.12)] backdrop-blur transition-[width,max-height,border-radius] duration-200 ease-out max-h-10 group-hover:w-[332px] group-hover:max-h-[220px] group-hover:rounded-[10px] group-focus-within:w-[332px] group-focus-within:max-h-[220px] group-focus-within:rounded-[10px]">
+          <div className="flex min-h-10 w-10 max-w-[calc(100vw-1.5rem)] origin-top-right items-start overflow-hidden rounded-[10px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] shadow-[0_10px_22px_rgba(15,23,42,0.12)] backdrop-blur transition-[width,max-height,border-radius] duration-200 ease-out max-h-10 group-hover:w-[28rem] group-hover:max-h-[26rem] group-hover:rounded-[10px] group-focus-within:w-[28rem] group-focus-within:max-h-[26rem] group-focus-within:rounded-[10px]">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center self-start text-[13px] font-semibold tracking-[0.2em] text-[var(--text-dim)]">
               ?
             </div>
-            <div className="min-w-0 flex-1 self-stretch pr-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-              <div className="pt-2 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">
+            <div className="min-w-0 flex-1 self-stretch overflow-y-auto pr-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+              <div className="pt-2.5 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] uppercase tracking-[0.16em] text-[var(--text-faint)]">
                 Canvas Keys
               </div>
-              <div className="mt-1.5 grid grid-cols-3 gap-1.5 pb-2">
+              <div className="mt-2 grid grid-cols-2 gap-2 pb-3">
                 {SHORTCUT_ITEMS.map((shortcut) => {
                   const isActive =
                     shortcut.action !== 'terminal' && activeBoardTool === shortcut.action
@@ -1467,19 +1467,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     <button
                       key={shortcut.action}
                       className={clsx(
-                        'flex items-center justify-between rounded-[8px] border px-2 py-1.5 text-left transition',
+                        'flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[9px] border px-3 py-2 text-left transition',
                         isActive
                           ? 'border-[color:var(--text)] bg-[var(--text)] text-[var(--surface-0)]'
                           : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:text-[var(--text)]'
                       )}
                       onClick={() => runShortcutAction(shortcut.action)}
                     >
-                      <span className="truncate pr-2 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] uppercase tracking-[0.12em]">
+                      <span className="min-w-0 flex-1 whitespace-normal font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] uppercase leading-[1.35] tracking-[0.08em]">
                         {shortcut.label}
                       </span>
                       <span
                         className={clsx(
-                          'shrink-0 rounded-[5px] border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.14em]',
+                          'shrink-0 rounded-[6px] border px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em]',
                           isActive
                             ? 'border-white/25 bg-white/12 text-white'
                             : 'border-[color:var(--line)] bg-[var(--surface-1)] text-[var(--text-faint)]'
@@ -1491,9 +1491,27 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   )
                 })}
               </div>
-              <div className="border-t border-[color:var(--line)] py-2 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
-                Drag from a file or frame dot to a terminal dot. Dropping there sends the grouped
-                file context into Claude.
+              <div className="grid gap-2 border-t border-[color:var(--line)] py-3 text-[11px] leading-5 text-[var(--text-dim)]">
+                <div>
+                  <span className="font-semibold text-[var(--text)]">Canvas Note:</span> press{' '}
+                  <span className="font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] uppercase tracking-[0.08em] text-[var(--text)]">
+                    N
+                  </span>{' '}
+                  to place a note on the canvas.
+                </div>
+                <div>
+                  <span className="font-semibold text-[var(--text)]">New .md file:</span> use the
+                  sidebar{' '}
+                  <span className="font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] tracking-[0.04em] text-[var(--text)]">
+                    New Markdown Note in the Current Folder (.md)
+                  </span>{' '}
+                  button. It creates <span className="text-[var(--text)]">Untitled.md</span> in the
+                  selected folder, or beside the selected file.
+                </div>
+                <div>
+                  <span className="font-semibold text-[var(--text)]">Send to Claude:</span> drag a
+                  file or frame dot onto a terminal dot.
+                </div>
               </div>
             </div>
           </div>

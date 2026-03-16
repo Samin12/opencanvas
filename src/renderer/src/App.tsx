@@ -48,6 +48,32 @@ function findNodeByPath(nodes: FileTreeNode[], targetPath: string): FileTreeNode
   return null
 }
 
+function findDirectoryPathForNode(
+  nodes: FileTreeNode[],
+  targetPath: string,
+  parentDirectoryPath: string | null = null
+): string | null {
+  for (const node of nodes) {
+    if (node.path === targetPath) {
+      return node.kind === 'directory' ? node.path : parentDirectoryPath
+    }
+
+    if (node.children) {
+      const nestedMatch = findDirectoryPathForNode(
+        node.children,
+        targetPath,
+        node.kind === 'directory' ? node.path : parentDirectoryPath
+      )
+
+      if (nestedMatch) {
+        return nestedMatch
+      }
+    }
+  }
+
+  return null
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
@@ -72,6 +98,7 @@ export default function App() {
   const [canvasState, setCanvasState] = useState<CanvasState | null>(null)
   const [workspaceTree, setWorkspaceTree] = useState<FileTreeNode[]>([])
   const [viewerFile, setViewerFile] = useState<FileTreeNode | null>(null)
+  const [selectedTreePath, setSelectedTreePath] = useState<string | null>(null)
   const [sidebarWidth, setSidebarWidth] = useState(320)
   const [darkMode, setDarkMode] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -84,6 +111,40 @@ export default function App() {
 
   const activeWorkspace = config ? config.workspaces[config.activeWorkspace] ?? null : null
   const flatFiles = useMemo(() => flattenFiles(workspaceTree), [workspaceTree])
+  const selectedTreeNode = useMemo(
+    () => (selectedTreePath ? findNodeByPath(workspaceTree, selectedTreePath) : null),
+    [selectedTreePath, workspaceTree]
+  )
+  const noteTargetPath = useMemo(() => {
+    if (!activeWorkspace) {
+      return null
+    }
+
+    if (!selectedTreePath) {
+      return activeWorkspace
+    }
+
+    if (selectedTreeNode?.kind === 'directory') {
+      return selectedTreeNode.path
+    }
+
+    return findDirectoryPathForNode(workspaceTree, selectedTreePath) ?? activeWorkspace
+  }, [activeWorkspace, selectedTreeNode, selectedTreePath, workspaceTree])
+  const noteTargetHint = useMemo(() => {
+    if (!activeWorkspace) {
+      return 'Add a workspace to create markdown notes.'
+    }
+
+    if (selectedTreeNode?.kind === 'directory') {
+      return 'New markdown notes will be created in the selected folder.'
+    }
+
+    if (selectedTreeNode?.kind === 'file') {
+      return 'New markdown notes will be created beside the selected file.'
+    }
+
+    return 'No file or folder selected. New markdown notes will be created in the workspace root.'
+  }, [activeWorkspace, selectedTreeNode])
   const missingTerminalDependencies =
     terminalDependencies === null
       ? []
@@ -170,6 +231,10 @@ export default function App() {
   }, [activeWorkspace])
 
   useEffect(() => {
+    setSelectedTreePath(null)
+  }, [activeWorkspace])
+
+  useEffect(() => {
     document.documentElement.classList.toggle('theme-dark', darkMode)
     document.body.classList.toggle('theme-dark', darkMode)
 
@@ -216,7 +281,7 @@ export default function App() {
 
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n' && !isEditing) {
         event.preventDefault()
-        void createRootNote()
+        void createMarkdownNote()
         return
       }
 
@@ -258,7 +323,7 @@ export default function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [searchOpen, viewerFile, activeWorkspace])
+  }, [activeWorkspace, noteTargetPath, searchOpen, viewerFile])
 
   useEffect(() => {
     function handlePointerMove(event: PointerEvent) {
@@ -386,23 +451,33 @@ export default function App() {
   }
 
   function previewFile(file: FileTreeNode) {
+    setSelectedTreePath(file.path)
     setViewerFile(file)
   }
 
-  async function createRootNote() {
-    if (!activeWorkspace) {
+  function selectWorkspaceNode(node: FileTreeNode) {
+    setSelectedTreePath(node.path)
+
+    if (node.kind === 'file') {
+      setViewerFile(node)
+    }
+  }
+
+  async function createMarkdownNote() {
+    if (!activeWorkspace || !noteTargetPath) {
       return
     }
 
     try {
-      const createdNode = await window.collaborator.createWorkspaceNote(activeWorkspace)
+      const createdNode = await window.collaborator.createWorkspaceNote(activeWorkspace, noteTargetPath)
       const nextTree = await refreshWorkspaceTree(activeWorkspace)
       const nextNode = findNodeByPath(nextTree, createdNode.path) ?? createdNode
 
       canvasRef.current?.spawnFileTile(nextNode)
+      setSelectedTreePath(nextNode.path)
       setViewerFile(null)
     } catch {
-      setWorkspaceError('A new note could not be created in the workspace root.')
+      setWorkspaceError('A new markdown note could not be created in the current folder.')
     }
   }
 
@@ -422,6 +497,10 @@ export default function App() {
 
       if (viewerFile?.path === sourcePath) {
         setViewerFile(nextNode)
+      }
+
+      if (selectedTreePath === sourcePath) {
+        setSelectedTreePath(nextNode.path)
       }
 
       const currentCanvasState = canvasStateRef.current
@@ -449,6 +528,7 @@ export default function App() {
 
   function placeFileOnCanvas(file: FileTreeNode) {
     canvasRef.current?.spawnFileTile(file)
+    setSelectedTreePath(file.path)
     setViewerFile(file)
   }
 
@@ -555,12 +635,14 @@ export default function App() {
             className="min-w-[260px] max-w-[520px] overflow-hidden opacity-100 transition-[width,opacity] duration-200"
           >
             <Sidebar
-              activeFilePath={viewerFile?.path ?? null}
+              activeTreePath={selectedTreePath}
               config={config}
               darkMode={darkMode}
               loadingWorkspace={loadingWorkspace}
+              noteTargetHint={noteTargetHint}
+              noteTargetPath={noteTargetPath}
               onAddWorkspace={() => void addWorkspace()}
-              onCreateNote={() => void createRootNote()}
+              onCreateNote={() => void createMarkdownNote()}
               onCreateTerminal={createTerminal}
               onMoveFile={(sourcePath, targetDirectoryPath) =>
                 void moveFileIntoDirectory(sourcePath, targetDirectoryPath)
@@ -569,7 +651,7 @@ export default function App() {
               onOpenSearch={() => setSearchOpen(true)}
               onPlaceFile={placeFileOnCanvas}
               onRemoveWorkspace={() => void removeActiveWorkspace()}
-              onSelectFile={previewFile}
+              onSelectNode={selectWorkspaceNode}
               onSelectWorkspace={(index) =>
                 void persistConfig({
                   ...config,
@@ -676,12 +758,14 @@ export default function App() {
             className="min-w-[260px] max-w-[520px] overflow-hidden opacity-100 transition-[width,opacity] duration-200"
           >
             <Sidebar
-              activeFilePath={viewerFile?.path ?? null}
+              activeTreePath={selectedTreePath}
               config={config}
               darkMode={darkMode}
               loadingWorkspace={loadingWorkspace}
+              noteTargetHint={noteTargetHint}
+              noteTargetPath={noteTargetPath}
               onAddWorkspace={() => void addWorkspace()}
-              onCreateNote={() => void createRootNote()}
+              onCreateNote={() => void createMarkdownNote()}
               onCreateTerminal={createTerminal}
               onMoveFile={(sourcePath, targetDirectoryPath) =>
                 void moveFileIntoDirectory(sourcePath, targetDirectoryPath)
@@ -690,7 +774,7 @@ export default function App() {
               onOpenSearch={() => setSearchOpen(true)}
               onPlaceFile={placeFileOnCanvas}
               onRemoveWorkspace={() => void removeActiveWorkspace()}
-              onSelectFile={previewFile}
+              onSelectNode={selectWorkspaceNode}
               onSelectWorkspace={(index) =>
                 void persistConfig({
                   ...config,
@@ -725,7 +809,7 @@ export default function App() {
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
         onSelect={(file) => {
-          setViewerFile(file)
+          previewFile(file)
           setSearchOpen(false)
         }}
       />

@@ -5,12 +5,12 @@ import clsx from 'clsx'
 import type { FileTreeNode } from '@shared/types'
 
 interface FileTreeProps {
-  activeFilePath: string | null
+  activePath: string | null
   darkMode: boolean
   nodes: FileTreeNode[]
   onMoveFile: (sourcePath: string, targetDirectoryPath: string) => void
   onPlaceFile: (node: FileTreeNode) => void
-  onSelectFile: (node: FileTreeNode) => void
+  onSelectNode: (node: FileTreeNode) => void
 }
 
 const INDENT = 14
@@ -131,12 +131,12 @@ function getDraggedFilePayload(dataTransfer: DataTransfer | null) {
 }
 
 export function FileTree({
-  activeFilePath,
+  activePath,
   darkMode,
   nodes,
   onMoveFile,
   onPlaceFile,
-  onSelectFile
+  onSelectNode
 }: FileTreeProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null)
@@ -169,11 +169,16 @@ export function FileTree({
           <button
             className={clsx(
               'flex w-full items-center gap-2.5 rounded-[8px] px-3 py-2.5 text-left text-[13px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)]',
+              activePath === node.path &&
+                'bg-[var(--surface-selected)] text-[var(--text)] ring-1 ring-[color:var(--line-strong)]',
               dropTargetPath === node.path &&
                 'bg-[var(--surface-selected)] text-[var(--text)] ring-1 ring-[color:var(--line-strong)]'
             )}
             style={{ paddingLeft: 12 + depth * INDENT }}
-            onClick={() => toggleDirectory(node.path)}
+            onClick={() => {
+              onSelectNode(node)
+              toggleDirectory(node.path)
+            }}
             onDragOver={(event) => {
               const draggedFile = getDraggedFilePayload(event.dataTransfer)
 
@@ -255,12 +260,12 @@ export function FileTree({
         }}
         className={clsx(
           'flex w-full items-center gap-2.5 rounded-[8px] px-3 py-2.5 text-left text-[13px] transition',
-          activeFilePath === node.path
+          activePath === node.path
             ? 'bg-[var(--surface-selected)] text-[var(--text)] ring-1 ring-[color:var(--line-strong)]'
             : 'text-[var(--text-dim)] hover:bg-[var(--surface-1)]'
         )}
         style={{ paddingLeft: 12 + depth * INDENT }}
-        onClick={() => onSelectFile(node)}
+        onClick={() => onSelectNode(node)}
         onDoubleClick={(event) => {
           event.preventDefault()
           onPlaceFile(node)

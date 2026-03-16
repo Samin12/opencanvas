@@ -218,8 +218,24 @@ export function subscribeToFileChanges(filePath: string, listener: () => void): 
   }
 }
 
-export async function createWorkspaceNote(workspacePath: string): Promise<FileTreeNode> {
-  const targetPath = await createUniquePath(workspacePath, 'Untitled', '.md')
+export async function createWorkspaceNote(
+  workspacePath: string,
+  targetDirectoryPath = workspacePath
+): Promise<FileTreeNode> {
+  const resolvedWorkspacePath = resolve(workspacePath)
+  const resolvedTargetDirectoryPath = resolve(targetDirectoryPath)
+
+  if (!isWithinWorkspace(resolvedWorkspacePath, resolvedTargetDirectoryPath)) {
+    throw new Error('Note target is outside the active workspace')
+  }
+
+  const targetDirectoryStats = await stat(resolvedTargetDirectoryPath)
+
+  if (!targetDirectoryStats.isDirectory()) {
+    throw new Error('Note target must be a directory')
+  }
+
+  const targetPath = await createUniquePath(resolvedTargetDirectoryPath, 'Untitled', '.md')
 
   await writeTextFileDocument(targetPath, '')
 

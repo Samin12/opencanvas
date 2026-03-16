@@ -54,8 +54,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('config:save', async (_event, config: AppConfig) => saveConfig(config))
   ipcMain.handle('canvas:save', async (_event, state: CanvasState) => saveCanvasState(state))
   ipcMain.handle('workspace:tree', async (_event, workspacePath: string) => readWorkspaceTree(workspacePath))
-  ipcMain.handle('workspace:create-note', async (_event, workspacePath: string) =>
-    createWorkspaceNote(workspacePath)
+  ipcMain.handle(
+    'workspace:create-note',
+    async (_event, workspacePath: string, targetDirectoryPath?: string) =>
+      createWorkspaceNote(workspacePath, targetDirectoryPath)
   )
   ipcMain.handle(
     'workspace:move-node',

@@ -98,7 +98,7 @@ export interface CollaboratorApi {
   saveConfig: (config: AppConfig) => Promise<AppConfig>
   saveCanvasState: (state: CanvasState) => Promise<CanvasState>
   pickWorkspaceDirectory: () => Promise<string | null>
-  createWorkspaceNote: (workspacePath: string) => Promise<FileTreeNode>
+  createWorkspaceNote: (workspacePath: string, targetDirectoryPath?: string) => Promise<FileTreeNode>
   moveWorkspaceNode: (
     workspacePath: string,
     sourcePath: string,

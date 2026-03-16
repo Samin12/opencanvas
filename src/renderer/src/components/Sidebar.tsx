@@ -136,10 +136,12 @@ function workspaceLabel(workspacePath: string): string {
 }
 
 interface SidebarProps {
-  activeFilePath: string | null
+  activeTreePath: string | null
   config: AppConfig
   darkMode: boolean
   loadingWorkspace: boolean
+  noteTargetHint: string
+  noteTargetPath: string | null
   onAddWorkspace: () => void
   onCreateNote: () => void
   onCreateTerminal: () => void
@@ -148,7 +150,7 @@ interface SidebarProps {
   onOpenSearch: () => void
   onPlaceFile: (node: FileTreeNode) => void
   onRemoveWorkspace: () => void
-  onSelectFile: (node: FileTreeNode) => void
+  onSelectNode: (node: FileTreeNode) => void
   onSelectWorkspace: (index: number) => void
   terminalDependencyMessage: string | null
   terminalReady: boolean
@@ -160,10 +162,12 @@ interface SidebarProps {
 }
 
 function SidebarComponent({
-  activeFilePath,
+  activeTreePath,
   config,
   darkMode,
   loadingWorkspace,
+  noteTargetHint,
+  noteTargetPath,
   onAddWorkspace,
   onCreateNote,
   onCreateTerminal,
@@ -172,7 +176,7 @@ function SidebarComponent({
   onOpenSearch,
   onPlaceFile,
   onRemoveWorkspace,
-  onSelectFile,
+  onSelectNode,
   onSelectWorkspace,
   terminalDependencyMessage,
   terminalReady,
@@ -255,7 +259,7 @@ function SidebarComponent({
             <ActionIconButton
               className="h-10 w-10 rounded-[8px]"
               disabled={!activeWorkspacePath}
-              label="New Note"
+              label="New Markdown Note in the Current Folder (.md)"
               onClick={onCreateNote}
             >
               <NewNoteIcon />
@@ -268,6 +272,19 @@ function SidebarComponent({
             >
               <NewTerminalIcon />
             </ActionIconButton>
+          </div>
+
+          <div className="rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-1)] px-3.5 py-3 text-xs text-[var(--text-dim)]">
+            <div className="font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">
+              New .md Target
+            </div>
+            <div
+              className="mt-2 truncate font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[12px] text-[var(--text)]"
+              title={noteTargetPath ?? 'No workspace selected'}
+            >
+              {noteTargetPath ?? 'No workspace selected'}
+            </div>
+            <div className="mt-2 leading-5">{noteTargetHint}</div>
           </div>
 
           {terminalDependencyMessage ? (
@@ -299,16 +316,17 @@ function SidebarComponent({
           {loadingWorkspace ? <div className="text-xs text-[var(--text-faint)]">Refreshing…</div> : null}
         </div>
         <div className="mb-3 rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-1)] px-3.5 py-3 text-xs leading-5 text-[var(--text-dim)]">
-          Click a file to preview it. Double-click or press Shift+Enter to open a fresh tile on the canvas.
+          Click a file to preview it. Click a folder to target new markdown files there. Double-click
+          or press Shift+Enter on a file to open a fresh tile on the canvas.
         </div>
         {activeWorkspacePath ? (
           <FileTree
-            activeFilePath={activeFilePath}
+            activePath={activeTreePath}
             darkMode={darkMode}
             nodes={workspaceTree}
             onMoveFile={onMoveFile}
             onPlaceFile={onPlaceFile}
-            onSelectFile={onSelectFile}
+            onSelectNode={onSelectNode}
           />
         ) : (
           <div className="rounded-[8px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-1)] p-4 text-sm text-[var(--text-dim)]">
@@ -323,10 +341,12 @@ function SidebarComponent({
 
 export const Sidebar = memo(SidebarComponent, (previous, next) => {
   return (
-    previous.activeFilePath === next.activeFilePath &&
+    previous.activeTreePath === next.activeTreePath &&
     previous.config === next.config &&
     previous.darkMode === next.darkMode &&
     previous.loadingWorkspace === next.loadingWorkspace &&
+    previous.noteTargetHint === next.noteTargetHint &&
+    previous.noteTargetPath === next.noteTargetPath &&
     previous.sidebarCollapsed === next.sidebarCollapsed &&
     previous.sidebarSide === next.sidebarSide &&
     previous.workspaceTree === next.workspaceTree
