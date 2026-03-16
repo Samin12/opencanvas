@@ -6,7 +6,8 @@ import type {
   CanvasState,
   FileTreeNode,
   SidebarSide,
-  TerminalDependencyState
+  TerminalDependencyState,
+  TerminalProvider
 } from '@shared/types'
 
 import { CanvasSurface, type CanvasSurfaceHandle } from './components/CanvasSurface'
@@ -28,6 +29,12 @@ const SIDEBAR_RIGHT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2192' : null
 const TOGGLE_DARK_MODE_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+Shift+D' : 'Ctrl+Shift+D'
 const WORKSPACE_SWITCHER_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+Shift+W' : 'Ctrl+Shift+W'
 const WORKSPACE_SWITCHER_OPEN_EVENT = 'claude-canvas:open-workspace-switcher'
+const INTERACTIVE_SHORTCUT_TARGET_SELECTOR =
+  'button, [role="button"], a[href], input:not([type="hidden"]), select, textarea, summary'
+
+function terminalProviderLabel(provider: TerminalProvider) {
+  return provider === 'codex' ? 'Codex' : 'Claude Code'
+}
 
 function flattenFiles(nodes: FileTreeNode[]): FileTreeNode[] {
   const files: FileTreeNode[] = []
@@ -91,6 +98,18 @@ function findDirectoryPathForNode(
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
+}
+
+function shortcutHandledByFocusedControl(target: EventTarget | null) {
+  if (target instanceof Element) {
+    return Boolean(target.closest(INTERACTIVE_SHORTCUT_TARGET_SELECTOR))
+  }
+
+  if (target instanceof Node) {
+    return Boolean(target.parentElement?.closest(INTERACTIVE_SHORTCUT_TARGET_SELECTOR))
+  }
+
+  return false
 }
 
 function emptyCanvasState(): CanvasState {
@@ -204,18 +223,6 @@ export default function App() {
 
     return findDirectoryPathForNode(workspaceTree, selectedTreePath) ?? activeWorkspace
   }, [activeWorkspace, selectedTreeNode, selectedTreePath, workspaceTree])
-  const missingTerminalDependencies =
-    terminalDependencies === null
-      ? []
-      : [
-          terminalDependencies.tmuxInstalled ? null : 'tmux',
-          terminalDependencies.claudeInstalled ? null : terminalDependencies.claudeCommand
-        ].filter((dependency): dependency is string => Boolean(dependency))
-  const terminalReady = terminalDependencies !== null && missingTerminalDependencies.length === 0
-  const terminalDependencyMessage =
-    terminalDependencies === null || terminalReady
-      ? null
-      : `Install ${missingTerminalDependencies.join(' and ')} and restart the app before creating terminal tiles.`
   useEffect(() => {
     return installButtonTooltipSync(document)
   }, [])
@@ -541,6 +548,10 @@ export default function App() {
       const fileToPlace = viewerFile ?? selectedFileNode
 
       if (event.shiftKey && event.key === 'Enter' && fileToPlace) {
+        if (shortcutHandledByFocusedControl(event.target)) {
+          return
+        }
+
         event.preventDefault()
         placeFileOnCanvas(fileToPlace)
         setViewerFile(null)
@@ -952,15 +963,33 @@ export default function App() {
     setSelectedTreePath(file.path)
   }
 
-  function createTerminal() {
-    if (!terminalReady) {
-      setWorkspaceError(
-        terminalDependencyMessage ?? 'Terminal prerequisites are missing. Install tmux and Claude Code, then restart the app.'
-      )
+  function terminalProviderDependencyMessage(provider: TerminalProvider) {
+    if (!terminalDependencies) {
+      return 'Terminal prerequisites are still loading.'
+    }
+
+    if (!terminalDependencies.tmuxInstalled) {
+      return 'Install tmux and restart the app before creating terminal tiles.'
+    }
+
+    const providerState = terminalDependencies.providers[provider]
+
+    if (!providerState?.installed) {
+      return `Install ${providerState?.command ?? terminalProviderLabel(provider)} and restart the app before creating ${terminalProviderLabel(provider)} terminals.`
+    }
+
+    return null
+  }
+
+  function createTerminal(provider: TerminalProvider = 'claude') {
+    const dependencyMessage = terminalProviderDependencyMessage(provider)
+
+    if (dependencyMessage) {
+      setWorkspaceError(dependencyMessage)
       return
     }
 
-    canvasRef.current?.createTerminal()
+    canvasRef.current?.createTerminal(provider)
   }
 
   function setSidebarPlacement(nextSide: SidebarSide, nextCollapsed = false) {
@@ -1092,8 +1121,7 @@ export default function App() {
                   activeWorkspace: index
                 })
               }
-              terminalDependencyMessage={terminalDependencyMessage}
-              terminalReady={terminalReady}
+              terminalDependencies={terminalDependencies}
               onToggleSidebar={() => {
                 setSidebarCollapsed(true)
                 void persistUi({
@@ -1249,8 +1277,7 @@ export default function App() {
                   activeWorkspace: index
                 })
               }
-              terminalDependencyMessage={terminalDependencyMessage}
-              terminalReady={terminalReady}
+              terminalDependencies={terminalDependencies}
               onToggleSidebar={() => {
                 setSidebarCollapsed(true)
                 void persistUi({
