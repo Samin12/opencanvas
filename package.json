@@ -1,7 +1,8 @@
 {
-  "name": "collaborator-clone",
+  "name": "open-canvas",
+  "productName": "Open Canvas",
   "version": "0.1.0",
-  "description": "Spatial desktop workspace for AI-assisted development",
+  "description": "Spatial whiteboard workspace for Open Canvas development",
   "main": "./out/main/index.cjs",
   "type": "module",
   "scripts": {

@@ -7,8 +7,10 @@ import type {
   CanvasState,
   CollaboratorApi,
   FileTreeNode,
+  ImageAssetData,
   TerminalSessionSnapshot,
-  TextFileDocument
+  TextFileDocument,
+  WorkspaceImageImport
 } from '../shared/types'
 
 const { contextBridge, ipcRenderer } = electron
@@ -23,8 +25,11 @@ if ('webFrame' in electron && electron.webFrame) {
 
 const api: CollaboratorApi = {
   bootstrap: () => ipcRenderer.invoke('bootstrap') as Promise<BootstrapData>,
+  copyTextToClipboard: (text: string) => ipcRenderer.invoke('system:copy-text', text) as Promise<void>,
   createTerminalSession: (options) =>
     ipcRenderer.invoke('terminal:create', options) as Promise<TerminalSessionSnapshot>,
+  readTerminalHistory: (sessionId: string, limit?: number) =>
+    ipcRenderer.invoke('terminal:history', sessionId, limit) as Promise<string>,
   onTerminalData: (sessionId, listener) => {
     const channel = `terminal:data:${sessionId}`
     const handler = (_event: Electron.IpcRendererEvent, data: string) => listener(data)
@@ -62,9 +67,12 @@ const api: CollaboratorApi = {
   saveConfig: (config: AppConfig) => ipcRenderer.invoke('config:save', config) as Promise<AppConfig>,
   saveCanvasState: (state: CanvasState) =>
     ipcRenderer.invoke('canvas:save', state) as Promise<CanvasState>,
+  openPath: (targetPath: string) => ipcRenderer.invoke('system:open-path', targetPath) as Promise<void>,
   pickWorkspaceDirectory: () => ipcRenderer.invoke('workspace:pick') as Promise<string | null>,
   createWorkspaceNote: (workspacePath: string, targetDirectoryPath?: string) =>
     ipcRenderer.invoke('workspace:create-note', workspacePath, targetDirectoryPath) as Promise<FileTreeNode>,
+  importWorkspaceImage: (workspacePath: string, image: WorkspaceImageImport) =>
+    ipcRenderer.invoke('workspace:import-image', workspacePath, image) as Promise<FileTreeNode>,
   moveWorkspaceNode: (workspacePath: string, sourcePath: string, targetDirectoryPath: string) =>
     ipcRenderer.invoke(
       'workspace:move-node',
@@ -72,6 +80,8 @@ const api: CollaboratorApi = {
       sourcePath,
       targetDirectoryPath
     ) as Promise<FileTreeNode>,
+  readImageAsset: (filePath: string) =>
+    ipcRenderer.invoke('file:image-data', filePath) as Promise<ImageAssetData>,
   readWorkspaceTree: (workspacePath: string) =>
     ipcRenderer.invoke('workspace:tree', workspacePath) as Promise<FileTreeNode[]>,
   readTextFile: (filePath: string) =>

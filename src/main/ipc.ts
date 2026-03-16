@@ -1,11 +1,13 @@
 import * as electron from 'electron'
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import type { AppConfig, CanvasState } from '../shared/types'
+import type { AppConfig, CanvasState, WorkspaceImageImport } from '../shared/types'
 
 import { loadCanvasState, loadConfig, saveCanvasState, saveConfig } from './storage'
 import {
   createOrAttachTerminalSession,
+  readTerminalHistory,
   readTerminalDependencyState,
   releaseTerminalSession,
   resizeTerminalSession,
@@ -13,7 +15,9 @@ import {
 } from './terminals'
 import {
   createWorkspaceNote,
+  importWorkspaceImage,
   moveWorkspaceNode,
+  readImageAssetData,
   readTextFileDocument,
   readWorkspaceTree,
   subscribeToFileChanges,
@@ -21,7 +25,7 @@ import {
   writeTextFileDocument
 } from './workspaces'
 
-const { dialog, ipcMain } = electron
+const { clipboard, dialog, ipcMain, shell } = electron
 const fileWatchSubscriptions = new Map<string, () => void>()
 const watchedSenders = new Set<number>()
 
@@ -53,6 +57,27 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('config:save', async (_event, config: AppConfig) => saveConfig(config))
   ipcMain.handle('canvas:save', async (_event, state: CanvasState) => saveCanvasState(state))
+  ipcMain.handle('system:copy-text', async (_event, text: string) => {
+    clipboard.writeText(text)
+  })
+  ipcMain.handle('system:open-path', async (_event, targetPath: string) => {
+    const resolvedTargetPath = resolve(targetPath)
+
+    if (!existsSync(resolvedTargetPath)) {
+      throw new Error('The workspace path does not exist on disk.')
+    }
+
+    const errorMessage = await shell.openPath(resolvedTargetPath)
+
+    if (errorMessage) {
+      try {
+        shell.showItemInFolder(resolvedTargetPath)
+        return
+      } catch {
+        throw new Error(errorMessage)
+      }
+    }
+  })
   ipcMain.handle('workspace:tree', async (_event, workspacePath: string) => readWorkspaceTree(workspacePath))
   ipcMain.handle(
     'workspace:create-note',
@@ -60,11 +85,17 @@ export function registerIpcHandlers(): void {
       createWorkspaceNote(workspacePath, targetDirectoryPath)
   )
   ipcMain.handle(
+    'workspace:import-image',
+    async (_event, workspacePath: string, image: WorkspaceImageImport) =>
+      importWorkspaceImage(workspacePath, image)
+  )
+  ipcMain.handle(
     'workspace:move-node',
     async (_event, workspacePath: string, sourcePath: string, targetDirectoryPath: string) =>
       moveWorkspaceNode(workspacePath, sourcePath, targetDirectoryPath)
   )
   ipcMain.handle('file:read', async (_event, filePath: string) => readTextFileDocument(filePath))
+  ipcMain.handle('file:image-data', async (_event, filePath: string) => readImageAssetData(filePath))
   ipcMain.handle('file:write', async (_event, filePath: string, content: string) =>
     writeTextFileDocument(filePath, content)
   )
@@ -106,6 +137,9 @@ export function registerIpcHandlers(): void {
     'terminal:create',
     async (_event, options: { cols: number; cwd?: string; rows: number; sessionId: string }) =>
       createOrAttachTerminalSession(options)
+  )
+  ipcMain.handle('terminal:history', async (_event, sessionId: string, limit?: number) =>
+    readTerminalHistory(sessionId, limit)
   )
   ipcMain.on('terminal:write', (_event, sessionId: string, data: string) => {
     writeTerminalInput(sessionId, data)

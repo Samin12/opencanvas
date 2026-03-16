@@ -4,10 +4,10 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' file: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self';"
+      content="default-src 'self'; connect-src 'self' https://cdn.tldraw.com; img-src 'self' file: data: blob: https://cdn.tldraw.com; font-src 'self' data: https://cdn.tldraw.com https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self';"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Collaborator Clone</title>
+    <title>Open Canvas</title>
   </head>
   <body>
     <div id="root"></div>

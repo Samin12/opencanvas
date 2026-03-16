@@ -52,12 +52,14 @@ export interface AppConfig {
 }
 
 export interface FileTreeNode {
+  descendantFileCount?: number
+  extension?: string
+  fileKind?: FileKind
   name: string
   path: string
   kind: 'file' | 'directory'
-  fileKind?: FileKind
-  extension?: string
   children?: FileTreeNode[]
+  updatedAt?: number
 }
 
 export interface TextFileDocument {
@@ -67,10 +69,21 @@ export interface TextFileDocument {
   updatedAt: number
 }
 
+export interface ImageAssetData {
+  base64: string
+  mimeType: string
+}
+
 export interface BootstrapData {
   config: AppConfig
   canvasState: CanvasState
   terminalDependencies: TerminalDependencyState
+}
+
+export interface WorkspaceImageImport {
+  bytes: ArrayBuffer | Uint8Array | number[]
+  fileName?: string | null
+  mimeType?: string | null
 }
 
 export interface TerminalDependencyState {
@@ -97,13 +110,20 @@ export interface CollaboratorApi {
   bootstrap: () => Promise<BootstrapData>
   saveConfig: (config: AppConfig) => Promise<AppConfig>
   saveCanvasState: (state: CanvasState) => Promise<CanvasState>
+  copyTextToClipboard: (text: string) => Promise<void>
+  openPath: (targetPath: string) => Promise<void>
   pickWorkspaceDirectory: () => Promise<string | null>
   createWorkspaceNote: (workspacePath: string, targetDirectoryPath?: string) => Promise<FileTreeNode>
+  importWorkspaceImage: (
+    workspacePath: string,
+    image: WorkspaceImageImport
+  ) => Promise<FileTreeNode>
   moveWorkspaceNode: (
     workspacePath: string,
     sourcePath: string,
     targetDirectoryPath: string
   ) => Promise<FileTreeNode>
+  readImageAsset: (filePath: string) => Promise<ImageAssetData>
   readWorkspaceTree: (workspacePath: string) => Promise<FileTreeNode[]>
   readTextFile: (filePath: string) => Promise<TextFileDocument>
   writeTextFile: (filePath: string, content: string) => Promise<TextFileDocument>
@@ -115,6 +135,7 @@ export interface CollaboratorApi {
     rows: number
     sessionId: string
   }) => Promise<TerminalSessionSnapshot>
+  readTerminalHistory: (sessionId: string, limit?: number) => Promise<string>
   onTerminalData: (sessionId: string, listener: (data: string) => void) => () => void
   onTerminalExit: (
     sessionId: string,

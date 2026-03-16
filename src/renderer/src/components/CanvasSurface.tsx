@@ -10,8 +10,16 @@ import {
 } from 'react'
 
 import clsx from 'clsx'
-import { Editor, Tldraw } from 'tldraw'
-import { GeoShapeGeoStyle } from '@tldraw/tlschema'
+import { Editor, Tldraw, type TLRecord } from 'tldraw'
+import {
+  DefaultColorStyle,
+  DefaultColorThemePalette,
+  GeoShapeGeoStyle,
+  type TLDefaultColorStyle,
+  type TLDrawShape,
+  type TLNoteShape,
+  type TLShapePartial
+} from '@tldraw/tlschema'
 
 import type {
   CanvasPinchPayload,
@@ -22,13 +30,20 @@ import type {
 } from '@shared/types'
 
 import { DocumentPane } from './DocumentPane'
+import { HoverTooltip } from './HoverTooltip'
 import { TerminalPane } from './TerminalPane'
+import { keyboardShortcutsBlocked } from '../utils/keyboard'
+import { composeTooltipLabel } from '../utils/buttonTooltips'
 
 interface CanvasSurfaceProps {
   activeWorkspacePath: string | null
   darkMode: boolean
+  onCreateMarkdownNote: () => void
+  onConvertStickyNoteToMarkdown: (content: string) => Promise<FileTreeNode | null>
+  onImportImageFile: (file: File) => Promise<FileTreeNode | null>
   onOpenFile: (node: FileTreeNode) => void
   onStateChange: (state: CanvasState, options?: { immediate?: boolean }) => void
+  shortcutsSuspended?: boolean
   state: CanvasState
 }
 
@@ -41,14 +56,23 @@ export interface CanvasSurfaceHandle {
 }
 
 type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
-type BoardTool = 'hand' | 'select' | 'box' | 'arrow' | 'text' | 'note' | 'draw' | 'frame'
-type ShortcutAction = BoardTool | 'terminal'
+type BoardTool = 'hand' | 'select' | 'box' | 'arrow' | 'text' | 'note' | 'draw' | 'frame' | 'eraser'
+type ShortcutAction = BoardTool | 'markdown' | 'terminal'
+type DrawShapeUpdate = TLShapePartial<TLDrawShape>
 type GestureLikeEvent = Event & {
   clientX?: number
   clientY?: number
   preventDefault: () => void
   scale: number
 }
+type WheelGestureOwner =
+  | {
+      kind: 'board'
+    }
+  | {
+      element: HTMLElement
+      kind: 'element'
+    }
 type DragConnectionState =
   | {
       currentX: number
@@ -62,6 +86,13 @@ type DragConnectionState =
       sourceKind: 'tile'
       sourceTileId: string
     }
+
+interface HoveredConnectionState {
+  midpointX: number
+  midpointY: number
+  sourceTileId: string
+  terminalTileId: string
+}
 
 interface FrameContextGroup {
   containedTiles: CanvasTile[]
@@ -104,32 +135,118 @@ type InteractionState =
 const GRID_SIZE = 20
 const MAJOR_GRID = GRID_SIZE * 4
 const MIN_ZOOM = 0.33
-const MAX_ZOOM = 1
+const MAX_ZOOM = 2
+const WHEEL_GESTURE_LOCK_MS = 180
 const MIN_TILE_WIDTH = 280
 const MIN_TILE_HEIGHT = 220
 const CAMERA_EPSILON = 0.001
 const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
+const IMAGE_FILE_EXTENSIONS = new Set(['.gif', '.jpg', '.jpeg', '.png', '.svg', '.webp'])
 const SCROLL_LOCK_SELECTOR = '[data-scroll-lock="true"]'
+const NATIVE_WHEEL_SELECTOR = '[data-native-wheel="true"]'
+const IS_MAC_PLATFORM =
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+const MARKDOWN_SHORTCUT_KEY =
+  IS_MAC_PLATFORM ? 'Cmd+N' : 'Ctrl+N'
+const PASTE_IMAGE_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+V' : 'Ctrl+V'
+const ZOOM_IN_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd++' : 'Ctrl++'
+const ZOOM_OUT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+-' : 'Ctrl+-'
+const RESET_ZOOM_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+0' : 'Ctrl+0'
+const NOTE_SLASH_TOOLTIP_LABEL =
+  'Markdown shortcuts: /h1-/h6 headings, /p paragraph, /bullet list, /numbered list, /todo checklist, /quote blockquote, /code code block, /line divider. Also works with #, >, -, 1., [ ] and ---.'
 const SHORTCUT_ITEMS: Array<{ action: ShortcutAction; key: string; label: string }> = [
   { action: 'terminal', key: 'Shift+T', label: 'New Terminal' },
+  { action: 'markdown', key: MARKDOWN_SHORTCUT_KEY, label: 'New Markdown' },
   { action: 'hand', key: 'M', label: 'Move' },
   { action: 'select', key: 'V', label: 'Select' },
   { action: 'box', key: 'B', label: 'Box' },
   { action: 'arrow', key: 'A', label: 'Arrow' },
+  { action: 'eraser', key: 'E', label: 'Eraser' },
   { action: 'text', key: 'T', label: 'Text' },
   { action: 'note', key: 'N', label: 'Canvas Note' },
   { action: 'draw', key: 'D', label: 'Draw' },
   { action: 'frame', key: 'F', label: 'Frame' }
 ]
+const QUICK_ACTION_ITEMS: Array<{ action: BoardTool; key: string; label: string }> = [
+  { action: 'select', key: 'V', label: 'Select' },
+  { action: 'note', key: 'N', label: 'Sticky note' },
+  { action: 'box', key: 'B', label: 'Box' },
+  { action: 'draw', key: 'D', label: 'Draw' }
+]
+const DRAW_COLOR_ITEMS: Array<{ color: TLDefaultColorStyle; label: string }> = [
+  { color: 'black', label: 'Black' },
+  { color: 'grey', label: 'Slate' },
+  { color: 'blue', label: 'Blue' },
+  { color: 'green', label: 'Green' },
+  { color: 'orange', label: 'Orange' },
+  { color: 'red', label: 'Red' },
+  { color: 'violet', label: 'Violet' },
+  { color: 'white', label: 'White' }
+]
 const BOARD_TOOL_SHORTCUTS: Record<string, BoardTool> = {
   a: 'arrow',
   b: 'box',
   d: 'draw',
+  e: 'eraser',
   f: 'frame',
   m: 'hand',
   n: 'note',
   t: 'text',
   v: 'select'
+}
+
+function isBoardToolAction(action: ShortcutAction): action is BoardTool {
+  return action !== 'terminal' && action !== 'markdown'
+}
+
+function QuickActionIcon({ action }: { action: BoardTool }) {
+  if (action === 'select') {
+    return (
+      <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-current">
+        <path d="M3 2.5v11l3.1-3.2 2 3.2 1.3-.8-2-3.2H12L3 2.5Z" />
+      </svg>
+    )
+  }
+
+  if (action === 'note') {
+    return (
+      <svg
+        viewBox="0 0 16 16"
+        aria-hidden="true"
+        className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+      >
+        <path d="M3.25 2.75h9.5v10.5h-6l-3.5-3.5Z" />
+        <path d="M6.75 13.25V9.75H3.25" />
+      </svg>
+    )
+  }
+
+  if (action === 'box') {
+    return (
+      <svg
+        viewBox="0 0 16 16"
+        aria-hidden="true"
+        className="h-4 w-4 fill-none stroke-current stroke-[1.35]"
+      >
+        <rect x="3" y="3" width="10" height="10" rx="1.8" />
+      </svg>
+    )
+  }
+
+  if (action === 'draw') {
+    return (
+      <svg
+        viewBox="0 0 16 16"
+        aria-hidden="true"
+        className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+      >
+        <path d="m3.25 12.75 1.1-3.25L10.9 2.95a1.1 1.1 0 0 1 1.55 0l.6.6a1.1 1.1 0 0 1 0 1.55L6.5 11.65l-3.25 1.1Z" />
+        <path d="m9.85 4 2.15 2.15" />
+      </svg>
+    )
+  }
+
+  return null
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -144,6 +261,75 @@ function isScrollableOverflow(value: string) {
   return value === 'auto' || value === 'overlay' || value === 'scroll'
 }
 
+function scrollLockElementFromTarget(
+  target: EventTarget | null,
+  boundary: HTMLElement
+): HTMLElement | null {
+  if (!(target instanceof Node)) {
+    return null
+  }
+
+  let element = target instanceof Element ? target : target.parentElement
+
+  while (element) {
+    if (element instanceof HTMLElement && element.matches(SCROLL_LOCK_SELECTOR)) {
+      return element
+    }
+
+    if (element === boundary) {
+      break
+    }
+
+    element = element.parentElement
+  }
+
+  return null
+}
+
+function firstScrollableDescendant(root: HTMLElement): HTMLElement | null {
+  const descendants = root.querySelectorAll<HTMLElement>('*')
+
+  for (const element of descendants) {
+    const styles = window.getComputedStyle(element)
+    const canScrollY =
+      isScrollableOverflow(styles.overflowY) && element.scrollHeight > element.clientHeight
+    const canScrollX =
+      isScrollableOverflow(styles.overflowX) && element.scrollWidth > element.clientWidth
+
+    if (canScrollX || canScrollY) {
+      return element
+    }
+  }
+
+  return null
+}
+
+function elementMatchingSelectorFromTarget(
+  target: EventTarget | null,
+  boundary: HTMLElement,
+  selector: string
+): HTMLElement | null {
+  if (!(target instanceof Node)) {
+    return null
+  }
+
+  let element = target instanceof Element ? target : target.parentElement
+
+  while (element) {
+    if (element instanceof HTMLElement && element.matches(selector)) {
+      return element
+    }
+
+    if (element === boundary) {
+      break
+    }
+
+    element = element.parentElement
+  }
+
+  return null
+}
+
 function scrollableElementFromTarget(
   target: EventTarget | null,
   boundary: HTMLElement
@@ -156,10 +342,6 @@ function scrollableElementFromTarget(
 
   while (element) {
     if (element instanceof HTMLElement) {
-      if (element.matches(SCROLL_LOCK_SELECTOR)) {
-        return element
-      }
-
       const styles = window.getComputedStyle(element)
       const canScrollY =
         isScrollableOverflow(styles.overflowY) && element.scrollHeight > element.clientHeight
@@ -181,8 +363,44 @@ function scrollableElementFromTarget(
   return null
 }
 
+function canScrollElementForDelta(element: HTMLElement, deltaX: number, deltaY: number) {
+  const dominantAxis = Math.abs(deltaX) > Math.abs(deltaY) ? 'x' : 'y'
+
+  if (dominantAxis === 'x' && Math.abs(deltaX) > 0.01) {
+    if (deltaX < 0) {
+      return element.scrollLeft > 0
+    }
+
+    return element.scrollLeft + element.clientWidth < element.scrollWidth - 1
+  }
+
+  if (Math.abs(deltaY) > 0.01) {
+    if (deltaY < 0) {
+      return element.scrollTop > 0
+    }
+
+    return element.scrollTop + element.clientHeight < element.scrollHeight - 1
+  }
+
+  return false
+}
+
 function hasCollaboratorFilePayload(dataTransfer: DataTransfer | null) {
   return Boolean(dataTransfer && Array.from(dataTransfer.types).includes(COLLABORATOR_FILE_MIME))
+}
+
+function isImportableImageFile(file: File) {
+  if (file.type.startsWith('image/')) {
+    return true
+  }
+
+  const lowerName = file.name.toLowerCase()
+
+  return Array.from(IMAGE_FILE_EXTENSIONS).some((extension) => lowerName.endsWith(extension))
+}
+
+function droppedImageFiles(dataTransfer: DataTransfer | null) {
+  return Array.from(dataTransfer?.files ?? []).filter(isImportableImageFile)
 }
 
 function viewportToCamera(viewport: CanvasState['viewport']) {
@@ -248,8 +466,65 @@ function createTileFromFile(
   }
 }
 
+function terminalConnectionKey(sourceTileId: string, terminalTileId: string) {
+  return `${sourceTileId}:${terminalTileId}`
+}
+
+function cubicBezierPointAt(
+  start: { x: number; y: number },
+  controlStart: { x: number; y: number },
+  controlEnd: { x: number; y: number },
+  end: { x: number; y: number },
+  t: number
+) {
+  const inverseT = 1 - t
+
+  return {
+    x:
+      inverseT ** 3 * start.x +
+      3 * inverseT ** 2 * t * controlStart.x +
+      3 * inverseT * t ** 2 * controlEnd.x +
+      t ** 3 * end.x,
+    y:
+      inverseT ** 3 * start.y +
+      3 * inverseT ** 2 * t * controlStart.y +
+      3 * inverseT * t ** 2 * controlEnd.y +
+      t ** 3 * end.y
+  }
+}
+
+function connectionCurve(start: { x: number; y: number }, end: { x: number; y: number }) {
+  const controlOffset = Math.max(80, Math.abs(end.x - start.x) * 0.4)
+  const controlStart = {
+    x: start.x + controlOffset,
+    y: start.y
+  }
+  const controlEnd = {
+    x: end.x - controlOffset,
+    y: end.y
+  }
+
+  return {
+    midpoint: cubicBezierPointAt(start, controlStart, controlEnd, end, 0.5),
+    path: `M ${start.x} ${start.y} C ${controlStart.x} ${controlStart.y}, ${controlEnd.x} ${controlEnd.y}, ${end.x} ${end.y}`
+  }
+}
+
 export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>(
-  function CanvasSurface({ activeWorkspacePath, darkMode, onOpenFile, onStateChange, state }, ref) {
+  function CanvasSurface(
+    {
+      activeWorkspacePath,
+      darkMode,
+      onCreateMarkdownNote,
+      onConvertStickyNoteToMarkdown,
+      onImportImageFile,
+      onOpenFile,
+      onStateChange,
+      shortcutsSuspended = false,
+      state
+    },
+    ref
+  ) {
     const containerRef = useRef<HTMLDivElement>(null)
     const editorRef = useRef<Editor | null>(null)
     const interactionRef = useRef<InteractionState | null>(null)
@@ -258,16 +533,25 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       originClientY: number
       startZoom: number
     } | null>(null)
+    const wheelGestureOwnerRef = useRef<WheelGestureOwner | null>(null)
+    const wheelGestureTimerRef = useRef<number | null>(null)
     const dragConnectionRef = useRef<DragConnectionState | null>(null)
     const canvasActiveRef = useRef(true)
     const stateRef = useRef(state)
+    const drawColorRef = useRef<TLDefaultColorStyle>('black')
     const [activeBoardTool, setActiveBoardTool] = useState<BoardTool>('hand')
+    const [drawColor, setDrawColor] = useState<TLDefaultColorStyle>('black')
     const [dragConnection, setDragConnection] = useState<DragConnectionState | null>(null)
+    const [hoveredConnection, setHoveredConnection] = useState<HoveredConnectionState | null>(null)
     const [linkSourceTileId, setLinkSourceTileId] = useState<string | null>(null)
+    const [selectedCanvasNoteId, setSelectedCanvasNoteId] = useState<string | null>(null)
     const [selectedTileId, setSelectedTileId] = useState<string | null>(null)
+    const [tileRefreshTokens, setTileRefreshTokens] = useState<Record<string, number>>({})
+    const [convertingStickyNote, setConvertingStickyNote] = useState(false)
     const [zoomIndicator, setZoomIndicator] = useState<string | null>(null)
 
     stateRef.current = state
+    drawColorRef.current = drawColor
 
     function tileById(tileId: string | null) {
       if (!tileId) {
@@ -279,6 +563,27 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
     function isContextSourceTile(tile: CanvasTile | null): tile is CanvasTile {
       return Boolean(tile && tile.type !== 'term' && tile.filePath)
+    }
+
+    function selectedStickyNoteFromEditor(editor: Editor) {
+      const selectedShape = editor.getOnlySelectedShape()
+
+      if (!selectedShape || selectedShape.type !== 'note') {
+        return null
+      }
+
+      const noteShape = selectedShape as TLNoteShape
+      const bounds = editor.getSelectionPageBounds() ?? editor.getShapePageBounds(noteShape.id)
+
+      if (!bounds) {
+        return null
+      }
+
+      return {
+        bounds,
+        shape: noteShape,
+        text: (editor.getShapeUtil('note').getText(noteShape) ?? '').trim()
+      }
     }
 
     function contextTilesForTerminal(tile: CanvasTile) {
@@ -370,6 +675,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     function setActiveDragConnection(nextConnection: DragConnectionState | null) {
       dragConnectionRef.current = nextConnection
       setDragConnection(nextConnection)
+
+      if (nextConnection) {
+        setHoveredConnection(null)
+      }
     }
 
     function terminalConnectorIdFromTarget(target: EventTarget | null) {
@@ -381,6 +690,45 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       const terminalConnectorId = connector?.dataset.terminalConnectorId
 
       return typeof terminalConnectorId === 'string' ? terminalConnectorId : null
+    }
+
+    function showHoveredConnection(sourceTile: CanvasTile, terminalTile: CanvasTile) {
+      const start = connectorCenterForTile(sourceTile)
+      const end = connectorCenterForTile(terminalTile)
+      const { midpoint } = connectionCurve(start, end)
+
+      setHoveredConnection({
+        sourceTileId: sourceTile.id,
+        terminalTileId: terminalTile.id,
+        midpointX: midpoint.x,
+        midpointY: midpoint.y
+      })
+    }
+
+    function isSameConnectionHoverTarget(target: EventTarget | null, connectionKey: string) {
+      if (!(target instanceof Element)) {
+        return false
+      }
+
+      return (
+        target.closest('[data-terminal-connection-key]')?.getAttribute('data-terminal-connection-key') ===
+        connectionKey
+      )
+    }
+
+    function clearHoveredConnection(
+      connectionKey: string,
+      nextTarget: EventTarget | null = null
+    ) {
+      if (isSameConnectionHoverTarget(nextTarget, connectionKey)) {
+        return
+      }
+
+      setHoveredConnection((current) =>
+        current && terminalConnectionKey(current.sourceTileId, current.terminalTileId) === connectionKey
+          ? null
+          : current
+      )
     }
 
     function toggleLinkMode(tileId: string) {
@@ -435,26 +783,29 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
 
     function buildClaudeCodeContextPromptForTileIds(sourceTileIds: string[]) {
-      const contextPaths = Array.from(
-        new Set(
+      const contextTiles = Array.from(
+        new Map(
           sourceTileIds
             .map((sourceTileId) => tileById(sourceTileId))
             .filter(isContextSourceTile)
-            .map((tile) => tile.filePath)
-            .filter((filePath): filePath is string => typeof filePath === 'string')
-        )
+            .map((tile) => [tile.filePath, tile] as const)
+        ).values()
       )
 
-      if (contextPaths.length === 0) {
+      if (contextTiles.length === 0) {
         return ''
       }
+
+      const hasImageContext = contextTiles.some((tile) => tile.type === 'image')
 
       return [
         'Use these workspace files as context for this Claude Code session:',
         '',
-        ...contextPaths.map((filePath) => `- ${filePath}`),
+        ...contextTiles.map((tile) => `- ${tile.filePath}${tile.type === 'image' ? ' (image)' : ''}`),
         '',
-        'Read them before responding and keep them in working context.'
+        hasImageContext
+          ? 'Read the text files. For each path marked (image), open that image from the workspace and inspect it before responding. Keep all of them in working context.'
+          : 'Read them before responding and keep them in working context.'
       ].join('\n')
     }
 
@@ -531,6 +882,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         },
         { immediate: true }
       )
+
+      clearHoveredConnection(terminalConnectionKey(sourceTileId, terminalTileId))
     }
 
     function updateState(nextState: CanvasState, options?: { immediate?: boolean }) {
@@ -546,6 +899,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         },
         options
       )
+    }
+
+    function requestTileRefresh(tileId: string) {
+      setTileRefreshTokens((current) => ({
+        ...current,
+        [tileId]: (current[tileId] ?? 0) + 1
+      }))
     }
 
     function showZoom(nextZoom: number) {
@@ -615,6 +975,84 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       return delta
+    }
+
+    function clearWheelGestureOwner() {
+      wheelGestureOwnerRef.current = null
+
+      if (wheelGestureTimerRef.current !== null) {
+        window.clearTimeout(wheelGestureTimerRef.current)
+        wheelGestureTimerRef.current = null
+      }
+    }
+
+    function currentWheelGestureOwner() {
+      const owner = wheelGestureOwnerRef.current
+
+      if (!owner) {
+        return null
+      }
+
+      if (owner.kind === 'element' && !owner.element.isConnected) {
+        clearWheelGestureOwner()
+        return null
+      }
+
+      return owner
+    }
+
+    function extendWheelGestureOwner(owner: WheelGestureOwner) {
+      wheelGestureOwnerRef.current = owner
+
+      if (wheelGestureTimerRef.current !== null) {
+        window.clearTimeout(wheelGestureTimerRef.current)
+      }
+
+      wheelGestureTimerRef.current = window.setTimeout(() => {
+        wheelGestureOwnerRef.current = null
+        wheelGestureTimerRef.current = null
+      }, WHEEL_GESTURE_LOCK_MS)
+    }
+
+    function resolveWheelGestureOwner(
+      target: EventTarget | null,
+      deltaX: number,
+      deltaY: number
+    ): WheelGestureOwner {
+      const container = containerRef.current
+
+      if (!container) {
+        return { kind: 'board' }
+      }
+
+      const scrollLockElement = scrollLockElementFromTarget(target, container)
+      const scrollableElement = scrollableElementFromTarget(target, container)
+
+      if (scrollableElement && canScrollElementForDelta(scrollableElement, deltaX, deltaY)) {
+        return {
+          kind: 'element',
+          element: scrollableElement
+        }
+      }
+
+      if (scrollLockElement) {
+        return {
+          kind: 'element',
+          element: scrollableElement ?? firstScrollableDescendant(scrollLockElement) ?? scrollLockElement
+        }
+      }
+
+      return { kind: 'board' }
+    }
+
+    function applyWheelGestureOwner(owner: WheelGestureOwner, deltaX: number, deltaY: number) {
+      if (owner.kind === 'element') {
+        owner.element.scrollLeft += deltaX
+        owner.element.scrollTop += deltaY
+        return
+      }
+
+      panBy(deltaX, deltaY)
     }
 
     function zoomAt(clientX: number, clientY: number, nextZoom: number) {
@@ -834,6 +1272,24 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       setSelectedTileId(tile.id)
     }
 
+    function spawnFileTileAtClientPoint(file: FileTreeNode, clientX: number, clientY: number) {
+      const fileKind = file.fileKind ?? 'code'
+      const point = pagePointFromClient(clientX, clientY)
+      const tile = createTileFromFile(
+        {
+          fileKind,
+          name: file.name,
+          path: file.path
+        },
+        point.x,
+        point.y,
+        nextZIndex(stateRef.current.tiles)
+      )
+
+      appendTile(tile, { immediate: true })
+      setSelectedTileId(tile.id)
+    }
+
     function applyBoardTool(nextTool: BoardTool) {
       const editor = editorRef.current
 
@@ -849,7 +1305,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         return
       }
 
+      if (nextTool === 'draw') {
+        editor.setStyleForNextShapes(DefaultColorStyle, drawColor)
+      }
+
       editor.setCurrentTool(nextTool)
+    }
+
+    function applyDrawColor(nextColor: TLDefaultColorStyle) {
+      drawColorRef.current = nextColor
+      setDrawColor(nextColor)
+      editorRef.current?.setStyleForNextShapes(DefaultColorStyle, nextColor)
     }
 
     function runShortcutAction(action: ShortcutAction) {
@@ -858,8 +1324,55 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         return
       }
 
+      if (action === 'markdown') {
+        onCreateMarkdownNote()
+        return
+      }
+
       setSelectedTileId(null)
       applyBoardTool(action)
+    }
+
+    async function convertSelectedStickyNoteToMarkdown() {
+      const editor = editorRef.current
+
+      if (!editor || convertingStickyNote) {
+        return
+      }
+
+      const selectedNote = selectedStickyNoteFromEditor(editor)
+
+      if (!selectedNote) {
+        return
+      }
+
+      setConvertingStickyNote(true)
+
+      try {
+        const convertedNode = await onConvertStickyNoteToMarkdown(selectedNote.text)
+
+        if (!convertedNode) {
+          return
+        }
+
+        const replacementTile = createTileFromFile(
+          {
+            fileKind: 'note',
+            name: convertedNode.name,
+            path: convertedNode.path
+          },
+          selectedNote.bounds.x,
+          selectedNote.bounds.y,
+          nextZIndex(stateRef.current.tiles)
+        )
+
+        appendTile(replacementTile, { immediate: true })
+        editor.deleteShapes([selectedNote.shape.id])
+        setLinkSourceTileId(null)
+        setSelectedTileId(replacementTile.id)
+      } finally {
+        setConvertingStickyNote(false)
+      }
     }
 
     function handleBoardMount(editor: Editor) {
@@ -869,7 +1382,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         wheelBehavior: 'pan',
         zoomSpeed: 1,
         panSpeed: 1,
-        zoomSteps: [MIN_ZOOM, 0.5, 0.67, 0.8, 1]
+        zoomSteps: [MIN_ZOOM, 0.5, 0.67, 0.8, 1, 1.25, 1.5, 2]
       })
       if (stateRef.current.boardSnapshot && typeof stateRef.current.boardSnapshot === 'object') {
         try {
@@ -879,10 +1392,43 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         }
       }
       editor.setCamera(viewportToCamera(stateRef.current.viewport))
+      editor.setStyleForNextShapes(DefaultColorStyle, drawColor)
       applyBoardTool('hand')
+      setSelectedCanvasNoteId(selectedStickyNoteFromEditor(editor)?.shape.id ?? null)
+
+      const handleCreatedShapes = (records: TLRecord[]) => {
+        const nextColor = drawColorRef.current
+        const drawShapeUpdates: DrawShapeUpdate[] = records.flatMap((record) => {
+          if (record.typeName !== 'shape' || record.type !== 'draw' || record.props.color === nextColor) {
+            return []
+          }
+
+          return [
+            {
+              id: record.id,
+              type: 'draw',
+              props: {
+                color: nextColor
+              }
+            }
+          ]
+        })
+
+        if (drawShapeUpdates.length > 0) {
+          editor.updateShapes(drawShapeUpdates)
+        }
+      }
+
+      editor.on('created-shapes', handleCreatedShapes)
 
       const detachStoreListener = editor.store.listen(
         () => {
+          const selectedStickyNote = selectedStickyNoteFromEditor(editor)
+
+          setSelectedCanvasNoteId((current) =>
+            current === (selectedStickyNote?.shape.id ?? null) ? current : (selectedStickyNote?.shape.id ?? null)
+          )
+
           const nextViewport = cameraToViewport(editor.getCamera())
           const currentViewport = stateRef.current.viewport
 
@@ -919,8 +1465,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       )
 
       return () => {
+        editor.off('created-shapes', handleCreatedShapes)
         detachStoreListener()
         detachDocumentListener()
+        setSelectedCanvasNoteId(null)
 
         if (editorRef.current === editor) {
           editorRef.current = null
@@ -951,73 +1499,122 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }, [state.viewport.panX, state.viewport.panY, state.viewport.zoom])
 
     useEffect(() => {
-      const container = containerRef.current
-
-      if (!container) {
+      if (!shortcutsSuspended) {
         return
       }
 
-      const gestureContainer = container
+      canvasActiveRef.current = false
+      editorRef.current?.blur()
+    }, [shortcutsSuspended])
 
-      function handleWheel(event: WheelEvent) {
-        if (scrollableElementFromTarget(event.target, gestureContainer)) {
-          if (event.ctrlKey || event.metaKey) {
-            event.preventDefault()
+    useEffect(() => {
+      editorRef.current?.setStyleForNextShapes(DefaultColorStyle, drawColor)
+    }, [drawColor])
+
+    useEffect(() => {
+      function shouldPreferResolvedWheelOwner(
+        activeOwner: WheelGestureOwner | null,
+        resolvedOwner: WheelGestureOwner
+      ) {
+        return !activeOwner
+      }
+
+      function handleGlobalWheel(event: WheelEvent) {
+        const container = containerRef.current
+        const targetInsideCanvas =
+          event.target instanceof Node && (container?.contains(event.target) ?? false)
+        const activeWheelOwner = currentWheelGestureOwner()
+        const nativeWheelElement =
+          container && targetInsideCanvas
+            ? elementMatchingSelectorFromTarget(event.target, container, NATIVE_WHEEL_SELECTOR)
+            : null
+
+        if (!event.ctrlKey && !event.metaKey) {
+          if (nativeWheelElement) {
+            clearWheelGestureOwner()
+            return
           }
 
+          if (!targetInsideCanvas && !activeWheelOwner) {
+            return
+          }
+
+          const normalizedDeltaX = normalizeWheelDelta(event.deltaX, event.deltaMode)
+          const normalizedDeltaY = normalizeWheelDelta(event.deltaY, event.deltaMode)
+          const resolvedOwner = resolveWheelGestureOwner(
+            event.target,
+            normalizedDeltaX,
+            normalizedDeltaY
+          )
+          const owner = shouldPreferResolvedWheelOwner(activeWheelOwner, resolvedOwner)
+            ? resolvedOwner
+            : activeWheelOwner ?? resolvedOwner
+
+          extendWheelGestureOwner(owner)
+          event.preventDefault()
+          event.stopPropagation()
+          applyWheelGestureOwner(owner, normalizedDeltaX, normalizedDeltaY)
+          return
+        }
+
+        if (!targetInsideCanvas && !activeWheelOwner) {
           return
         }
 
         event.preventDefault()
+        event.stopPropagation()
 
-        if (event.ctrlKey || event.metaKey) {
-          // Trackpad pinch-to-zoom fires as ctrl+wheel in Chromium/Electron.
-          // Shift+scroll also zooms for mouse wheel users.
-          const zoomDelta = -event.deltaY * 0.01
-          const nextZoom = clamp(
-            stateRef.current.viewport.zoom * Math.exp(zoomDelta),
-            MIN_ZOOM,
-            MAX_ZOOM
-          )
+        const zoomDelta = -normalizeWheelDelta(event.deltaY, event.deltaMode) * 0.01
+        const nextZoom = clamp(
+          stateRef.current.viewport.zoom * Math.exp(zoomDelta),
+          MIN_ZOOM,
+          MAX_ZOOM
+        )
 
-          zoomAt(event.clientX, event.clientY, nextZoom)
-        } else {
-          // Two-finger scroll (or three-finger drag with system setting) → pan
-          panBy(event.deltaX, event.deltaY)
-        }
+        zoomAt(event.clientX, event.clientY, nextZoom)
       }
 
-      function handleGestureStart(rawEvent: Event) {
+      function handleGlobalGestureStart(rawEvent: Event) {
         const event = rawEvent as GestureLikeEvent
+
+        event.preventDefault()
+        event.stopPropagation()
         beginPinch(event.clientX, event.clientY)
-        event.preventDefault()
       }
 
-      function handleGestureChange(rawEvent: Event) {
+      function handleGlobalGestureChange(rawEvent: Event) {
         const event = rawEvent as GestureLikeEvent
 
         event.preventDefault()
+        event.stopPropagation()
         updatePinch({ scale: event.scale })
       }
 
-      function handleGestureEnd() {
+      function handleGlobalGestureEnd(rawEvent: Event) {
+        rawEvent.preventDefault()
+        rawEvent.stopPropagation()
         endPinch()
       }
 
-      gestureContainer.addEventListener('wheel', handleWheel, { passive: false })
-      gestureContainer.addEventListener('gesturestart', handleGestureStart as EventListener, {
-        passive: false
+      window.addEventListener('wheel', handleGlobalWheel, { passive: false, capture: true })
+      window.addEventListener('gesturestart', handleGlobalGestureStart as EventListener, {
+        passive: false,
+        capture: true
       })
-      gestureContainer.addEventListener('gesturechange', handleGestureChange as EventListener, {
-        passive: false
+      window.addEventListener('gesturechange', handleGlobalGestureChange as EventListener, {
+        passive: false,
+        capture: true
       })
-      gestureContainer.addEventListener('gestureend', handleGestureEnd as EventListener)
+      window.addEventListener('gestureend', handleGlobalGestureEnd as EventListener, {
+        capture: true
+      })
 
       return () => {
-        gestureContainer.removeEventListener('wheel', handleWheel)
-        gestureContainer.removeEventListener('gesturestart', handleGestureStart as EventListener)
-        gestureContainer.removeEventListener('gesturechange', handleGestureChange as EventListener)
-        gestureContainer.removeEventListener('gestureend', handleGestureEnd as EventListener)
+        clearWheelGestureOwner()
+        window.removeEventListener('wheel', handleGlobalWheel, true)
+        window.removeEventListener('gesturestart', handleGlobalGestureStart as EventListener, true)
+        window.removeEventListener('gesturechange', handleGlobalGestureChange as EventListener, true)
+        window.removeEventListener('gestureend', handleGlobalGestureEnd as EventListener, true)
       }
     }, [])
 
@@ -1042,11 +1639,34 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }, [])
 
     useEffect(() => {
-      function handlePointerContext(event: PointerEvent) {
+      function syncBoardKeyboardFocus(target: EventTarget | null) {
+        const editor = editorRef.current
         const container = containerRef.current
-        const target = event.target as Node | null
+        const targetNode = target as Node | null
+        const targetInsideCanvas = Boolean(container && targetNode && container.contains(targetNode))
+        const boardShouldOwnFocus =
+          !shortcutsSuspended && targetInsideCanvas && !keyboardShortcutsBlocked(target)
 
-        canvasActiveRef.current = Boolean(container && target && container.contains(target))
+        canvasActiveRef.current = boardShouldOwnFocus
+
+        if (!editor) {
+          return
+        }
+
+        if (!boardShouldOwnFocus) {
+          editor.blur()
+          return
+        }
+
+        editor.focus()
+      }
+
+      function handlePointerContext(event: PointerEvent) {
+        syncBoardKeyboardFocus(event.target)
+      }
+
+      function handleFocusIn(event: FocusEvent) {
+        syncBoardKeyboardFocus(event.target)
       }
 
       function handleKeyDown(event: KeyboardEvent) {
@@ -1054,15 +1674,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           return
         }
 
-        if (!canvasActiveRef.current) {
+        if (shortcutsSuspended || !canvasActiveRef.current) {
           return
         }
 
-        const target = event.target as HTMLElement | null
-        const isEditing =
-          target?.tagName === 'TEXTAREA' ||
-          target?.tagName === 'INPUT' ||
-          target?.isContentEditable === true
+        const isEditing = keyboardShortcutsBlocked(event.target)
 
         if (isEditing) {
           return
@@ -1128,13 +1744,15 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       window.addEventListener('pointerdown', handlePointerContext, true)
+      window.addEventListener('focusin', handleFocusIn, true)
       window.addEventListener('keydown', handleKeyDown)
 
       return () => {
         window.removeEventListener('pointerdown', handlePointerContext, true)
+        window.removeEventListener('focusin', handleFocusIn, true)
         window.removeEventListener('keydown', handleKeyDown)
       }
-    }, [linkSourceTileId, selectedTileId])
+    }, [linkSourceTileId, selectedTileId, shortcutsSuspended])
 
     useEffect(() => {
       function handlePointerMove(event: PointerEvent) {
@@ -1346,6 +1964,20 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       ) {
         setActiveDragConnection(null)
       }
+
+      setTileRefreshTokens((current) => {
+        if (!(tileId in current)) {
+          return current
+        }
+
+        const next = { ...current }
+        delete next[tileId]
+        return next
+      })
+
+      setHoveredConnection((current) =>
+        current && (current.sourceTileId === tileId || current.terminalTileId === tileId) ? null : current
+      )
     }
 
     function createTerminalAt(clientX: number, clientY: number) {
@@ -1370,32 +2002,72 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
 
     function handleDragOverCapture(event: ReactDragEvent<HTMLDivElement>) {
-      if (!hasCollaboratorFilePayload(event.dataTransfer)) {
+      if (hasCollaboratorFilePayload(event.dataTransfer)) {
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        return
+      }
+
+      if (!activeWorkspacePath || droppedImageFiles(event.dataTransfer).length === 0) {
         return
       }
 
       event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
     }
 
     function handleDropCapture(event: ReactDragEvent<HTMLDivElement>) {
-      if (!hasCollaboratorFilePayload(event.dataTransfer)) {
+      if (hasCollaboratorFilePayload(event.dataTransfer)) {
+        event.preventDefault()
+        event.stopPropagation()
+        const payload = event.dataTransfer.getData(COLLABORATOR_FILE_MIME)
+
+        if (!payload) {
+          return
+        }
+
+        const parsed = JSON.parse(payload) as { fileKind: FileKind; name: string; path: string }
+        const point = pagePointFromClient(event.clientX, event.clientY)
+        const tile = createTileFromFile(parsed, point.x, point.y, nextZIndex(stateRef.current.tiles))
+
+        appendTile(tile, { immediate: true })
+        setSelectedTileId(tile.id)
+        return
+      }
+
+      if (!activeWorkspacePath) {
+        return
+      }
+
+      const imageFiles = droppedImageFiles(event.dataTransfer)
+
+      if (imageFiles.length === 0) {
         return
       }
 
       event.preventDefault()
       event.stopPropagation()
-      const payload = event.dataTransfer.getData(COLLABORATOR_FILE_MIME)
 
-      if (!payload) {
-        return
-      }
+      const dropClientX = event.clientX
+      const dropClientY = event.clientY
 
-      const parsed = JSON.parse(payload) as { fileKind: FileKind; name: string; path: string }
-      const point = pagePointFromClient(event.clientX, event.clientY)
-      const tile = createTileFromFile(parsed, point.x, point.y, nextZIndex(stateRef.current.tiles))
+      void (async () => {
+        for (const [index, imageFile] of imageFiles.entries()) {
+          const importedNode = await onImportImageFile(imageFile)
 
-      appendTile(tile, { immediate: true })
-      setSelectedTileId(tile.id)
+          if (!importedNode) {
+            continue
+          }
+
+          const staggerOffset = index * 28
+
+          spawnFileTileAtClientPoint(
+            importedNode,
+            dropClientX + staggerOffset,
+            dropClientY + staggerOffset
+          )
+        }
+      })()
     }
 
     const activeLinkSourceTile = tileById(linkSourceTileId)
@@ -1404,6 +2076,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const zoomLabel = `${Math.round(state.viewport.zoom * 100)}%`
     const canZoomIn = state.viewport.zoom < MAX_ZOOM - CAMERA_EPSILON
     const canZoomOut = state.viewport.zoom > MIN_ZOOM + CAMERA_EPSILON
+    const drawTheme = darkMode ? DefaultColorThemePalette.darkMode : DefaultColorThemePalette.lightMode
     const terminalConnections = state.tiles.flatMap((terminalTile) => {
       if (terminalTile.type !== 'term') {
         return []
@@ -1414,12 +2087,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         terminalTile
       }))
     })
+    const hoveredConnectionKey = hoveredConnection
+      ? terminalConnectionKey(hoveredConnection.sourceTileId, hoveredConnection.terminalTileId)
+      : null
+    const hoveredConnectionSourceTile = hoveredConnection ? tileById(hoveredConnection.sourceTileId) : null
+    const hoveredConnectionTerminalTile = hoveredConnection ? tileById(hoveredConnection.terminalTileId) : null
 
     return (
       <div
         ref={containerRef}
         className={clsx(
-          'canvas-surface relative h-full overflow-hidden rounded-[10px] border border-[color:var(--line-strong)] bg-[var(--canvas-bg)] touch-none [overscroll-behavior:none]'
+          'canvas-surface relative h-full overflow-hidden bg-[var(--canvas-bg)] touch-none [overscroll-behavior:none]'
         )}
         onPointerDownCapture={(event) => {
           const target = event.target as HTMLElement
@@ -1450,36 +2128,39 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           data-canvas-ui="true"
           className="group absolute right-3 top-3 z-[220]"
         >
-          <div className="flex min-h-10 w-10 max-w-[calc(100vw-1.5rem)] origin-top-right items-start overflow-hidden rounded-[10px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] shadow-[0_10px_22px_rgba(15,23,42,0.12)] backdrop-blur transition-[width,max-height,border-radius] duration-200 ease-out max-h-10 group-hover:w-[28rem] group-hover:max-h-[26rem] group-hover:rounded-[10px] group-focus-within:w-[28rem] group-focus-within:max-h-[26rem] group-focus-within:rounded-[10px]">
+          <div className="flex min-h-10 w-10 max-w-[calc(100vw-1.5rem)] origin-top-right items-start overflow-hidden rounded-[6px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] shadow-[0_10px_22px_rgba(15,23,42,0.12)] backdrop-blur transition-[width,max-height,border-radius] duration-200 ease-out max-h-10 group-hover:w-[28rem] group-hover:max-h-[26rem] group-hover:rounded-[6px] group-focus-within:w-[28rem] group-focus-within:max-h-[26rem] group-focus-within:rounded-[6px]">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center self-start text-[13px] font-semibold tracking-[0.2em] text-[var(--text-dim)]">
               ?
             </div>
             <div className="min-w-0 flex-1 self-stretch overflow-y-auto pr-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-              <div className="pt-2.5 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] uppercase tracking-[0.16em] text-[var(--text-faint)]">
+              <div className="pt-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
                 Canvas Keys
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2 pb-3">
                 {SHORTCUT_ITEMS.map((shortcut) => {
                   const isActive =
-                    shortcut.action !== 'terminal' && activeBoardTool === shortcut.action
+                    isBoardToolAction(shortcut.action) && activeBoardTool === shortcut.action
+                  const isDisabled = shortcut.action === 'markdown' && !activeWorkspacePath
 
                   return (
                     <button
                       key={shortcut.action}
+                      disabled={isDisabled}
                       className={clsx(
-                        'flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[9px] border px-3 py-2 text-left transition',
+                        'flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[4px] border px-3 py-2 text-left transition',
                         isActive
                           ? 'border-[color:var(--text)] bg-[var(--text)] text-[var(--surface-0)]'
-                          : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:text-[var(--text)]'
+                          : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:text-[var(--text)]',
+                        isDisabled && 'cursor-not-allowed opacity-45 hover:border-[color:var(--line)] hover:text-[var(--text-dim)]'
                       )}
                       onClick={() => runShortcutAction(shortcut.action)}
                     >
-                      <span className="min-w-0 flex-1 whitespace-normal font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] uppercase leading-[1.35] tracking-[0.08em]">
+                      <span className="min-w-0 flex-1 whitespace-normal text-[11px] font-semibold uppercase leading-[1.35] tracking-[0.08em]">
                         {shortcut.label}
                       </span>
                       <span
                         className={clsx(
-                          'shrink-0 rounded-[6px] border px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em]',
+                          'shrink-0 rounded-[4px] border px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em]',
                           isActive
                             ? 'border-white/25 bg-white/12 text-white'
                             : 'border-[color:var(--line)] bg-[var(--surface-1)] text-[var(--text-faint)]'
@@ -1494,23 +2175,34 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               <div className="grid gap-2 border-t border-[color:var(--line)] py-3 text-[11px] leading-5 text-[var(--text-dim)]">
                 <div>
                   <span className="font-semibold text-[var(--text)]">Canvas Note:</span> press{' '}
-                  <span className="font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] uppercase tracking-[0.08em] text-[var(--text)]">
+                  <span className="font-[var(--font-mono)] text-[10px] uppercase tracking-[0.08em] text-[var(--text)]">
                     N
                   </span>{' '}
                   to place a note on the canvas.
                 </div>
                 <div>
                   <span className="font-semibold text-[var(--text)]">New .md file:</span> use the
-                  sidebar{' '}
-                  <span className="font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] tracking-[0.04em] text-[var(--text)]">
-                    New Markdown Note in the Current Folder (.md)
+                  shortcut{' '}
+                  <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
+                    {MARKDOWN_SHORTCUT_KEY}
                   </span>{' '}
-                  button. It creates <span className="text-[var(--text)]">Untitled.md</span> in the
-                  selected folder, or beside the selected file.
+                  or the sidebar button. It creates <span className="text-[var(--text)]">Untitled.md</span>{' '}
+                  in the selected folder, or beside the selected file.
+                </div>
+                <div>
+                  <span className="font-semibold text-[var(--text)]">Paste image:</span> press{' '}
+                  <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
+                    {PASTE_IMAGE_SHORTCUT_KEY}
+                  </span>{' '}
+                  or drop an image onto the canvas. It is saved in{' '}
+                  <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
+                    .claude-canvas/assets
+                  </span>{' '}
+                  inside the active workspace.
                 </div>
                 <div>
                   <span className="font-semibold text-[var(--text)]">Send to Claude:</span> drag a
-                  file or frame dot onto a terminal dot.
+                  file, image, or frame dot onto a terminal dot.
                 </div>
               </div>
             </div>
@@ -1518,13 +2210,23 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         </div>
 
         {linkSourceTile ? (
-          <div className="pointer-events-none absolute left-3 top-3 z-[210] rounded-[8px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-1.5 text-[11px] font-medium tracking-[0.12em] text-[var(--text-dim)] backdrop-blur">
+          <div className="pointer-events-none absolute left-3 top-3 z-[210] rounded-[4px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-1.5 text-[11px] font-medium tracking-[0.12em] text-[var(--text-dim)] backdrop-blur">
             Drag <span className="text-[var(--text)]">{linkSourceTile.title}</span> into a terminal
             dot, or press Esc to cancel.
           </div>
         ) : null}
 
-        <div className="absolute inset-0">
+        <div
+          className="pointer-events-none absolute inset-0 z-0"
+          style={{
+            backgroundImage:
+              'radial-gradient(circle, var(--canvas-dot) 0.9px, transparent 1.15px)',
+            backgroundSize: `${GRID_SIZE * state.viewport.zoom}px ${GRID_SIZE * state.viewport.zoom}px`,
+            backgroundPosition: `${state.viewport.panX}px ${state.viewport.panY}px`
+          }}
+        />
+
+        <div className="absolute inset-0 z-10">
           <Tldraw
             autoFocus={false}
             className={clsx('collab-tldraw', darkMode && 'theme-dark')}
@@ -1536,17 +2238,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         </div>
 
         <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundImage:
-              'radial-gradient(circle, var(--canvas-dot) 0.9px, transparent 1.15px)',
-            backgroundSize: `${GRID_SIZE * state.viewport.zoom}px ${GRID_SIZE * state.viewport.zoom}px`,
-            backgroundPosition: `${state.viewport.panX}px ${state.viewport.panY}px`
-          }}
-        />
-
-        <div
-          className="pointer-events-none absolute inset-0 origin-top-left"
+          className="pointer-events-none absolute inset-0 z-20 origin-top-left"
           style={{
             transform: `translate(${state.viewport.panX}px, ${state.viewport.panY}px) scale(${state.viewport.zoom})`
           }}
@@ -1555,21 +2247,38 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             {terminalConnections.map(({ sourceTile, terminalTile }) => {
               const start = connectorCenterForTile(sourceTile)
               const end = connectorCenterForTile(terminalTile)
+              const { path } = connectionCurve(start, end)
+              const connectionKey = terminalConnectionKey(sourceTile.id, terminalTile.id)
+              const isHoveredConnection = hoveredConnectionKey === connectionKey
               const startX = start.x
               const startY = start.y
               const endX = end.x
               const endY = end.y
-              const controlOffset = Math.max(80, Math.abs(endX - startX) * 0.4)
 
               return (
-                <g key={`${sourceTile.id}:${terminalTile.id}`}>
+                <g key={connectionKey}>
                   <path
-                    d={`M ${startX} ${startY} C ${startX + controlOffset} ${startY}, ${endX - controlOffset} ${endY}, ${endX} ${endY}`}
+                    d={path}
                     fill="none"
                     stroke="var(--link-line)"
                     strokeDasharray="8 6"
                     strokeLinecap="round"
-                    strokeWidth={2}
+                    strokeOpacity={isHoveredConnection ? 1 : 0.9}
+                    strokeWidth={isHoveredConnection ? 2.5 : 2}
+                  />
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke="transparent"
+                    strokeLinecap="round"
+                    strokeWidth={14}
+                    pointerEvents="stroke"
+                    className="pointer-events-auto"
+                    data-terminal-connection-key={connectionKey}
+                    onPointerEnter={() => showHoveredConnection(sourceTile, terminalTile)}
+                    onPointerLeave={(event) =>
+                      clearHoveredConnection(connectionKey, event.relatedTarget)
+                    }
                   />
                   <circle cx={startX} cy={startY} fill="var(--link-line)" r={4} />
                   <circle cx={endX} cy={endY} fill="var(--link-line)" r={4} />
@@ -1598,7 +2307,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 x: dragConnection.currentX,
                 y: dragConnection.currentY
               }
-              const controlOffset = Math.max(80, Math.abs(end.x - start.x) * 0.4)
+              const { path } = connectionCurve(start, end)
 
               return (
                 <g
@@ -1609,7 +2318,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   }
                 >
                   <path
-                    d={`M ${start.x} ${start.y} C ${start.x + controlOffset} ${start.y}, ${end.x - controlOffset} ${end.y}, ${end.x} ${end.y}`}
+                    d={path}
                     fill="none"
                     stroke="var(--link-line)"
                     strokeDasharray="8 6"
@@ -1658,6 +2367,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 const contextTiles = tile.type === 'term' ? contextTilesForTerminal(tile) : []
                 const isContextSource = isContextSourceTile(tile)
                 const isPendingLinkSource = linkSourceTileId === tile.id
+                const hasFileDocument = Boolean(tile.filePath)
+                const showNoteShortcutHelp = tile.type === 'note'
+                const tileRefreshToken = tileRefreshTokens[tile.id] ?? 0
                 const connectorLabel =
                   tile.type === 'term'
                     ? dragConnection?.sourceKind === 'group'
@@ -1675,7 +2387,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     data-tile-root="true"
                     data-terminal-connector-id={tile.type === 'term' ? tile.id : undefined}
                     className={clsx(
-                      'pointer-events-auto absolute overflow-visible rounded-[8px] border bg-[var(--surface-0)] shadow-[0_8px_18px_rgba(0,0,0,0.22)]',
+                      'pointer-events-auto absolute overflow-visible rounded-[4px] border bg-[var(--surface-0)] shadow-[0_8px_18px_rgba(0,0,0,0.22)]',
                       selectedTileId === tile.id
                         ? 'border-[color:var(--line-strong)] shadow-[0_0_0_1px_rgba(148,163,184,0.22),0_8px_18px_rgba(0,0,0,0.24)]'
                         : 'border-[color:var(--line)]',
@@ -1738,7 +2450,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   />
                 ) : null}
                 <div
-                  className="flex items-center justify-between rounded-t-[8px] border-b border-[color:var(--line)] bg-[var(--surface-1)] px-3 py-1.5"
+                  className="flex items-center justify-between rounded-t-[4px] border-b border-[color:var(--line)] bg-[var(--surface-1)] px-2.5 py-1.5"
                   onPointerDown={(event) => {
                     if (event.button !== 0) {
                       return
@@ -1758,20 +2470,47 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     }
                   }}
                 >
-                  <div className="min-w-0">
-                    <div className="truncate font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] font-medium text-[var(--text)]">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[12px] font-medium text-[var(--text)]">
                       {tile.title}
                     </div>
-                    <div className="truncate font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
+                    <div className="truncate text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
                       {tile.type === 'term'
                         ? tile.sessionId
                         : tile.filePath?.replace(/^.*\//, '')}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {tile.filePath ? (
+                  <div className="flex shrink-0 items-center gap-1">
+                    {showNoteShortcutHelp ? (
+                      <HoverTooltip label={NOTE_SLASH_TOOLTIP_LABEL} placement="bottom">
+                        <button
+                          type="button"
+                          aria-label="Markdown shortcuts"
+                          data-managed-tooltip="custom"
+                          className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[10px] font-semibold text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          /
+                        </button>
+                      </HoverTooltip>
+                    ) : null}
+                    {hasFileDocument ? (
                       <button
-                        className="flex h-6 w-6 items-center justify-center rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[12px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                        className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[11px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        title={tile.type === 'image' ? 'Refresh image' : 'Refresh file'}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          requestTileRefresh(tile.id)
+                        }}
+                      >
+                        ↻
+                      </button>
+                    ) : null}
+                    {hasFileDocument ? (
+                      <button
+                        className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[11px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
                         onPointerDown={(event) => event.stopPropagation()}
                         title="Open preview"
                         onClick={(event) => {
@@ -1788,7 +2527,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       </button>
                     ) : null}
                     <button
-                      className="flex h-6 w-6 items-center justify-center rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[14px] leading-none text-[var(--text-dim)] transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
+                      className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[13px] leading-none text-[var(--text-dim)] transition hover:border-[color:var(--error-line)] hover:bg-[var(--error-bg)] hover:text-[var(--error-text)]"
                       title="Close tile"
                       onPointerDown={(event) => event.stopPropagation()}
                       onClick={(event) => {
@@ -1805,12 +2544,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   {tile.type === 'term' ? (
                     <div className="flex h-full min-h-0 flex-col gap-2">
                       <div
-                        className="flex flex-wrap items-center gap-2 rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-1)] px-2.5 py-2"
+                        className="flex flex-wrap items-center gap-2 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-1)] px-2.5 py-2"
                         data-terminal-control="true"
                         onPointerDown={(event) => event.stopPropagation()}
                       >
                         {contextTiles.length === 0 ? (
-                          <div className="font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] text-[var(--text-dim)]">
+                          <div className="text-[11px] text-[var(--text-dim)]">
                             {linkSourceTile
                               ? 'Drop the dragged connector on this terminal dot to attach it.'
                               : 'Drag a file dot or a frame-group dot into this terminal to build Claude Code context.'}
@@ -1819,7 +2558,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                           contextTiles.map((contextTile) => (
                             <div
                               key={contextTile.id}
-                              className="flex items-center gap-1 rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] text-[var(--text-dim)]"
+                              className="flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[10px] text-[var(--text-dim)]"
                             >
                               <span className="max-w-[120px] truncate">{contextTile.title}</span>
                               <button
@@ -1850,6 +2589,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       fileKind={tile.type as FileKind}
                       filePath={tile.filePath as string}
                       onPassthroughScroll={panBy}
+                      refreshToken={tileRefreshToken}
+                      showTileRefreshButton={false}
                     />
                   )}
                 </div>
@@ -1879,48 +2620,185 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             ))}
         </div>
 
+        {hoveredConnection &&
+        isContextSourceTile(hoveredConnectionSourceTile) &&
+        hoveredConnectionTerminalTile?.type === 'term' ? (
+          <div data-canvas-ui="true" className="pointer-events-none absolute inset-0 z-[210]">
+            <button
+              type="button"
+              data-terminal-connection-key={hoveredConnectionKey ?? undefined}
+              className="pointer-events-auto absolute flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[color:var(--line-strong)] bg-[color:var(--surface-overlay)] text-[11px] leading-none text-[var(--text-dim)] shadow-[0_8px_18px_rgba(0,0,0,0.18)] backdrop-blur transition hover:border-[color:var(--error-line)] hover:bg-[var(--error-bg)] hover:text-[var(--error-text)]"
+              style={{
+                left: hoveredConnection.midpointX * state.viewport.zoom + state.viewport.panX,
+                top: hoveredConnection.midpointY * state.viewport.zoom + state.viewport.panY
+              }}
+              aria-label={`Remove link from ${hoveredConnectionSourceTile.title} to ${hoveredConnectionTerminalTile.title}`}
+              title={`Remove link from ${hoveredConnectionSourceTile.title} to ${hoveredConnectionTerminalTile.title}`}
+              onPointerDown={(event) => {
+                event.stopPropagation()
+              }}
+              onPointerLeave={(event) => {
+                if (hoveredConnectionKey) {
+                  clearHoveredConnection(hoveredConnectionKey, event.relatedTarget)
+                }
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+                detachContextTile(hoveredConnectionTerminalTile.id, hoveredConnectionSourceTile.id)
+              }}
+            >
+              <span className="pointer-events-none block leading-none">×</span>
+            </button>
+          </div>
+        ) : null}
+
         {zoomIndicator ? (
-          <div className="pointer-events-none absolute bottom-[4.5rem] right-3 z-[220] rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3.5 py-1.5 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] font-medium tracking-[0.14em] text-[var(--text-dim)] shadow-[0_10px_22px_rgba(15,23,42,0.08)] backdrop-blur">
+          <div className="pointer-events-none absolute bottom-[6.65rem] right-3 z-[220] rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-1.5 text-[10px] font-medium tracking-[0.14em] text-[var(--text-dim)] shadow-[0_10px_22px_rgba(15,23,42,0.08)] backdrop-blur">
             {zoomIndicator}
           </div>
         ) : null}
 
         <div
           data-canvas-ui="true"
-          className="absolute bottom-3 right-3 z-[220] flex items-center gap-1.5 rounded-[10px] border border-[color:var(--line)] bg-[var(--surface-0)] px-1.5 py-1 shadow-[0_10px_22px_rgba(15,23,42,0.1)] backdrop-blur"
+          className="absolute bottom-0 right-0 z-[220] overflow-hidden border-l border-t border-[color:var(--line)] bg-[color:var(--surface-overlay)] shadow-[0_-8px_24px_rgba(15,23,42,0.1)] backdrop-blur"
         >
-          <button
-            className="flex h-9 w-9 items-center justify-center rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-0)] text-lg leading-none text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
-            aria-label="Zoom out"
-            disabled={!canZoomOut}
-            onClick={() => {
-              zoomByFactor(0.9)
-            }}
-            title="Zoom out"
-          >
-            -
-          </button>
-          <button
-            className="min-w-[5.5rem] rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-0)] px-4 py-2 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] font-medium tracking-[0.14em] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]"
-            aria-label="Reset zoom"
-            onClick={() => {
-              resetViewportZoom()
-            }}
-            title="Reset zoom"
-          >
-            {zoomLabel}
-          </button>
-          <button
-            className="flex h-9 w-9 items-center justify-center rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-0)] text-lg leading-none text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
-            aria-label="Zoom in"
-            disabled={!canZoomIn}
-            onClick={() => {
-              zoomByFactor(1.1)
-            }}
-            title="Zoom in"
-          >
-            +
-          </button>
+          <div className="flex items-center gap-1.5 border-b border-[color:var(--line)] px-3 py-2">
+            {QUICK_ACTION_ITEMS.map((action) => {
+              const isActive = activeBoardTool === action.action
+
+              return (
+                <HoverTooltip key={action.action} label={action.label} shortcut={action.key}>
+                  <button
+                    aria-label={action.label}
+                    data-managed-tooltip="custom"
+                    data-shortcut={action.key}
+                    className={clsx(
+                      'flex h-9 w-9 items-center justify-center rounded-[4px] border transition',
+                      isActive
+                        ? 'border-[color:var(--text)] bg-[var(--text)] text-[var(--surface-0)]'
+                        : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:text-[var(--text)]'
+                    )}
+                    onClick={() => runShortcutAction(action.action)}
+                  >
+                    <span
+                      className={clsx(
+                        'pointer-events-none inline-flex items-center justify-center',
+                        isActive ? 'text-[var(--surface-0)]' : 'text-current'
+                      )}
+                    >
+                      <QuickActionIcon action={action.action} />
+                    </span>
+                  </button>
+                </HoverTooltip>
+              )
+            })}
+          </div>
+
+          {activeBoardTool === 'draw' ? (
+            <div className="flex items-center gap-2 border-b border-[color:var(--line)] px-3 py-2">
+              <div className="pr-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+                Ink
+              </div>
+              <div className="flex items-center gap-1.5">
+                {DRAW_COLOR_ITEMS.map((item) => {
+                  const isActive = drawColor === item.color
+
+                  return (
+                    <button
+                      key={item.color}
+                      aria-label={`Pen color ${item.label}`}
+                      className={clsx(
+                        'relative flex h-7 w-7 items-center justify-center rounded-full border transition',
+                        isActive
+                          ? 'border-[color:var(--text)] bg-[var(--surface-0)] shadow-[0_0_0_1px_rgba(15,23,42,0.08)]'
+                          : 'border-[color:var(--line)] bg-[var(--surface-0)] hover:border-[color:var(--line-strong)]'
+                      )}
+                      onClick={() => {
+                        applyDrawColor(item.color)
+                      }}
+                      title={`Pen color: ${item.label}`}
+                    >
+                      <span
+                        className={clsx(
+                          'block h-4 w-4 rounded-full border',
+                          item.color === 'white'
+                            ? 'border-[color:var(--line-strong)]'
+                            : 'border-black/5'
+                        )}
+                        style={{
+                          backgroundColor: drawTheme[item.color].solid
+                        }}
+                      />
+                      {isActive ? (
+                        <span className="pointer-events-none absolute inset-0 rounded-full shadow-[inset_0_0_0_1px_var(--text)]" />
+                      ) : null}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {selectedCanvasNoteId && activeWorkspacePath ? (
+            <div className="flex items-center justify-between gap-3 border-b border-[color:var(--line)] px-3 py-2">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+                Sticky note
+              </div>
+              <HoverTooltip label="Convert the selected sticky note into a real markdown file in the current folder">
+                <button
+                  type="button"
+                  aria-label="Convert selected sticky note to markdown"
+                  data-managed-tooltip="custom"
+                  className="flex items-center gap-2 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
+                  disabled={convertingStickyNote}
+                  onClick={() => {
+                    void convertSelectedStickyNoteToMarkdown()
+                  }}
+                >
+                  <span className="font-[var(--font-mono)] text-[10px] text-[var(--text-faint)]">.md</span>
+                  <span>{convertingStickyNote ? 'Saving…' : 'Convert'}</span>
+                </button>
+              </HoverTooltip>
+            </div>
+          ) : null}
+
+          <div className="flex items-center gap-1.5 px-3 py-2.5">
+            <button
+              className="flex h-9 w-9 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[1.35rem] font-light leading-none text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
+              aria-label="Zoom out"
+              data-shortcut={ZOOM_OUT_SHORTCUT_KEY}
+              disabled={!canZoomOut}
+              onClick={() => {
+                zoomByFactor(0.9)
+              }}
+              title={composeTooltipLabel('Zoom out', ZOOM_OUT_SHORTCUT_KEY)}
+            >
+              -
+            </button>
+            <button
+              className="min-w-[6rem] rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3.5 py-2.5 text-[0.95rem] font-medium leading-none tracking-[0.04em] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]"
+              aria-label="Reset zoom"
+              data-shortcut={RESET_ZOOM_SHORTCUT_KEY}
+              onClick={() => {
+                resetViewportZoom()
+              }}
+              title={composeTooltipLabel('Reset zoom', RESET_ZOOM_SHORTCUT_KEY)}
+            >
+              {zoomLabel}
+            </button>
+            <button
+              className="flex h-9 w-9 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[1.35rem] font-light leading-none text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
+              aria-label="Zoom in"
+              data-shortcut={ZOOM_IN_SHORTCUT_KEY}
+              disabled={!canZoomIn}
+              onClick={() => {
+                zoomByFactor(1.1)
+              }}
+              title={composeTooltipLabel('Zoom in', ZOOM_IN_SHORTCUT_KEY)}
+            >
+              +
+            </button>
+          </div>
         </div>
       </div>
     )

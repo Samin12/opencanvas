@@ -12,11 +12,13 @@ import { APP_DIRECTORY } from './storage'
 const { app, webContents } = electron
 const require = createRequire(import.meta.url)
 
-const MAX_BUFFER_SIZE = 200_000
+const MAX_BUFFER_SIZE = 2_000_000
+const TMUX_HISTORY_LIMIT = '50000'
 const TMUX_SOCKET_NAME = 'collaborator-clone'
 const TERMINAL_SESSIONS_DIRECTORY = join(APP_DIRECTORY, 'terminal-sessions')
 const TMUX_CONFIG_PATH = join(APP_DIRECTORY, 'tmux.conf')
 const CLAUDE_START_COMMAND = process.env.COLLABORATOR_CLAUDE_COMMAND ?? 'claude'
+const TMUX_DEFAULT_TERMINAL_CANDIDATES = ['tmux-256color', 'screen-256color', 'xterm-256color']
 const TMUX_BINARY_CANDIDATES = [
   process.env.COLLABORATOR_TMUX_BIN,
   'tmux',
@@ -25,18 +27,21 @@ const TMUX_BINARY_CANDIDATES = [
   '/usr/bin/tmux'
 ].filter((value): value is string => Boolean(value))
 
-const TMUX_CONFIG = `set -g status off
+function tmuxConfig(defaultTerminal: string): string {
+  return `set -g status off
 set -g prefix None
 unbind-key C-b
 set -g escape-time 0
-set -g history-limit 10000
-set -g default-terminal "xterm-256color"
+set -g history-limit ${TMUX_HISTORY_LIMIT}
+set -g default-terminal "${defaultTerminal}"
 set -g mouse off
+set -g alternate-screen off
+set -g scroll-on-clear on
 set -g focus-events on
 set -g allow-passthrough on
 set -g extended-keys on
-set -ga terminal-overrides ",xterm-256color:smcup@:rmcup@"
 `
+}
 
 interface ManagedTerminalSession {
   buffer: string
@@ -110,9 +115,24 @@ function ensureTerminalStorage(): void {
   mkdirSync(TERMINAL_SESSIONS_DIRECTORY, { recursive: true })
 }
 
-function ensureTmuxConfig(): void {
+function hasTerminfoEntry(name: string): boolean {
+  const result = spawnSync('infocmp', [name], { stdio: 'ignore' })
+  return result.status === 0
+}
+
+function resolveTmuxDefaultTerminal(): string {
+  for (const candidate of TMUX_DEFAULT_TERMINAL_CANDIDATES) {
+    if (hasTerminfoEntry(candidate)) {
+      return candidate
+    }
+  }
+
+  return 'xterm-256color'
+}
+
+function ensureTmuxConfig(defaultTerminal: string): void {
   ensureTerminalStorage()
-  writeFileSync(TMUX_CONFIG_PATH, TMUX_CONFIG, 'utf8')
+  writeFileSync(TMUX_CONFIG_PATH, tmuxConfig(defaultTerminal), 'utf8')
 }
 
 function readPersistedTerminalSession(
@@ -145,8 +165,8 @@ function removePersistedTerminalSession(sessionId: string): void {
   rmSync(terminalSessionFilePath(sessionId), { force: true })
 }
 
-function tmuxBaseArgs(): string[] {
-  ensureTmuxConfig()
+function tmuxBaseArgs(defaultTerminal?: string): string[] {
+  ensureTmuxConfig(defaultTerminal ?? resolveTmuxDefaultTerminal())
   return ['-L', TMUX_SOCKET_NAME, '-f', TMUX_CONFIG_PATH]
 }
 
@@ -160,6 +180,31 @@ function resolveTmuxBinary(): string | null {
   }
 
   return null
+}
+
+function runTmuxCommand(tmuxBinary: string, args: string[], defaultTerminal?: string): void {
+  spawnSync(tmuxBinary, [...tmuxBaseArgs(defaultTerminal), ...args], { stdio: 'ignore' })
+}
+
+function tmuxTargetForSession(tmuxSessionName: string): string {
+  return `${tmuxSessionName}:0.0`
+}
+
+function configureTmuxServer(tmuxBinary: string, defaultTerminal: string): void {
+  runTmuxCommand(tmuxBinary, ['start-server'], defaultTerminal)
+  runTmuxCommand(tmuxBinary, ['set-option', '-g', 'status', 'off'], defaultTerminal)
+  runTmuxCommand(tmuxBinary, ['set-option', '-g', 'prefix', 'None'], defaultTerminal)
+  runTmuxCommand(tmuxBinary, ['unbind-key', 'C-b'], defaultTerminal)
+  runTmuxCommand(tmuxBinary, ['set-option', '-g', 'escape-time', '0'], defaultTerminal)
+  runTmuxCommand(tmuxBinary, ['set-option', '-g', 'history-limit', TMUX_HISTORY_LIMIT], defaultTerminal)
+  runTmuxCommand(tmuxBinary, ['set-option', '-g', 'default-terminal', defaultTerminal], defaultTerminal)
+  runTmuxCommand(tmuxBinary, ['set-option', '-g', 'mouse', 'off'], defaultTerminal)
+  runTmuxCommand(tmuxBinary, ['set-option', '-g', 'alternate-screen', 'off'], defaultTerminal)
+  runTmuxCommand(tmuxBinary, ['set-option', '-g', 'scroll-on-clear', 'on'], defaultTerminal)
+  runTmuxCommand(tmuxBinary, ['set-option', '-g', 'focus-events', 'on'], defaultTerminal)
+  runTmuxCommand(tmuxBinary, ['set-option', '-g', 'allow-passthrough', 'on'], defaultTerminal)
+  runTmuxCommand(tmuxBinary, ['set-option', '-g', 'extended-keys', 'on'], defaultTerminal)
+  runTmuxCommand(tmuxBinary, ['set-option', '-gu', 'terminal-overrides'], defaultTerminal)
 }
 
 function primaryCommandName(command: string): string {
@@ -296,13 +341,15 @@ export function createOrAttachTerminalSession(options: {
     throw new Error('tmux is required for terminal sessions. Install tmux and restart the app.')
   }
 
+  const defaultTerminal = resolveTmuxDefaultTerminal()
+  configureTmuxServer(tmuxBinary, defaultTerminal)
   const persisted = readPersistedTerminalSession(options.sessionId)
   const tmuxSessionName = persisted?.tmuxSessionName ?? tmuxSessionNameFor(options.sessionId)
   const sessionAlreadyExists = tmuxSessionExists(tmuxBinary, tmuxSessionName)
   const shouldAutoLaunchClaude = !sessionAlreadyExists && Boolean(options.cwd && existsSync(options.cwd))
   const pty = nodePty.spawn(
     tmuxBinary,
-    [...tmuxBaseArgs(), 'new-session', '-A', '-s', tmuxSessionName, '-c', cwd],
+    [...tmuxBaseArgs(defaultTerminal), 'new-session', '-A', '-s', tmuxSessionName, '-c', cwd],
     {
       name: 'xterm-256color',
       cols: sanitizeSize(options.cols, 80),
@@ -375,6 +422,46 @@ export function writeTerminalInput(sessionId: string, data: string): void {
   }
 
   session.pty.write(data)
+}
+
+export function readTerminalHistory(sessionId: string, limit = 50_000): string {
+  const activeSession = sessions.get(sessionId)
+  const persisted = readPersistedTerminalSession(sessionId)
+  const tmuxSessionName = activeSession?.tmuxSessionName ?? persisted?.tmuxSessionName
+
+  if (!tmuxSessionName) {
+    return activeSession?.buffer ?? ''
+  }
+
+  const tmuxBinary = resolveTmuxBinary()
+
+  if (!tmuxBinary) {
+    return activeSession?.buffer ?? ''
+  }
+
+  const result = spawnSync(
+    tmuxBinary,
+    [
+      ...tmuxBaseArgs(resolveTmuxDefaultTerminal()),
+      'capture-pane',
+      '-p',
+      '-J',
+      '-S',
+      `-${Math.max(1, Math.floor(limit))}`,
+      '-t',
+      tmuxTargetForSession(tmuxSessionName)
+    ],
+    {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore']
+    }
+  )
+
+  if (result.status !== 0) {
+    return activeSession?.buffer ?? ''
+  }
+
+  return result.stdout
 }
 
 export function releaseTerminalSession(sessionId: string): void {

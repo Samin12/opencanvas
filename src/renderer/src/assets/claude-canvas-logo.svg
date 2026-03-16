@@ -1,0 +1,114 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="appBg" x1="148" y1="104" x2="864" y2="920" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFDF8"/>
+      <stop offset="0.58" stop-color="#F6EEDF"/>
+      <stop offset="1" stop-color="#E9DAC2"/>
+    </linearGradient>
+    <radialGradient id="appGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(296 212) rotate(47.4) scale(418 448)">
+      <stop stop-color="white" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="white" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="boardFill" x1="218" y1="194" x2="806" y2="626" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFDF9"/>
+      <stop offset="1" stop-color="#F7F1E8"/>
+    </linearGradient>
+    <linearGradient id="mascotFill" x1="164" y1="482" x2="470" y2="816" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F49C6D"/>
+      <stop offset="1" stop-color="#DA7346"/>
+    </linearGradient>
+    <linearGradient id="pencilFill" x1="520" y1="472" x2="632" y2="596" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EDA988"/>
+      <stop offset="1" stop-color="#D97C53"/>
+    </linearGradient>
+    <filter id="appShadow" x="56" y="64" width="912" height="912" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="28"/>
+      <feGaussianBlur stdDeviation="30"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.18 0 0 0 0 0.16 0 0 0 0 0.13 0 0 0 0.18 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_0_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_0_1" result="shape"/>
+    </filter>
+    <filter id="boardShadow" x="118" y="142" width="758" height="568" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="14"/>
+      <feGaussianBlur stdDeviation="18"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.12 0 0 0 0 0.11 0 0 0 0 0.09 0 0 0 0.15 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_0_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_0_1" result="shape"/>
+    </filter>
+    <filter id="mascotShadow" x="92" y="390" width="474" height="498" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="18"/>
+      <feGaussianBlur stdDeviation="18"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.14 0 0 0 0 0.1 0 0 0 0 0.08 0 0 0 0.2 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_0_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_0_1" result="shape"/>
+    </filter>
+    <clipPath id="boardClip">
+      <rect x="178" y="174" width="638" height="462" rx="64"/>
+    </clipPath>
+  </defs>
+
+  <g filter="url(#appShadow)">
+    <rect x="108" y="92" width="808" height="808" rx="224" fill="url(#appBg)"/>
+    <rect x="108" y="92" width="808" height="808" rx="224" fill="url(#appGlow)" opacity="0.85"/>
+    <rect x="123" y="107" width="778" height="778" rx="208" stroke="rgba(255,255,255,0.78)" stroke-width="6"/>
+  </g>
+
+  <g filter="url(#boardShadow)">
+    <rect x="178" y="174" width="638" height="462" rx="64" fill="url(#boardFill)"/>
+    <rect x="178" y="174" width="638" height="462" rx="64" stroke="#171717" stroke-width="18"/>
+    <g clip-path="url(#boardClip)" opacity="0.9">
+      <rect x="214" y="214" width="566" height="382" rx="34" fill="#FCFAF5"/>
+      <g stroke="#1F1F1F" stroke-width="7" stroke-linecap="round" stroke-dasharray="1 15" opacity="0.68">
+        <path d="M286 252V564"/>
+        <path d="M414 252V564"/>
+        <path d="M542 252V564"/>
+        <path d="M670 252V564"/>
+        <path d="M234 316H742"/>
+        <path d="M234 412H742"/>
+        <path d="M234 508H742"/>
+      </g>
+      <g>
+        <rect x="560" y="244" width="122" height="122" rx="26" transform="rotate(-3 560 244)" fill="#E18258" stroke="white" stroke-width="14"/>
+        <rect x="640" y="430" width="126" height="126" rx="26" transform="rotate(4.5 640 430)" fill="#151515" stroke="white" stroke-width="14"/>
+        <path d="M598 300H614V316H598V300Z" fill="#151515"/>
+        <path d="M578 332H590V344H578V332Z" fill="#151515"/>
+        <path d="M602 330H612V340H602V330Z" fill="#151515"/>
+        <path d="M624 334H634V344H624V334Z" fill="#151515"/>
+        <path d="M647 330H657V340H647V330Z" fill="#151515"/>
+        <path d="M586 364C598 346 612 346 624 364C638 352 652 352 666 364" stroke="#151515" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M680 470H694V484H680V470Z" fill="white"/>
+        <path d="M660 500H672V512H660V500Z" fill="white"/>
+        <path d="M682 497H692V507H682V497Z" fill="white"/>
+        <path d="M704 501H714V511H704V501Z" fill="white"/>
+        <path d="M726 497H736V507H726V497Z" fill="white"/>
+        <path d="M668 536C680 518 694 518 706 536C720 524 734 524 748 536" stroke="white" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g transform="rotate(-42 520 500)">
+        <rect x="448" y="478" width="166" height="42" rx="16" fill="url(#pencilFill)" stroke="white" stroke-width="14"/>
+        <rect x="432" y="478" width="34" height="42" rx="12" fill="#171717" stroke="white" stroke-width="10"/>
+        <path d="M614 478H650L672 499L650 520H614V478Z" fill="#F5D7C0" stroke="white" stroke-width="10" stroke-linejoin="round"/>
+        <path d="M650 499H672L657 512" stroke="#171717" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </g>
+  </g>
+
+  <g filter="url(#mascotShadow)">
+    <path
+      d="M170 518C170 470 208 432 256 432H404C452 432 490 470 490 518V662C490 700 460 730 422 730H404V804C404 820 391 833 375 833H337C321 833 308 820 308 804V730H262V778C262 794 249 807 233 807H197C181 807 168 794 168 778V730H160C122 730 92 700 92 662V558C92 520 122 490 160 490H170V518Z"
+      fill="url(#mascotFill)"
+      stroke="white"
+      stroke-width="24"
+      stroke-linejoin="round"
+    />
+    <rect x="204" y="526" width="42" height="42" rx="8" fill="#171717"/>
+    <rect x="342" y="526" width="42" height="42" rx="8" fill="#171717"/>
+    <rect x="300" y="730" width="102" height="16" rx="8" fill="white"/>
+    <path d="M300 746H402" stroke="#171717" stroke-width="6" stroke-linecap="round"/>
+  </g>
+</svg>

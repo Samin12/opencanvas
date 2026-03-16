@@ -10,9 +10,18 @@ import type {
 } from '@shared/types'
 
 import { CanvasSurface, type CanvasSurfaceHandle } from './components/CanvasSurface'
+import { HoverTooltip } from './components/HoverTooltip'
 import { SearchDialog } from './components/SearchDialog'
 import { Sidebar } from './components/Sidebar'
 import { ViewerOverlay } from './components/ViewerOverlay'
+import { keyboardShortcutsBlocked } from './utils/keyboard'
+import { installButtonTooltipSync } from './utils/buttonTooltips'
+
+const IS_MAC_PLATFORM =
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+const SIDEBAR_LEFT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2190' : null
+const SIDEBAR_RIGHT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2192' : null
+const TOGGLE_DARK_MODE_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+Shift+D' : 'Ctrl+Shift+D'
 
 function flattenFiles(nodes: FileTreeNode[]): FileTreeNode[] {
   const files: FileTreeNode[] = []
@@ -78,6 +87,30 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
+async function copyTextWithBrowserFallback(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  const textArea = document.createElement('textarea')
+  textArea.value = text
+  textArea.setAttribute('readonly', '')
+  textArea.style.position = 'fixed'
+  textArea.style.top = '-9999px'
+  textArea.style.opacity = '0'
+  document.body.appendChild(textArea)
+  textArea.select()
+  textArea.setSelectionRange(0, text.length)
+
+  const copied = document.execCommand('copy')
+  document.body.removeChild(textArea)
+
+  if (!copied) {
+    throw new Error('The browser clipboard API is unavailable.')
+  }
+}
+
 function SidebarDockIcon({ side }: { side: SidebarSide }) {
   return (
     <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.3]">
@@ -130,21 +163,6 @@ export default function App() {
 
     return findDirectoryPathForNode(workspaceTree, selectedTreePath) ?? activeWorkspace
   }, [activeWorkspace, selectedTreeNode, selectedTreePath, workspaceTree])
-  const noteTargetHint = useMemo(() => {
-    if (!activeWorkspace) {
-      return 'Add a workspace to create markdown notes.'
-    }
-
-    if (selectedTreeNode?.kind === 'directory') {
-      return 'New markdown notes will be created in the selected folder.'
-    }
-
-    if (selectedTreeNode?.kind === 'file') {
-      return 'New markdown notes will be created beside the selected file.'
-    }
-
-    return 'No file or folder selected. New markdown notes will be created in the workspace root.'
-  }, [activeWorkspace, selectedTreeNode])
   const missingTerminalDependencies =
     terminalDependencies === null
       ? []
@@ -157,6 +175,9 @@ export default function App() {
     terminalDependencies === null || terminalReady
       ? null
       : `Install ${missingTerminalDependencies.join(' and ')} and restart the app before creating terminal tiles.`
+  useEffect(() => {
+    return installButtonTooltipSync(document)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -258,16 +279,46 @@ export default function App() {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null
-      const isEditing =
-        target?.tagName === 'TEXTAREA' ||
-        target?.tagName === 'INPUT' ||
-        target?.isContentEditable === true
+      const isEditing = keyboardShortcutsBlocked(event.target)
+
+      if (isEditing) {
+        return
+      }
 
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'o') {
         event.preventDefault()
         void addWorkspace()
         return
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'd') {
+        event.preventDefault()
+        const nextDarkMode = !darkMode
+        setDarkMode(nextDarkMode)
+        void persistUi({
+          darkMode: nextDarkMode
+        })
+        return
+      }
+
+      if (event.metaKey && !event.ctrlKey && !event.altKey) {
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault()
+          toggleSidebarDock('left')
+          return
+        }
+
+        if (event.key === 'ArrowRight') {
+          event.preventDefault()
+          toggleSidebarDock('right')
+          return
+        }
+
+        if (event.key === 'ArrowDown') {
+          event.preventDefault()
+          setSidebarPlacement(sidebarSide, true)
+          return
+        }
       }
 
       if (
@@ -279,19 +330,19 @@ export default function App() {
         return
       }
 
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n' && !isEditing) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n') {
         event.preventDefault()
         void createMarkdownNote()
         return
       }
 
-      if (event.shiftKey && event.key === 'Enter' && !isEditing && viewerFile) {
+      if (event.shiftKey && event.key === 'Enter' && viewerFile) {
         event.preventDefault()
         placeFileOnCanvas(viewerFile)
         return
       }
 
-      if ((event.metaKey || event.ctrlKey) && !isEditing) {
+      if (event.metaKey || event.ctrlKey) {
         if (event.key === '=' || event.key === '+') {
           event.preventDefault()
           canvasRef.current?.zoomIn()
@@ -308,7 +359,7 @@ export default function App() {
         }
       }
 
-      if (event.key === 'Escape' && !isEditing) {
+      if (event.key === 'Escape') {
         if (searchOpen) {
           setSearchOpen(false)
           return
@@ -323,7 +374,43 @@ export default function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [activeWorkspace, noteTargetPath, searchOpen, viewerFile])
+  }, [activeWorkspace, darkMode, noteTargetPath, searchOpen, sidebarCollapsed, sidebarSide, viewerFile])
+
+  useEffect(() => {
+    function handlePaste(event: ClipboardEvent) {
+      const isEditing = keyboardShortcutsBlocked(event.target)
+
+      if (isEditing) {
+        return
+      }
+
+      const imageItem = Array.from(event.clipboardData?.items ?? []).find((item) =>
+        item.type.startsWith('image/')
+      )
+      const file = imageItem?.getAsFile()
+
+      if (!file) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      void (async () => {
+        const importedNode = await importWorkspaceImageFile(file)
+
+        if (importedNode) {
+          canvasRef.current?.spawnFileTile(importedNode)
+        }
+      })()
+    }
+
+    window.addEventListener('paste', handlePaste, true)
+
+    return () => {
+      window.removeEventListener('paste', handlePaste, true)
+    }
+  }, [activeWorkspace])
 
   useEffect(() => {
     function handlePointerMove(event: PointerEvent) {
@@ -364,6 +451,20 @@ export default function App() {
       window.removeEventListener('pointerup', handlePointerUp)
     }
   }, [config, sidebarWidth])
+
+  useEffect(() => {
+    if (!workspaceError) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setWorkspaceError(null)
+    }, 4200)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [workspaceError])
 
   async function persistConfig(nextConfig: AppConfig) {
     setConfig(nextConfig)
@@ -464,20 +565,111 @@ export default function App() {
   }
 
   async function createMarkdownNote() {
-    if (!activeWorkspace || !noteTargetPath) {
+    const nextNode = await createWorkspaceMarkdownNote()
+
+    if (!nextNode) {
       return
+    }
+
+    canvasRef.current?.spawnFileTile(nextNode)
+  }
+
+  async function createWorkspaceMarkdownNote(initialContent = ''): Promise<FileTreeNode | null> {
+    if (!activeWorkspace || !noteTargetPath) {
+      return null
     }
 
     try {
       const createdNode = await window.collaborator.createWorkspaceNote(activeWorkspace, noteTargetPath)
+
+      if (initialContent.length > 0) {
+        await window.collaborator.writeTextFile(createdNode.path, initialContent)
+      }
+
       const nextTree = await refreshWorkspaceTree(activeWorkspace)
       const nextNode = findNodeByPath(nextTree, createdNode.path) ?? createdNode
 
-      canvasRef.current?.spawnFileTile(nextNode)
       setSelectedTreePath(nextNode.path)
       setViewerFile(null)
+
+      return nextNode
     } catch {
       setWorkspaceError('A new markdown note could not be created in the current folder.')
+      return null
+    }
+  }
+
+  async function openActiveWorkspacePath() {
+    if (!activeWorkspace) {
+      return
+    }
+
+    try {
+      if (typeof window.collaborator.openPath !== 'function') {
+        throw new Error('Workspace opening is available after restarting the app.')
+      }
+
+      await window.collaborator.openPath(activeWorkspace)
+    } catch (error) {
+      setWorkspaceError(
+        error instanceof Error && error.message
+          ? `The workspace root could not be opened: ${error.message}`
+          : 'The workspace root could not be opened.'
+      )
+    }
+  }
+
+  async function copyActiveWorkspacePath() {
+    if (!activeWorkspace) {
+      return
+    }
+
+    try {
+      if (typeof window.collaborator.copyTextToClipboard === 'function') {
+        await window.collaborator.copyTextToClipboard(activeWorkspace)
+        return
+      }
+
+      await copyTextWithBrowserFallback(activeWorkspace)
+    } catch (error) {
+      try {
+        await copyTextWithBrowserFallback(activeWorkspace)
+      } catch (fallbackError) {
+        const message =
+          fallbackError instanceof Error && fallbackError.message
+            ? fallbackError.message
+            : error instanceof Error && error.message
+              ? error.message
+              : null
+
+        setWorkspaceError(
+          message
+            ? `The workspace root path could not be copied: ${message}`
+            : 'The workspace root path could not be copied.'
+        )
+      }
+    }
+  }
+
+  async function importWorkspaceImageFile(file: File): Promise<FileTreeNode | null> {
+    if (!activeWorkspace) {
+      setWorkspaceError('Add a workspace before pasting or dropping images onto the canvas.')
+      return null
+    }
+
+    try {
+      const importedNode = await window.collaborator.importWorkspaceImage(activeWorkspace, {
+        bytes: Array.from(new Uint8Array(await file.arrayBuffer())),
+        fileName: file.name,
+        mimeType: file.type
+      })
+
+      setWorkspaceError(null)
+
+      return importedNode
+    } catch {
+      setWorkspaceError('The image could not be saved into the active workspace.')
+      return null
     }
   }
 
@@ -552,6 +744,15 @@ export default function App() {
     })
   }
 
+  function toggleSidebarDock(nextSide: SidebarSide) {
+    if (!sidebarCollapsed && sidebarSide === nextSide) {
+      setSidebarPlacement(nextSide, true)
+      return
+    }
+
+    setSidebarPlacement(nextSide, false)
+  }
+
   function scheduleCanvasSave(nextState: CanvasState, immediate = false) {
     if (canvasSaveTimerRef.current !== null) {
       window.clearTimeout(canvasSaveTimerRef.current)
@@ -602,7 +803,7 @@ export default function App() {
   if (bootError) {
     return (
       <div className="app-shell">
-        <div className="glass-panel flex flex-1 items-center justify-center rounded-[10px] text-center">
+        <div className="glass-panel flex flex-1 items-center justify-center rounded-[6px] text-center">
           <div className="max-w-lg p-8">
             <div className="text-[11px] uppercase tracking-[0.25em] text-[var(--text-faint)]">
               Boot Error
@@ -617,7 +818,7 @@ export default function App() {
   if (!config || !canvasState) {
     return (
       <div className="app-shell">
-        <div className="glass-panel flex flex-1 items-center justify-center rounded-[10px]">
+        <div className="glass-panel flex flex-1 items-center justify-center rounded-[6px]">
           <div className="text-sm uppercase tracking-[0.25em] text-[var(--text-faint)]">
             Initializing…
           </div>
@@ -628,25 +829,25 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <div className="flex h-full min-w-0 flex-1">
+      <div className="flex h-full min-h-0 min-w-0 flex-1 overflow-hidden">
         {sidebarCollapsed || sidebarSide === 'right' ? null : (
           <div
             style={{ width: sidebarWidth }}
-            className="min-w-[260px] max-w-[520px] overflow-hidden opacity-100 transition-[width,opacity] duration-200"
+            className="min-h-0 min-w-[260px] max-w-[520px] opacity-100 transition-[width,opacity] duration-200"
           >
             <Sidebar
               activeTreePath={selectedTreePath}
               config={config}
               darkMode={darkMode}
               loadingWorkspace={loadingWorkspace}
-              noteTargetHint={noteTargetHint}
-              noteTargetPath={noteTargetPath}
               onAddWorkspace={() => void addWorkspace()}
+              onCopyWorkspacePath={() => void copyActiveWorkspacePath()}
               onCreateNote={() => void createMarkdownNote()}
               onCreateTerminal={createTerminal}
               onMoveFile={(sourcePath, targetDirectoryPath) =>
                 void moveFileIntoDirectory(sourcePath, targetDirectoryPath)
               }
+              onOpenWorkspacePath={() => void openActiveWorkspacePath()}
               onMoveSidebar={setSidebarPlacement}
               onOpenSearch={() => setSearchOpen(true)}
               onPlaceFile={placeFileOnCanvas}
@@ -675,6 +876,7 @@ export default function App() {
               }}
               sidebarCollapsed={sidebarCollapsed}
               sidebarSide={sidebarSide}
+              sidebarWidth={sidebarWidth}
               workspaceTree={workspaceTree}
             />
           </div>
@@ -693,38 +895,56 @@ export default function App() {
           />
         )}
 
-        <main className="relative min-w-0 flex-1">
+        <main className="relative min-h-0 min-w-0 flex-1">
           {sidebarCollapsed && !viewerFile ? (
             <div
               className={clsx(
-                'glass-panel absolute top-3 z-[270] flex items-center gap-1 rounded-[10px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] p-1.5',
+                'glass-panel absolute top-3 z-[270] flex items-center gap-1 rounded-[6px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] p-1.5',
                 sidebarSide === 'left' ? 'left-3' : 'right-3'
               )}
             >
-              <button
-                className="flex h-9 w-9 items-center justify-center rounded-[8px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
-                aria-label="Open sidebar on the left"
-                title="Open sidebar on the left"
-                onClick={() => setSidebarPlacement('left')}
+              <HoverTooltip
+                label="Open sidebar on the left"
+                placement="bottom"
+                shortcut={SIDEBAR_LEFT_SHORTCUT_KEY}
               >
-                <SidebarDockIcon side="left" />
-              </button>
-              <button
-                className="flex h-9 w-9 items-center justify-center rounded-[8px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
-                aria-label="Open sidebar on the right"
-                title="Open sidebar on the right"
-                onClick={() => setSidebarPlacement('right')}
+                <button
+                  className="flex h-10 w-10 items-center justify-center rounded-[4px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                  aria-label="Open sidebar on the left"
+                  data-managed-tooltip="custom"
+                  data-shortcut={SIDEBAR_LEFT_SHORTCUT_KEY ?? undefined}
+                  onClick={() => setSidebarPlacement('left')}
+                >
+                  <SidebarDockIcon side="left" />
+                </button>
+              </HoverTooltip>
+              <HoverTooltip
+                label="Open sidebar on the right"
+                placement="bottom"
+                shortcut={SIDEBAR_RIGHT_SHORTCUT_KEY}
               >
-                <SidebarDockIcon side="right" />
-              </button>
+                <button
+                  className="flex h-10 w-10 items-center justify-center rounded-[4px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                  aria-label="Open sidebar on the right"
+                  data-managed-tooltip="custom"
+                  data-shortcut={SIDEBAR_RIGHT_SHORTCUT_KEY ?? undefined}
+                  onClick={() => setSidebarPlacement('right')}
+                >
+                  <SidebarDockIcon side="right" />
+                </button>
+              </HoverTooltip>
             </div>
           ) : null}
           <CanvasSurface
             activeWorkspacePath={activeWorkspace}
             darkMode={darkMode}
             ref={canvasRef}
+            onCreateMarkdownNote={() => void createMarkdownNote()}
+            onConvertStickyNoteToMarkdown={(content) => createWorkspaceMarkdownNote(content)}
+            onImportImageFile={importWorkspaceImageFile}
             onOpenFile={previewFile}
             onStateChange={handleCanvasStateChange}
+            shortcutsSuspended={Boolean(viewerFile)}
             state={canvasState}
           />
           <ViewerOverlay
@@ -733,7 +953,12 @@ export default function App() {
             onPlaceOnCanvas={placeFileOnCanvas}
           />
           {workspaceError ? (
-            <div className="glass-panel absolute right-3 top-3 z-[260] max-w-[24rem] rounded-[10px] border border-amber-500/30 bg-[rgba(120,53,15,0.16)] px-4 py-3 text-sm text-amber-100">
+            <div
+              className={clsx(
+                'absolute right-3 top-3 z-[260] max-w-[24rem] rounded-[4px] border px-3.5 py-3 text-[13px] leading-5 shadow-[0_14px_30px_rgba(0,0,0,0.18)] backdrop-blur',
+                'border-[color:var(--error-line)] bg-[var(--error-bg)] text-[var(--error-text)]'
+              )}
+            >
               {workspaceError}
             </div>
           ) : null}
@@ -755,21 +980,21 @@ export default function App() {
         {sidebarCollapsed || sidebarSide === 'left' ? null : (
           <div
             style={{ width: sidebarWidth }}
-            className="min-w-[260px] max-w-[520px] overflow-hidden opacity-100 transition-[width,opacity] duration-200"
+            className="min-h-0 min-w-[260px] max-w-[520px] opacity-100 transition-[width,opacity] duration-200"
           >
             <Sidebar
               activeTreePath={selectedTreePath}
               config={config}
               darkMode={darkMode}
               loadingWorkspace={loadingWorkspace}
-              noteTargetHint={noteTargetHint}
-              noteTargetPath={noteTargetPath}
               onAddWorkspace={() => void addWorkspace()}
+              onCopyWorkspacePath={() => void copyActiveWorkspacePath()}
               onCreateNote={() => void createMarkdownNote()}
               onCreateTerminal={createTerminal}
               onMoveFile={(sourcePath, targetDirectoryPath) =>
                 void moveFileIntoDirectory(sourcePath, targetDirectoryPath)
               }
+              onOpenWorkspacePath={() => void openActiveWorkspacePath()}
               onMoveSidebar={setSidebarPlacement}
               onOpenSearch={() => setSearchOpen(true)}
               onPlaceFile={placeFileOnCanvas}
@@ -798,6 +1023,7 @@ export default function App() {
               }}
               sidebarCollapsed={sidebarCollapsed}
               sidebarSide={sidebarSide}
+              sidebarWidth={sidebarWidth}
               workspaceTree={workspaceTree}
             />
           </div>

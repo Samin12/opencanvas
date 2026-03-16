@@ -1,6 +1,6 @@
-# Collaborator Clone
+# Open Canvas
 
-Electron + React foundation for a clean-room recreation of the Collaborator desktop app.
+Electron + React foundation for Open Canvas, a spatial whiteboard workspace for development.
 
 ## What is implemented
 
@@ -13,7 +13,7 @@ Electron + React foundation for a clean-room recreation of the Collaborator desk
 - Double-click canvas to create terminal session placeholders
 - File-backed note, code, and image tiles
 - Viewer overlay and quick file search (`Cmd+K`)
-- Local JSON persistence in `~/.collaborator-clone/`
+- Local JSON persistence in `~/.collaborator-clone/` (legacy path preserved for compatibility)
 
 ## What is intentionally deferred
 

@@ -7,6 +7,7 @@ import { loadConfig, saveConfig } from './storage'
 
 const { app, BrowserWindow, screen } = electron
 type AppWindow = InstanceType<typeof BrowserWindow>
+const APP_NAME = 'Open Canvas'
 
 let mainWindow: AppWindow | null = null
 
@@ -66,6 +67,7 @@ function toCanvasPinchPayload(
 
 async function createMainWindow(): Promise<void> {
   const config = await loadConfig()
+  const iconPath = join(app.getAppPath(), 'resources', 'claude-canvas-icon.png')
 
   mainWindow = new BrowserWindow({
     x: config.windowState.x,
@@ -76,7 +78,9 @@ async function createMainWindow(): Promise<void> {
     minHeight: 760,
     show: false,
     backgroundColor: config.ui.darkMode ? '#090b0d' : '#ece8df',
+    title: APP_NAME,
     titleBarStyle: 'hiddenInset',
+    icon: iconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -131,6 +135,18 @@ async function createMainWindow(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  app.setName(APP_NAME)
+
+  if (process.platform === 'darwin' && app.dock) {
+    const dockIcon = electron.nativeImage.createFromPath(
+      join(app.getAppPath(), 'resources', 'claude-canvas-icon.png')
+    )
+
+    if (!dockIcon.isEmpty()) {
+      app.dock.setIcon(dockIcon)
+    }
+  }
+
   registerIpcHandlers()
   await createMainWindow()
 

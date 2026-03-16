@@ -8,12 +8,13 @@ interface FileTreeProps {
   activePath: string | null
   darkMode: boolean
   nodes: FileTreeNode[]
+  query: string
   onMoveFile: (sourcePath: string, targetDirectoryPath: string) => void
   onPlaceFile: (node: FileTreeNode) => void
   onSelectNode: (node: FileTreeNode) => void
 }
 
-const INDENT = 14
+const INDENT = 12
 const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
@@ -22,93 +23,97 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
       viewBox="0 0 16 16"
       aria-hidden="true"
       className={clsx(
-        'h-3.5 w-3.5 fill-none stroke-current stroke-[1.7] transition-transform',
+        'h-3.5 w-3.5 fill-none stroke-current stroke-[1.6] transition-transform',
         expanded ? 'rotate-90' : 'rotate-0'
       )}
     >
-      <path d="M6 3.5L10.5 8L6 12.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="m6 4.75 4 3.25-4 3.25" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
 
 function FolderIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.35]">
-      <path
-        d="M2.25 4.25A1.75 1.75 0 0 1 4 2.5H6.4L7.6 3.85H12A1.75 1.75 0 0 1 13.75 5.6V11.75A1.75 1.75 0 0 1 12 13.5H4A1.75 1.75 0 0 1 2.25 11.75V4.25Z"
-        strokeLinejoin="round"
-      />
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-4 w-4 fill-none stroke-current stroke-[1.45] [stroke-linecap:round] [stroke-linejoin:round]"
+    >
+      <path d="M2.25 4.25A1.75 1.75 0 0 1 4 2.5H6.2L7.45 3.8H12A1.75 1.75 0 0 1 13.75 5.55V11.75A1.75 1.75 0 0 1 12 13.5H4A1.75 1.75 0 0 1 2.25 11.75V4.25Z" />
     </svg>
   )
 }
 
 function NoteIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.35]">
-      <path
-        d="M4 2.25H9.25L12.5 5.5V12A1.75 1.75 0 0 1 10.75 13.75H4A1.75 1.75 0 0 1 2.25 12V4A1.75 1.75 0 0 1 4 2.25Z"
-        strokeLinejoin="round"
-      />
-      <path d="M9 2.75V5.75H12" strokeLinejoin="round" />
-      <path d="M5 8H9.5M5 10.5H8" strokeLinecap="round" />
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-4 w-4 fill-none stroke-current stroke-[1.4] [stroke-linecap:round] [stroke-linejoin:round]"
+    >
+      <path d="M3 4.35C3 3.39 3.77 2.6 4.75 2.6H7.3C7.87 2.6 8.4 2.84 8.8 3.25C9.2 2.84 9.73 2.6 10.3 2.6H12.05C13.03 2.6 13.8 3.39 13.8 4.35V11.85C13.8 12.23 13.49 12.55 13.1 12.55H10.3C9.73 12.55 9.2 12.79 8.8 13.2C8.4 12.79 7.87 12.55 7.3 12.55H4.5C3.84 12.55 3.3 12.02 3.3 11.35V4.35H3Z" />
+      <path d="M8.8 3.35V13.15" />
     </svg>
   )
 }
 
 function CodeIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.35]">
-      <path d="M6 4L3 8L6 12" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M10 4L13 8L10 12" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M8.75 3.5L7.25 12.5" strokeLinecap="round" />
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+    >
+      <path d="M4 2.5H8.9L12.5 6.05V12A1.5 1.5 0 0 1 11 13.5H4A1.5 1.5 0 0 1 2.5 12V4A1.5 1.5 0 0 1 4 2.5Z" />
+      <path d="M8.7 2.75V6H12" />
+      <path d="M5.7 9.2 4.5 10.3 5.7 11.4" />
+      <path d="M8 9.2 9.2 10.3 8 11.4" />
+      <path d="M7.25 8.8 6.55 11.75" />
     </svg>
   )
 }
 
 function ImageIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.35]">
-      <rect x="2.25" y="2.5" width="11.5" height="11" rx="2" />
-      <circle cx="5.4" cy="5.6" r="1.05" />
-      <path d="M3.75 11L6.85 7.9L8.8 9.85L10.4 8.25L12.25 10.1" strokeLinecap="round" strokeLinejoin="round" />
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+    >
+      <rect x="2.5" y="2.75" width="11" height="10.5" rx="1.5" />
+      <circle cx="5.4" cy="5.55" r="0.9" />
+      <path d="m4.2 11 2.25-2.5 1.65 1.55 2.15-2.35 1.55 1.9" />
     </svg>
   )
 }
 
 function iconToneClasses(kind: 'directory' | 'note' | 'code' | 'image', darkMode: boolean) {
   if (kind === 'directory') {
-    return darkMode
-      ? 'border-amber-500/25 bg-[rgba(120,53,15,0.16)] text-amber-200'
-      : 'border-amber-300/80 bg-amber-50 text-amber-800'
+    return darkMode ? 'text-[#d8d9d4]' : 'text-[#53584f]'
   }
 
   if (kind === 'note') {
-    return darkMode
-      ? 'border-lime-500/25 bg-[rgba(63,98,18,0.16)] text-lime-200'
-      : 'border-lime-300/80 bg-lime-50 text-lime-800'
+    return darkMode ? 'text-[#49d8b4]' : 'text-[#149c73]'
   }
 
   if (kind === 'image') {
-    return darkMode
-      ? 'border-sky-500/25 bg-[rgba(7,89,133,0.16)] text-sky-200'
-      : 'border-sky-300/80 bg-sky-50 text-sky-800'
+    return darkMode ? 'text-[#70d5ff]' : 'text-[#279dcd]'
   }
 
-  return darkMode
-    ? 'border-slate-500/25 bg-[rgba(30,41,59,0.26)] text-slate-300'
-    : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-faint)]'
+  return darkMode ? 'text-[#c1c5bd]' : 'text-[#70756c]'
 }
 
-function FileKindIcon({ darkMode, fileKind }: { darkMode: boolean; fileKind: FileTreeNode['fileKind'] }) {
+export function FileKindIcon({
+  darkMode,
+  fileKind
+}: {
+  darkMode: boolean
+  fileKind: FileTreeNode['fileKind']
+}) {
   const kind = fileKind === 'note' || fileKind === 'image' ? fileKind : 'code'
 
   return (
-    <span
-      className={clsx(
-        'flex h-6 w-6 items-center justify-center rounded-[6px] border',
-        iconToneClasses(kind, darkMode)
-      )}
-    >
+    <span className={clsx('flex h-4.5 w-4.5 items-center justify-center', iconToneClasses(kind, darkMode))}>
       {kind === 'note' ? <NoteIcon /> : kind === 'image' ? <ImageIcon /> : <CodeIcon />}
     </span>
   )
@@ -130,16 +135,45 @@ function getDraggedFilePayload(dataTransfer: DataTransfer | null) {
   }
 }
 
+function matchesQuery(node: FileTreeNode, query: string) {
+  const haystack = `${node.name} ${node.path}`.toLowerCase()
+  return haystack.includes(query)
+}
+
+function filterNodes(nodes: FileTreeNode[], query: string): FileTreeNode[] {
+  return nodes.flatMap((node) => {
+    if (node.kind === 'directory') {
+      const children = filterNodes(node.children ?? [], query)
+
+      if (matchesQuery(node, query) || children.length > 0) {
+        return [
+          {
+            ...node,
+            children
+          }
+        ]
+      }
+
+      return []
+    }
+
+    return matchesQuery(node, query) ? [node] : []
+  })
+}
+
 export function FileTree({
   activePath,
   darkMode,
   nodes,
+  query,
   onMoveFile,
   onPlaceFile,
   onSelectNode
 }: FileTreeProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null)
+  const trimmedQuery = query.trim().toLowerCase()
+  const visibleNodes = trimmedQuery ? filterNodes(nodes, trimmedQuery) : nodes
 
   useEffect(() => {
     const nextState: Record<string, boolean> = {}
@@ -162,23 +196,25 @@ export function FileTree({
 
   function renderNode(node: FileTreeNode, depth: number) {
     if (node.kind === 'directory') {
-      const isExpanded = expanded[node.path] ?? true
+      const isExpanded = trimmedQuery ? true : expanded[node.path] ?? true
 
       return (
         <div key={node.path}>
           <button
             className={clsx(
-              'flex w-full items-center gap-2.5 rounded-[8px] px-3 py-2.5 text-left text-[13px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)]',
+              'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px] font-medium text-[var(--text-dim)] transition',
+              'rounded-[4px] border border-transparent hover:bg-[var(--surface-0)]',
               activePath === node.path &&
-                'bg-[var(--surface-selected)] text-[var(--text)] ring-1 ring-[color:var(--line-strong)]',
+                'border-[color:var(--line)] bg-[var(--surface-selected)] text-[var(--text)]',
               dropTargetPath === node.path &&
-                'bg-[var(--surface-selected)] text-[var(--text)] ring-1 ring-[color:var(--line-strong)]'
+                'border-[color:var(--line)] bg-[var(--surface-selected)] text-[var(--text)]'
             )}
-            style={{ paddingLeft: 12 + depth * INDENT }}
+            style={{ paddingLeft: 10 + depth * INDENT }}
             onClick={() => {
               onSelectNode(node)
               toggleDirectory(node.path)
             }}
+            title={`Toggle folder: ${node.name}`}
             onDragOver={(event) => {
               const draggedFile = getDraggedFilePayload(event.dataTransfer)
 
@@ -221,15 +257,10 @@ export function FileTree({
             <span className="text-[var(--text-faint)]">
               <ChevronIcon expanded={isExpanded} />
             </span>
-            <span
-              className={clsx(
-                'flex h-6 w-6 items-center justify-center rounded-[6px] border',
-                iconToneClasses('directory', darkMode)
-              )}
-            >
+            <span className={clsx('flex h-4.5 w-4.5 items-center justify-center', iconToneClasses('directory', darkMode))}>
               <FolderIcon />
             </span>
-            <span className="truncate font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace]">
+            <span className="min-w-0 flex-1 truncate">
               {node.name}
             </span>
           </button>
@@ -259,12 +290,13 @@ export function FileTree({
           setDropTargetPath(null)
         }}
         className={clsx(
-          'flex w-full items-center gap-2.5 rounded-[8px] px-3 py-2.5 text-left text-[13px] transition',
+          'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px] font-medium transition',
+          'rounded-[4px] border border-transparent',
           activePath === node.path
-            ? 'bg-[var(--surface-selected)] text-[var(--text)] ring-1 ring-[color:var(--line-strong)]'
-            : 'text-[var(--text-dim)] hover:bg-[var(--surface-1)]'
+            ? 'border-[color:var(--line)] bg-[var(--surface-selected)] text-[var(--text)]'
+            : 'text-[var(--text-dim)] hover:bg-[var(--surface-0)]'
         )}
-        style={{ paddingLeft: 12 + depth * INDENT }}
+        style={{ paddingLeft: 10 + depth * INDENT }}
         onClick={() => onSelectNode(node)}
         onDoubleClick={(event) => {
           event.preventDefault()
@@ -276,10 +308,10 @@ export function FileTree({
             onPlaceFile(node)
           }
         }}
-        title="Click to preview. Double-click or Shift+Enter to place on canvas."
+        title={`Preview ${node.name}. Double-click or Shift+Enter to place it on the canvas.`}
       >
         <FileKindIcon darkMode={darkMode} fileKind={node.fileKind} />
-        <span className="truncate font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace]">
+        <span className="min-w-0 flex-1 truncate">
           {node.name}
         </span>
       </button>
@@ -288,15 +320,19 @@ export function FileTree({
 
   if (nodes.length === 0) {
     return (
-      <div className="rounded-[8px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-1)] p-4 text-sm text-[var(--text-dim)]">
+      <div className="rounded-[4px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-0)] p-4 text-sm text-[var(--text-dim)]">
         This workspace is empty.
       </div>
     )
   }
 
-  return (
-    <div className="space-y-1 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace]">
-      {nodes.map((node) => renderNode(node, 0))}
-    </div>
-  )
+  if (visibleNodes.length === 0) {
+    return (
+      <div className="rounded-[4px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-0)] p-4 text-sm text-[var(--text-dim)]">
+        No files or folders match <span className="text-[var(--text)]">“{query.trim()}”</span>.
+      </div>
+    )
+  }
+
+  return <div className="space-y-0.5">{visibleNodes.map((node) => renderNode(node, 0))}</div>
 }
