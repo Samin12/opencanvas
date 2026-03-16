@@ -14,8 +14,10 @@ import { Editor, Tldraw, type TLRecord } from 'tldraw'
 import {
   DefaultColorStyle,
   DefaultColorThemePalette,
+  DefaultSizeStyle,
   GeoShapeGeoStyle,
   type TLDefaultColorStyle,
+  type TLDefaultSizeStyle,
   type TLDrawShape,
   type TLNoteShape,
   type TLShapePartial
@@ -175,15 +177,30 @@ const QUICK_ACTION_ITEMS: Array<{ action: BoardTool; key: string; label: string 
   { action: 'box', key: 'B', label: 'Box' },
   { action: 'draw', key: 'D', label: 'Draw' }
 ]
-const DRAW_COLOR_ITEMS: Array<{ color: TLDefaultColorStyle; label: string }> = [
-  { color: 'black', label: 'Black' },
+const DRAW_COLOR_ITEMS: Array<{
+  color: TLDefaultColorStyle
+  darkModeLabel?: string
+  hideInLightMode?: boolean
+  label: string
+}> = [
+  { color: 'black', darkModeLabel: 'Ink', label: 'Black' },
   { color: 'grey', label: 'Slate' },
   { color: 'blue', label: 'Blue' },
   { color: 'green', label: 'Green' },
   { color: 'orange', label: 'Orange' },
   { color: 'red', label: 'Red' },
   { color: 'violet', label: 'Violet' },
-  { color: 'white', label: 'White' }
+  { color: 'white', hideInLightMode: true, label: 'White' }
+]
+const DRAW_SIZE_ITEMS: Array<{
+  previewSize: number
+  size: TLDefaultSizeStyle
+  label: string
+}> = [
+  { size: 's', label: 'Fine', previewSize: 2 },
+  { size: 'm', label: 'Medium', previewSize: 3.5 },
+  { size: 'l', label: 'Bold', previewSize: 5 },
+  { size: 'xl', label: 'Heavy', previewSize: 6.5 }
 ]
 const BOARD_TOOL_SHORTCUTS: Record<string, BoardTool> = {
   a: 'arrow',
@@ -199,6 +216,31 @@ const BOARD_TOOL_SHORTCUTS: Record<string, BoardTool> = {
 
 function isBoardToolAction(action: ShortcutAction): action is BoardTool {
   return action !== 'terminal' && action !== 'markdown'
+}
+
+function drawColorLabel(
+  item: { darkModeLabel?: string; label: string },
+  darkMode: boolean
+) {
+  return darkMode && item.darkModeLabel ? item.darkModeLabel : item.label
+}
+
+function boardToolFromEditorToolId(toolId: string): BoardTool | null {
+  switch (toolId) {
+    case 'arrow':
+    case 'draw':
+    case 'eraser':
+    case 'frame':
+    case 'hand':
+    case 'note':
+    case 'select':
+    case 'text':
+      return toolId
+    case 'geo':
+      return 'box'
+    default:
+      return null
+  }
 }
 
 function QuickActionIcon({ action }: { action: BoardTool }) {
@@ -561,8 +603,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const lastPointerScrollActivationAtRef = useRef(0)
     const stateRef = useRef(state)
     const drawColorRef = useRef<TLDefaultColorStyle>('black')
+    const drawSizeRef = useRef<TLDefaultSizeStyle>('m')
     const [activeBoardTool, setActiveBoardTool] = useState<BoardTool>('hand')
     const [drawColor, setDrawColor] = useState<TLDefaultColorStyle>('black')
+    const [drawSize, setDrawSize] = useState<TLDefaultSizeStyle>('m')
     const [dragConnection, setDragConnection] = useState<DragConnectionState | null>(null)
     const [hoveredConnection, setHoveredConnection] = useState<HoveredConnectionState | null>(null)
     const [linkSourceTileId, setLinkSourceTileId] = useState<string | null>(null)
@@ -574,6 +618,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
     stateRef.current = state
     drawColorRef.current = drawColor
+    drawSizeRef.current = drawSize
 
     function tileById(tileId: string | null) {
       if (!tileId) {
@@ -1350,6 +1395,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       if (nextTool === 'draw') {
         editor.setStyleForNextShapes(DefaultColorStyle, drawColor)
+        editor.setStyleForNextShapes(DefaultSizeStyle, drawSize)
       }
 
       editor.setCurrentTool(nextTool)
@@ -1359,6 +1405,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       drawColorRef.current = nextColor
       setDrawColor(nextColor)
       editorRef.current?.setStyleForNextShapes(DefaultColorStyle, nextColor)
+    }
+
+    function applyDrawSize(nextSize: TLDefaultSizeStyle) {
+      drawSizeRef.current = nextSize
+      setDrawSize(nextSize)
+      editorRef.current?.setStyleForNextShapes(DefaultSizeStyle, nextSize)
     }
 
     function runShortcutAction(action: ShortcutAction) {
@@ -1436,13 +1488,29 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
       editor.setCamera(viewportToCamera(stateRef.current.viewport))
       editor.setStyleForNextShapes(DefaultColorStyle, drawColor)
+      editor.setStyleForNextShapes(DefaultSizeStyle, drawSize)
       applyBoardTool('hand')
       setSelectedCanvasNoteId(selectedStickyNoteFromEditor(editor)?.shape.id ?? null)
 
       const handleCreatedShapes = (records: TLRecord[]) => {
         const nextColor = drawColorRef.current
+        const nextSize = drawSizeRef.current
         const drawShapeUpdates: DrawShapeUpdate[] = records.flatMap((record) => {
-          if (record.typeName !== 'shape' || record.type !== 'draw' || record.props.color === nextColor) {
+          if (record.typeName !== 'shape' || record.type !== 'draw') {
+            return []
+          }
+
+          const nextProps: Partial<TLDrawShape['props']> = {}
+
+          if (record.props.color !== nextColor) {
+            nextProps.color = nextColor
+          }
+
+          if (record.props.size !== nextSize) {
+            nextProps.size = nextSize
+          }
+
+          if (Object.keys(nextProps).length === 0) {
             return []
           }
 
@@ -1450,9 +1518,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             {
               id: record.id,
               type: 'draw',
-              props: {
-                color: nextColor
-              }
+              props: nextProps
             }
           ]
         })
@@ -1466,6 +1532,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       const detachStoreListener = editor.store.listen(
         () => {
+          const resolvedBoardTool = boardToolFromEditorToolId(editor.getCurrentToolId())
+
+          if (resolvedBoardTool) {
+            setActiveBoardTool((current) =>
+              current === resolvedBoardTool ? current : resolvedBoardTool
+            )
+          }
+
           const selectedStickyNote = selectedStickyNoteFromEditor(editor)
 
           setSelectedCanvasNoteId((current) =>
@@ -1553,6 +1627,16 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     useEffect(() => {
       editorRef.current?.setStyleForNextShapes(DefaultColorStyle, drawColor)
     }, [drawColor])
+
+    useEffect(() => {
+      editorRef.current?.setStyleForNextShapes(DefaultSizeStyle, drawSize)
+    }, [drawSize])
+
+    useEffect(() => {
+      if (!darkMode && drawColor === 'white') {
+        applyDrawColor('black')
+      }
+    }, [darkMode, drawColor])
 
     useEffect(() => {
       function shouldPreferResolvedWheelOwner(
@@ -2170,6 +2254,15 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const canZoomIn = state.viewport.zoom < MAX_ZOOM - CAMERA_EPSILON
     const canZoomOut = state.viewport.zoom > MIN_ZOOM + CAMERA_EPSILON
     const drawTheme = darkMode ? DefaultColorThemePalette.darkMode : DefaultColorThemePalette.lightMode
+    const visibleDrawColorItems = DRAW_COLOR_ITEMS.filter((item) => darkMode || !item.hideInLightMode)
+    const activeDrawColorItem =
+      visibleDrawColorItems.find((item) => item.color === drawColor) ?? visibleDrawColorItems[0] ?? null
+    const activeDrawColorLabel = activeDrawColorItem
+      ? drawColorLabel(activeDrawColorItem, darkMode)
+      : 'Ink'
+    const activeDrawSizeItem =
+      DRAW_SIZE_ITEMS.find((item) => item.size === drawSize) ?? DRAW_SIZE_ITEMS[1] ?? null
+    const activeDrawSizeLabel = activeDrawSizeItem?.label ?? 'Medium'
     const terminalConnections = state.tiles.flatMap((terminalTile) => {
       if (terminalTile.type !== 'term') {
         return []
@@ -2789,44 +2882,102 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           </div>
 
           {activeBoardTool === 'draw' ? (
-            <div className="flex items-center gap-2 border-b border-[color:var(--line)] px-3 py-2">
-              <div className="pr-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
-                Ink
+            <div className="border-b border-[color:var(--line)] px-3 py-2">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+                  Pen
+                </div>
+                <div className="truncate text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-dim)]">
+                  {activeDrawColorLabel} / {activeDrawSizeLabel}
+                </div>
               </div>
-              <div className="flex items-center gap-1.5">
-                {DRAW_COLOR_ITEMS.map((item) => {
+              <div className="mb-2 flex items-center gap-1.5">
+                {visibleDrawColorItems.map((item) => {
                   const isActive = drawColor === item.color
+                  const label = drawColorLabel(item, darkMode)
+                  const showNeutralMarker = darkMode && item.color === 'black'
+                  const swatchBackgroundColor =
+                    item.color === 'white'
+                      ? '#ffffff'
+                      : item.color === 'black' && darkMode
+                        ? '#ecece8'
+                        : drawTheme[item.color].solid
 
                   return (
-                    <button
-                      key={item.color}
-                      aria-label={`Pen color ${item.label}`}
-                      className={clsx(
-                        'relative flex h-7 w-7 items-center justify-center rounded-full border transition',
-                        isActive
-                          ? 'border-[color:var(--text)] bg-[var(--surface-0)] shadow-[0_0_0_1px_rgba(15,23,42,0.08)]'
-                          : 'border-[color:var(--line)] bg-[var(--surface-0)] hover:border-[color:var(--line-strong)]'
-                      )}
-                      onClick={() => {
-                        applyDrawColor(item.color)
-                      }}
-                      title={`Pen color: ${item.label}`}
-                    >
-                      <span
+                    <HoverTooltip key={item.color} label={`Pen color ${label}`}>
+                      <button
+                        aria-label={`Pen color ${label}`}
+                        data-managed-tooltip="custom"
                         className={clsx(
-                          'block h-4 w-4 rounded-full border',
-                          item.color === 'white'
-                            ? 'border-[color:var(--line-strong)]'
-                            : 'border-black/5'
+                          'relative flex h-7 w-7 items-center justify-center rounded-full border transition',
+                          isActive
+                            ? 'border-[color:var(--text)] bg-[var(--surface-0)] shadow-[0_0_0_1px_rgba(15,23,42,0.08)]'
+                            : 'border-[color:var(--line)] bg-[var(--surface-0)] hover:border-[color:var(--line-strong)]'
                         )}
-                        style={{
-                          backgroundColor: drawTheme[item.color].solid
+                        onClick={() => {
+                          applyDrawColor(item.color)
                         }}
-                      />
-                      {isActive ? (
-                        <span className="pointer-events-none absolute inset-0 rounded-full shadow-[inset_0_0_0_1px_var(--text)]" />
-                      ) : null}
-                    </button>
+                        title={`Pen color: ${label}`}
+                      >
+                        <span
+                          className={clsx(
+                            'relative block h-4 w-4 rounded-full border',
+                            item.color === 'white'
+                              ? 'border-[color:var(--line-strong)]'
+                              : item.color === 'black' && darkMode
+                                ? 'border-[rgba(17,18,20,0.4)]'
+                                : 'border-black/5'
+                          )}
+                          style={{
+                            backgroundColor: swatchBackgroundColor
+                          }}
+                        >
+                          {showNeutralMarker ? (
+                            <span
+                              className="pointer-events-none absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
+                              style={{
+                                backgroundColor: 'rgba(20, 21, 23, 0.68)'
+                              }}
+                            />
+                          ) : null}
+                        </span>
+                        {isActive ? (
+                          <span className="pointer-events-none absolute inset-0 rounded-full shadow-[inset_0_0_0_1px_var(--text)]" />
+                        ) : null}
+                      </button>
+                    </HoverTooltip>
+                  )
+                })}
+              </div>
+              <div className="flex items-center gap-1.5">
+                {DRAW_SIZE_ITEMS.map((item) => {
+                  const isActive = drawSize === item.size
+
+                  return (
+                    <HoverTooltip key={item.size} label={`Pen thickness ${item.label}`}>
+                      <button
+                        aria-label={`Pen thickness ${item.label}`}
+                        data-managed-tooltip="custom"
+                        className={clsx(
+                          'relative flex h-8 min-w-[2.5rem] items-center justify-center rounded-[4px] border px-2 transition',
+                          isActive
+                            ? 'border-[color:var(--text)] bg-[var(--surface-0)] text-[var(--text)]'
+                            : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:text-[var(--text)]'
+                        )}
+                        onClick={() => {
+                          applyDrawSize(item.size)
+                        }}
+                        title={`Pen thickness: ${item.label}`}
+                      >
+                        <span
+                          className="block rounded-full bg-current"
+                          style={{
+                            height: item.previewSize,
+                            width: 18
+                          }}
+                        />
+                      </button>
+                    </HoverTooltip>
                   )
                 })}
               </div>
