@@ -24,7 +24,11 @@ import {
   normalizeMarkdownImageReferences,
   relativeImagePath
 } from '../utils/markdownImages'
-import { MarkdownShortcutExtension, MarkdownTaskItem } from '../utils/markdownShortcuts'
+import {
+  MarkdownListItem,
+  MarkdownShortcutExtension,
+  MarkdownTaskItem
+} from '../utils/markdownShortcuts'
 
 const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
 
@@ -419,7 +423,10 @@ function RichNoteEditor({
     {
       immediatelyRender: false,
       extensions: [
-        StarterKit,
+        StarterKit.configure({
+          listItem: false
+        }),
+        MarkdownListItem,
         TaskList,
         MarkdownTaskItem.configure({
           HTMLAttributes: {

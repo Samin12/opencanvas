@@ -1,7 +1,7 @@
 import '@tiptap/extension-horizontal-rule'
 
 import { Extension, InputRule, type ChainedCommands, type Editor, type Range } from '@tiptap/core'
-import { TaskItem } from '@tiptap/extension-list'
+import { ListItem, TaskItem, listHelpers } from '@tiptap/extension-list'
 import { TextSelection } from '@tiptap/pm/state'
 
 type SlashCommand =
@@ -56,6 +56,10 @@ const SLASH_COMMAND_INPUT_PATTERN = /^\/([a-z0-9-]+)\s$/i
 const SLASH_COMMAND_ENTER_PATTERN = /^\/([a-z0-9-]+)\s*$/i
 const HORIZONTAL_RULE_MARKER_PATTERN = /^(?:---|___|\*\*\*)$/
 const TASK_LINE_ENTER_PATTERN = /^\s*(?:[-+*]\s+)?\[\s*(x|X)?\]\s+(.+)$/
+const OUTLINE_PARENT_NODE_NAMES = new Set(['bulletList', 'orderedList', 'taskList'])
+const OUTLINE_ITEM_TYPES = ['taskItem', 'listItem'] as const
+
+type OutlineItemType = (typeof OUTLINE_ITEM_TYPES)[number]
 
 function resolveSlashCommand(rawCommand: string) {
   return SLASH_COMMAND_ALIASES[rawCommand.trim().toLowerCase()] ?? null
@@ -168,7 +172,168 @@ function currentShortcutRange(editor: Editor) {
   }
 }
 
+function renderCollapsedAttribute(collapsed: unknown) {
+  return collapsed ? { 'data-collapsed': 'true' } : {}
+}
+
+function outlineItemAttributes(parentAttributes: Record<string, unknown> = {}) {
+  return {
+    ...parentAttributes,
+    collapsed: {
+      default: false,
+      parseHTML: (element: HTMLElement) => element.getAttribute('data-collapsed') === 'true',
+      renderHTML: (attributes: { collapsed?: boolean }) =>
+        renderCollapsedAttribute(attributes.collapsed)
+    }
+  }
+}
+
+function currentOutlineItem(editor: Editor) {
+  let itemType: OutlineItemType | null = null
+  let listItemPos: ReturnType<(typeof listHelpers)['findListItemPos']> = null
+
+  for (const candidateType of OUTLINE_ITEM_TYPES) {
+    const candidatePos = listHelpers.findListItemPos(candidateType, editor.state)
+
+    if (!candidatePos) {
+      continue
+    }
+
+    if (!listItemPos || candidatePos.depth > listItemPos.depth) {
+      itemType = candidateType
+      listItemPos = candidatePos
+    }
+  }
+
+  if (!itemType || !listItemPos) {
+    return null
+  }
+
+  const itemDepth = listItemPos.depth
+  const itemNode = listItemPos.$pos.node(itemDepth)
+  const itemPos = listItemPos.$pos.before(itemDepth)
+  const parentListDepth = itemDepth - 1
+  const parentListNode = listItemPos.$pos.node(parentListDepth)
+  const parentListPos = listItemPos.$pos.before(parentListDepth)
+  const indexInParent = listItemPos.$pos.index(parentListDepth)
+
+  return {
+    indexInParent,
+    itemDepth,
+    itemNode,
+    itemPos,
+    itemType,
+    parentListDepth,
+    parentListNode,
+    parentListPos
+  }
+}
+
+function outlineItemHasNestedList(itemNode: { childCount: number; child: (index: number) => { type: { name: string } } }) {
+  for (let index = 0; index < itemNode.childCount; index += 1) {
+    if (OUTLINE_PARENT_NODE_NAMES.has(itemNode.child(index).type.name)) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function outlineSiblingPos(parentListPos: number, parentListNode: { child: (index: number) => { nodeSize: number } }, targetIndex: number) {
+  let offset = parentListPos + 1
+
+  for (let index = 0; index < targetIndex; index += 1) {
+    offset += parentListNode.child(index).nodeSize
+  }
+
+  return offset
+}
+
+function moveCurrentOutlineItem(editor: Editor, direction: 'up' | 'down') {
+  const outlineItem = currentOutlineItem(editor)
+
+  if (!outlineItem) {
+    return false
+  }
+
+  const { indexInParent, itemNode, itemPos, parentListNode, parentListPos } = outlineItem
+  const targetIndex = direction === 'up' ? indexInParent - 1 : indexInParent + 1
+
+  if (targetIndex < 0 || targetIndex >= parentListNode.childCount) {
+    return false
+  }
+
+  const anchorOffset = Math.max(
+    1,
+    Math.min(editor.state.selection.from - itemPos, Math.max(1, itemNode.nodeSize - 2))
+  )
+
+  const siblingNode = parentListNode.child(targetIndex)
+  const siblingPos = outlineSiblingPos(parentListPos, parentListNode, targetIndex)
+  const tr = editor.state.tr.delete(itemPos, itemPos + itemNode.nodeSize)
+
+  if (direction === 'up') {
+    tr.insert(siblingPos, itemNode)
+    tr.setSelection(
+      TextSelection.near(
+        tr.doc.resolve(Math.min(siblingPos + anchorOffset, siblingPos + itemNode.nodeSize - 1))
+      )
+    )
+  } else {
+    const insertPos = itemPos + siblingNode.nodeSize
+    tr.insert(insertPos, itemNode)
+    tr.setSelection(
+      TextSelection.near(
+        tr.doc.resolve(Math.min(insertPos + anchorOffset, insertPos + itemNode.nodeSize - 1))
+      )
+    )
+  }
+
+  editor.view.dispatch(tr.scrollIntoView())
+  return true
+}
+
+function setCurrentOutlineItemCollapsed(editor: Editor, collapsed: boolean) {
+  const outlineItem = currentOutlineItem(editor)
+
+  if (!outlineItem || !outlineItemHasNestedList(outlineItem.itemNode)) {
+    return false
+  }
+
+  if (Boolean(outlineItem.itemNode.attrs.collapsed) === collapsed) {
+    return true
+  }
+
+  const tr = editor.state.tr.setNodeMarkup(outlineItem.itemPos, undefined, {
+    ...outlineItem.itemNode.attrs,
+    collapsed
+  })
+
+  editor.view.dispatch(tr.scrollIntoView())
+  return true
+}
+
+function toggleCurrentOutlineItemCollapsed(editor: Editor) {
+  const outlineItem = currentOutlineItem(editor)
+
+  if (!outlineItem || !outlineItemHasNestedList(outlineItem.itemNode)) {
+    return false
+  }
+
+  return setCurrentOutlineItemCollapsed(editor, !Boolean(outlineItem.itemNode.attrs.collapsed))
+}
+
+export const MarkdownListItem = ListItem.extend({
+  addAttributes() {
+    return outlineItemAttributes(this.parent?.())
+  }
+})
+
 export const MarkdownTaskItem = TaskItem.extend({
+  addAttributes() {
+    return outlineItemAttributes(this.parent?.())
+  },
+
   addInputRules() {
     return []
   }
@@ -199,6 +364,11 @@ export const MarkdownShortcutExtension = Extension.create({
 
   addKeyboardShortcuts() {
     return {
+      'Mod-Enter': () => toggleCurrentOutlineItemCollapsed(this.editor),
+      'Mod-Alt-ArrowLeft': () => setCurrentOutlineItemCollapsed(this.editor, true),
+      'Mod-Alt-ArrowRight': () => setCurrentOutlineItemCollapsed(this.editor, false),
+      'Mod-Shift-ArrowDown': () => moveCurrentOutlineItem(this.editor, 'down'),
+      'Mod-Shift-ArrowUp': () => moveCurrentOutlineItem(this.editor, 'up'),
       Enter: () => {
         const shortcut = currentShortcutRange(this.editor)
 
