@@ -345,6 +345,7 @@ export default function App() {
       if (event.shiftKey && event.key === 'Enter' && fileToPlace) {
         event.preventDefault()
         placeFileOnCanvas(fileToPlace)
+        setViewerFile(null)
         return
       }
 
@@ -736,7 +737,6 @@ export default function App() {
   function placeFileOnCanvas(file: FileTreeNode) {
     canvasRef.current?.spawnFileTile(file)
     setSelectedTreePath(file.path)
-    setViewerFile(file)
   }
 
   function createTerminal() {
