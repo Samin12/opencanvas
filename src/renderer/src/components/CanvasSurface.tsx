@@ -3292,12 +3292,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           {frameBundleShells.map((group) => (
             <div
               key={`bundle-shell:${group.id}`}
-              className={clsx(
-                'pointer-events-none absolute overflow-hidden rounded-[12px] border shadow-[0_10px_22px_rgba(15,23,42,0.18)] transition',
-                darkMode
-                  ? 'border-[#545c76] bg-[#1a2030]/86'
-                  : 'border-[#3e455a] bg-[#edf1f7]/94'
-              )}
+              className="pointer-events-none absolute overflow-hidden rounded-[12px] border border-[color:var(--line-strong)] bg-[color:color-mix(in_srgb,var(--surface-1)_90%,transparent)] shadow-[0_10px_22px_rgba(15,23,42,0.18)] transition"
               style={{
                 left: group.x,
                 top: group.y,
@@ -3305,35 +3300,18 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 height: group.height
               }}
             >
-              <div
-                className={clsx(
-                  'flex h-8 items-center justify-between px-3 text-[11px] font-semibold',
-                  darkMode ? 'bg-[#22293d] text-[#f4f7fb]' : 'bg-[#262d43] text-white'
-                )}
-              >
+              <div className="flex h-8 items-center justify-between border-b border-[color:var(--line)] bg-[color:color-mix(in_srgb,var(--surface-2)_78%,var(--accent-soft))] px-3 text-[11px] font-semibold text-[var(--text)]">
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-[3px] bg-white/90" />
+                  <span className="h-2.5 w-2.5 rounded-[3px] bg-[var(--accent)]" />
                   <span className="truncate">{group.label}</span>
                 </div>
-                <span className="shrink-0 text-[10px] font-medium text-white/72">
+                <span className="shrink-0 text-[10px] font-medium text-[var(--text-faint)]">
                   {group.movableTiles.length}
                 </span>
               </div>
-              <div
-                className={clsx(
-                  'absolute inset-x-1.5 bottom-1.5 top-9 rounded-[8px] border',
-                  darkMode
-                    ? 'border-white/12 bg-[#111623]/72'
-                    : 'border-[#c5ccda] bg-[#f7f9fc]/92'
-                )}
-              >
+              <div className="absolute inset-x-1.5 bottom-1.5 top-9 rounded-[8px] border border-[color:var(--line)] bg-[color:color-mix(in_srgb,var(--surface-0)_94%,transparent)]">
                 {group.isEmpty ? (
-                  <div
-                    className={clsx(
-                      'flex h-full items-center justify-center text-[11px] font-medium',
-                      darkMode ? 'text-white/48' : 'text-[#707a90]'
-                    )}
-                  >
+                  <div className="flex h-full items-center justify-center text-[11px] font-medium text-[var(--text-faint)]">
                     Drop files into this group
                   </div>
                 ) : null}
