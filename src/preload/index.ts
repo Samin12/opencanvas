@@ -25,6 +25,8 @@ if ('webFrame' in electron && electron.webFrame) {
 
 const api: CollaboratorApi = {
   bootstrap: () => ipcRenderer.invoke('bootstrap') as Promise<BootstrapData>,
+  readCanvasState: (workspacePath: string | null) =>
+    ipcRenderer.invoke('canvas:read', workspacePath) as Promise<CanvasState>,
   copyTextToClipboard: (text: string) => ipcRenderer.invoke('system:copy-text', text) as Promise<void>,
   createTerminalSession: (options) =>
     ipcRenderer.invoke('terminal:create', options) as Promise<TerminalSessionSnapshot>,
@@ -65,8 +67,8 @@ const api: CollaboratorApi = {
     }
   },
   saveConfig: (config: AppConfig) => ipcRenderer.invoke('config:save', config) as Promise<AppConfig>,
-  saveCanvasState: (state: CanvasState) =>
-    ipcRenderer.invoke('canvas:save', state) as Promise<CanvasState>,
+  saveCanvasState: (workspacePath: string | null, state: CanvasState) =>
+    ipcRenderer.invoke('canvas:save', workspacePath, state) as Promise<CanvasState>,
   openPath: (targetPath: string) => ipcRenderer.invoke('system:open-path', targetPath) as Promise<void>,
   pickWorkspaceDirectory: () => ipcRenderer.invoke('workspace:pick') as Promise<string | null>,
   createWorkspaceNote: (workspacePath: string, targetDirectoryPath?: string) =>

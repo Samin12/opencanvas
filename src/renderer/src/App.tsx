@@ -87,6 +87,19 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
+function emptyCanvasState(): CanvasState {
+  return {
+    version: 1,
+    tiles: [],
+    viewport: {
+      panX: 0,
+      panY: 0,
+      zoom: 1
+    },
+    boardSnapshot: undefined
+  }
+}
+
 async function copyTextWithBrowserFallback(text: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text)
@@ -126,6 +139,8 @@ export default function App() {
   const canvasFrameRef = useRef<number | null>(null)
   const canvasSaveTimerRef = useRef<number | null>(null)
   const canvasStateRef = useRef<CanvasState | null>(null)
+  const canvasWorkspaceRef = useRef<string | null>(null)
+  const canvasLoadRequestRef = useRef(0)
 
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [canvasState, setCanvasState] = useState<CanvasState | null>(null)
@@ -194,9 +209,13 @@ export default function App() {
           return
         }
 
+        const initialWorkspacePath =
+          payload.config.workspaces[payload.config.activeWorkspace] ?? null
+
+        canvasWorkspaceRef.current = initialWorkspacePath
+        canvasStateRef.current = payload.canvasState
         setConfig(payload.config)
         setCanvasState(payload.canvasState)
-        canvasStateRef.current = payload.canvasState
         setSidebarWidth(payload.config.ui.sidebarWidth)
         setDarkMode(payload.config.ui.darkMode)
         setSidebarCollapsed(payload.config.ui.sidebarCollapsed)
@@ -215,6 +234,19 @@ export default function App() {
       cancelled = true
     }
   }, [])
+
+  async function flushPendingCanvasSave() {
+    if (canvasSaveTimerRef.current !== null) {
+      window.clearTimeout(canvasSaveTimerRef.current)
+      canvasSaveTimerRef.current = null
+    }
+
+    if (!canvasStateRef.current) {
+      return
+    }
+
+    await window.collaborator.saveCanvasState(canvasWorkspaceRef.current, canvasStateRef.current)
+  }
 
   useEffect(() => {
     if (!activeWorkspace) {
@@ -256,7 +288,62 @@ export default function App() {
   }, [activeWorkspace])
 
   useEffect(() => {
+    if (!config) {
+      return
+    }
+
+    const workspacePath = activeWorkspace ?? null
+
+    if (canvasWorkspaceRef.current === workspacePath && canvasStateRef.current !== null) {
+      return
+    }
+
+    let cancelled = false
+    const requestId = canvasLoadRequestRef.current + 1
+    canvasLoadRequestRef.current = requestId
+
+    async function loadWorkspaceCanvas() {
+      await flushPendingCanvasSave()
+
+      try {
+        const nextCanvasState = await window.collaborator.readCanvasState(workspacePath)
+
+        if (cancelled || canvasLoadRequestRef.current !== requestId) {
+          return
+        }
+
+        if (canvasFrameRef.current !== null) {
+          window.cancelAnimationFrame(canvasFrameRef.current)
+          canvasFrameRef.current = null
+        }
+
+        canvasWorkspaceRef.current = workspacePath
+        canvasStateRef.current = nextCanvasState
+        setCanvasState(nextCanvasState)
+      } catch {
+        if (cancelled || canvasLoadRequestRef.current !== requestId) {
+          return
+        }
+
+        const nextCanvasState = emptyCanvasState()
+
+        canvasWorkspaceRef.current = workspacePath
+        canvasStateRef.current = nextCanvasState
+        setCanvasState(nextCanvasState)
+        setWorkspaceError('The workspace canvas could not be loaded.')
+      }
+    }
+
+    void loadWorkspaceCanvas()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeWorkspace, config])
+
+  useEffect(() => {
     setSelectedTreePath(null)
+    setViewerFile(null)
   }, [activeWorkspace])
 
   useEffect(() => {
@@ -277,6 +364,10 @@ export default function App() {
 
       if (canvasSaveTimerRef.current !== null) {
         window.clearTimeout(canvasSaveTimerRef.current)
+      }
+
+      if (canvasStateRef.current) {
+        void window.collaborator.saveCanvasState(canvasWorkspaceRef.current, canvasStateRef.current)
       }
     }
   }, [])
@@ -769,13 +860,15 @@ export default function App() {
   }
 
   function scheduleCanvasSave(nextState: CanvasState, immediate = false) {
+    const workspacePath = canvasWorkspaceRef.current
+
     if (canvasSaveTimerRef.current !== null) {
       window.clearTimeout(canvasSaveTimerRef.current)
       canvasSaveTimerRef.current = null
     }
 
     if (immediate) {
-      void window.collaborator.saveCanvasState(nextState)
+      void window.collaborator.saveCanvasState(workspacePath, nextState)
       return
     }
 
@@ -783,7 +876,7 @@ export default function App() {
       canvasSaveTimerRef.current = null
 
       if (canvasStateRef.current) {
-        void window.collaborator.saveCanvasState(canvasStateRef.current)
+        void window.collaborator.saveCanvasState(workspacePath, canvasStateRef.current)
       }
     }, 500)
   }

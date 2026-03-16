@@ -108,8 +108,9 @@ export interface CanvasPinchPayload {
 
 export interface CollaboratorApi {
   bootstrap: () => Promise<BootstrapData>
+  readCanvasState: (workspacePath: string | null) => Promise<CanvasState>
   saveConfig: (config: AppConfig) => Promise<AppConfig>
-  saveCanvasState: (state: CanvasState) => Promise<CanvasState>
+  saveCanvasState: (workspacePath: string | null, state: CanvasState) => Promise<CanvasState>
   copyTextToClipboard: (text: string) => Promise<void>
   openPath: (targetPath: string) => Promise<void>
   pickWorkspaceDirectory: () => Promise<string | null>
