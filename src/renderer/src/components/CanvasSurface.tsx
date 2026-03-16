@@ -1898,12 +1898,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       window.addEventListener('pointerdown', handlePointerContext, true)
       window.addEventListener('focusin', handleFocusIn, true)
-      window.addEventListener('keydown', handleKeyDown)
+      window.addEventListener('keydown', handleKeyDown, true)
 
       return () => {
         window.removeEventListener('pointerdown', handlePointerContext, true)
         window.removeEventListener('focusin', handleFocusIn, true)
-        window.removeEventListener('keydown', handleKeyDown)
+        window.removeEventListener('keydown', handleKeyDown, true)
       }
     }, [linkSourceTileId, selectedTileId, shortcutsSuspended])
 
