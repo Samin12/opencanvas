@@ -51,8 +51,10 @@ set -g extended-keys on
 }
 
 interface TerminalActivityParserState {
+  captureReplayCounts: Map<string, number> | null
   nextId: number
   pendingBlockLines: string[] | null
+  pendingMessageLines: string[] | null
   pendingText: string
   replaySuppressionCounts: Map<string, number>
   replaySuppressionUntil: number
@@ -110,8 +112,10 @@ function normalizeTerminalText(text: string): string {
 
 function makeParserState(): TerminalActivityParserState {
   return {
+    captureReplayCounts: null,
     nextId: 1,
     pendingBlockLines: null,
+    pendingMessageLines: null,
     pendingText: '',
     replaySuppressionCounts: new Map(),
     replaySuppressionUntil: 0
@@ -156,6 +160,84 @@ function capitalize(value: string): string {
   }
 
   return `${value[0].toUpperCase()}${value.slice(1)}`
+}
+
+function messageTitle(body: string): string {
+  for (const line of body.split('\n')) {
+    const trimmed = line.trim().replace(/^[-*#>\d.\s]+/, '').trim()
+
+    if (trimmed.length > 0) {
+      return trimmed.length > 88 ? `${trimmed.slice(0, 87)}…` : trimmed
+    }
+  }
+
+  return 'Claude Response'
+}
+
+function stripClaudeLeadMarker(value: string): string {
+  return value.replace(/^[⏺●•]\s+/u, '')
+}
+
+function normalizeClaudeMessageLine(line: string): string {
+  return line.replace(/\s+$/g, '').replace(/^\s{0,2}/, '')
+}
+
+function isClaudeUiBoundaryLine(trimmed: string): boolean {
+  return (
+    /^[╭╰│]/u.test(trimmed) ||
+    /^[─━]{8,}$/u.test(trimmed) ||
+    /^esc to interrupt/i.test(trimmed) ||
+    /^\/ for shortcuts/i.test(trimmed)
+  )
+}
+
+function isClaudePromptLine(trimmed: string): boolean {
+  return /^(❯|›|>)\s*/u.test(trimmed)
+}
+
+function isClaudeMessageStart(line: string): boolean {
+  const trimmed = line.trim()
+
+  if (!/^[⏺●•]\s+/u.test(trimmed)) {
+    return false
+  }
+
+  return parseLineActivity(trimmed) === null
+}
+
+function createMessageActivity(body: string) {
+  const trimmedBody = body.trim()
+
+  if (trimmedBody.length === 0) {
+    return null
+  }
+
+  return {
+    body: trimmedBody,
+    item: {
+      body: trimmedBody,
+      kind: 'message' as const,
+      rawText: trimmedBody,
+      state: 'info' as const,
+      title: messageTitle(trimmedBody)
+    },
+    key: `message:${trimmedBody}`
+  }
+}
+
+function flushPendingMessage(session: ManagedTerminalSession, shouldBroadcast: boolean): void {
+  if (!session.parser.pendingMessageLines) {
+    return
+  }
+
+  const body = session.parser.pendingMessageLines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  session.parser.pendingMessageLines = null
+
+  const parsed = createMessageActivity(body)
+
+  if (parsed) {
+    pushActivity(session, parsed, shouldBroadcast)
+  }
 }
 
 function readLikePath(value: string): string | undefined {
@@ -213,7 +295,7 @@ function parseTaskNotification(block: string) {
 }
 
 function parseLineActivity(line: string) {
-  const trimmed = line.trim()
+  const trimmed = stripClaudeLeadMarker(line.trim())
 
   if (trimmed.length === 0) {
     return null
@@ -315,6 +397,13 @@ function pushActivity(
 ): void {
   const now = Date.now()
 
+  if (session.parser.captureReplayCounts) {
+    session.parser.captureReplayCounts.set(
+      parsed.key,
+      (session.parser.captureReplayCounts.get(parsed.key) ?? 0) + 1
+    )
+  }
+
   if (session.parser.replaySuppressionUntil > now) {
     const remaining = session.parser.replaySuppressionCounts.get(parsed.key) ?? 0
 
@@ -348,6 +437,36 @@ function processNormalizedLine(
   line: string,
   shouldBroadcast: boolean
 ): void {
+  const trimmed = line.trim()
+
+  if (session.parser.pendingMessageLines) {
+    if (trimmed.length === 0) {
+      if (session.parser.pendingMessageLines.at(-1) !== '') {
+        session.parser.pendingMessageLines.push('')
+      }
+      return
+    }
+
+    const parsedLine = parseLineActivity(line)
+
+    if (
+      parsedLine ||
+      line.includes('<task-notification>') ||
+      isClaudePromptLine(trimmed) ||
+      isClaudeUiBoundaryLine(trimmed) ||
+      isClaudeMessageStart(line)
+    ) {
+      flushPendingMessage(session, shouldBroadcast)
+
+      if (!parsedLine && !line.includes('<task-notification>') && !isClaudeMessageStart(line)) {
+        return
+      }
+    } else {
+      session.parser.pendingMessageLines.push(normalizeClaudeMessageLine(line))
+      return
+    }
+  }
+
   if (session.parser.pendingBlockLines) {
     session.parser.pendingBlockLines.push(line)
 
@@ -357,6 +476,10 @@ function processNormalizedLine(
       pushActivity(session, parseTaskNotification(block), shouldBroadcast)
     }
 
+    return
+  }
+
+  if (trimmed.length === 0 || isClaudeUiBoundaryLine(trimmed) || isClaudePromptLine(trimmed)) {
     return
   }
 
@@ -374,6 +497,11 @@ function processNormalizedLine(
 
   if (parsed) {
     pushActivity(session, parsed, shouldBroadcast)
+    return
+  }
+
+  if (isClaudeMessageStart(line)) {
+    session.parser.pendingMessageLines = [normalizeClaudeMessageLine(stripClaudeLeadMarker(line.trim()))]
   }
 }
 
@@ -437,65 +565,13 @@ function initializeSessionActivities(session: ManagedTerminalSession): void {
     return
   }
 
-  const counts = new Map<string, number>()
-  const originalPushActivity = pushActivity
-
-  const capturePush = (
-    targetSession: ManagedTerminalSession,
-    parsed: {
-      body: string
-      filePath?: string
-      item: Omit<TerminalActivityItem, 'createdAt' | 'filePath' | 'id'>
-      key: string
-    },
-    shouldBroadcast: boolean
-  ) => {
-    counts.set(parsed.key, (counts.get(parsed.key) ?? 0) + 1)
-    originalPushActivity(targetSession, parsed, shouldBroadcast)
-  }
-
-  const lines = normalizeTerminalText(history)
-  session.parser.pendingText += lines
-  const resolvedLines = session.parser.pendingText.split('\n')
-  session.parser.pendingText = ''
-
-  for (const line of resolvedLines) {
-    if (line.length === 0) {
-      continue
-    }
-
-    if (session.parser.pendingBlockLines) {
-      session.parser.pendingBlockLines.push(line)
-
-      if (line.includes('</task-notification>')) {
-        const block = session.parser.pendingBlockLines.join('\n')
-        session.parser.pendingBlockLines = null
-        capturePush(session, parseTaskNotification(block), false)
-      }
-
-      continue
-    }
-
-    if (line.includes('<task-notification>')) {
-      if (line.includes('</task-notification>')) {
-        capturePush(session, parseTaskNotification(line), false)
-      } else {
-        session.parser.pendingBlockLines = [line]
-      }
-
-      continue
-    }
-
-    const parsed = parseLineActivity(line)
-
-    if (parsed) {
-      capturePush(session, parsed, false)
-    }
-  }
-
+  session.parser.captureReplayCounts = new Map()
+  ingestTerminalText(session, history, false)
+  flushPendingMessage(session, false)
   session.parser.pendingBlockLines = null
   session.parser.pendingText = ''
-  session.parser.replaySuppressionCounts = counts
+  session.parser.replaySuppressionCounts = session.parser.captureReplayCounts ?? new Map()
+  session.parser.captureReplayCounts = null
   session.parser.replaySuppressionUntil = Date.now() + ACTIVITY_REPLAY_SUPPRESSION_MS
 }
 

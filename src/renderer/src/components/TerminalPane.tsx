@@ -152,6 +152,7 @@ function TerminalPaneComponent({
   const dragCleanupRef = useRef<(() => void) | null>(null)
   const historyRequestIdRef = useRef(0)
   const activityRequestIdRef = useRef(0)
+  const pendingSelectionCardTextRef = useRef('')
   const terminalRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const [layout, setLayout] = useState<'split' | 'stack'>('split')
@@ -328,7 +329,11 @@ function TerminalPaneComponent({
   }
 
   async function createCardFromSelection() {
-    const nextSelection = selectedText.trim()
+    const nextSelection = (
+      terminalRef.current?.getSelection() ||
+      pendingSelectionCardTextRef.current ||
+      selectedText
+    ).trim()
 
     if (nextSelection.length === 0) {
       return
@@ -436,7 +441,12 @@ function TerminalPaneComponent({
     })
 
     const disposeSelection = terminal.onSelectionChange(() => {
-      setSelectedText(terminal.getSelection())
+      const nextSelection = terminal.getSelection()
+      setSelectedText(nextSelection)
+
+      if (nextSelection.trim().length > 0) {
+        pendingSelectionCardTextRef.current = nextSelection
+      }
     })
 
     const detachTerminalData = window.collaborator.onTerminalData(sessionId, (data) => {
@@ -578,6 +588,7 @@ function TerminalPaneComponent({
     setActivityError(null)
     setActivities([])
     setSelectedText('')
+    pendingSelectionCardTextRef.current = ''
     setComposerValue('')
   }, [sessionId])
 
@@ -661,7 +672,12 @@ function TerminalPaneComponent({
             onClick={() => {
               void createCardFromSelection()
             }}
-            onMouseDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              pendingSelectionCardTextRef.current =
+                terminalRef.current?.getSelection() || pendingSelectionCardTextRef.current || selectedText
+            }}
           >
             {creatingCardKey === 'selection' ? 'Saving...' : 'Selection to Card'}
           </button>
