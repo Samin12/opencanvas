@@ -2,8 +2,8 @@ import {
   useEffect,
   useRef,
   useState,
-  type DragEvent as ReactDragEvent,
-  type MouseEvent as ReactMouseEvent
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent
 } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -27,9 +27,6 @@ interface FileTreeProps {
   query: string
   rootDirectoryPath: string | null
 }
-
-const INDENT = 12
-const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
   return (
@@ -232,22 +229,6 @@ export function FileKindIcon({
   )
 }
 
-function getDraggedFilePayload(dataTransfer: DataTransfer | null) {
-  const rawPayload = dataTransfer?.getData(COLLABORATOR_FILE_MIME)
-
-  if (!rawPayload) {
-    return null
-  }
-
-  try {
-    const payload = JSON.parse(rawPayload) as { path?: string }
-
-    return typeof payload.path === 'string' ? { path: payload.path } : null
-  } catch {
-    return null
-  }
-}
-
 function matchesQuery(node: FileTreeNode, query: string) {
   const haystack = `${node.name} ${node.path}`.toLowerCase()
   return haystack.includes(query)
@@ -299,6 +280,46 @@ interface TreeContextMenuState {
   y: number
 }
 
+interface PointerDragState {
+  active: boolean
+  currentX: number
+  currentY: number
+  sourceFileKind?: FileTreeNode['fileKind']
+  sourceKind: FileTreeNode['kind']
+  sourceName: string
+  sourcePath: string
+  startX: number
+  startY: number
+}
+
+function displayFileNameParts(node: FileTreeNode) {
+  const extension = node.extension?.trim().toLowerCase() ?? ''
+
+  if (node.kind !== 'file' || !extension || !node.name.toLowerCase().endsWith(extension)) {
+    return {
+      extensionLabel: null,
+      stem: node.name
+    }
+  }
+
+  return {
+    extensionLabel: extension.startsWith('.') ? extension.slice(1) : extension,
+    stem: node.name.slice(0, -extension.length) || node.name
+  }
+}
+
+function directChildCount(node: FileTreeNode) {
+  return node.kind === 'directory' ? node.children?.length ?? 0 : 0
+}
+
+function directoryNameTone(nodeName: string, darkMode: boolean) {
+  if (!nodeName.startsWith('.')) {
+    return 'text-[var(--text)]'
+  }
+
+  return darkMode ? 'text-[#d4ba88]' : 'text-[#8f6a23]'
+}
+
 function filterNodes(nodes: FileTreeNode[], query: string): FileTreeNode[] {
   return nodes.flatMap((node) => {
     if (node.kind === 'directory') {
@@ -337,16 +358,30 @@ export function FileTree({
   rootDirectoryPath
 }: FileTreeProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [draggedNodePath, setDraggedNodePath] = useState<string | null>(null)
+  const [dragState, setDragState] = useState<PointerDragState | null>(null)
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<TreeContextMenuState | null>(null)
-  const draggedNodePathRef = useRef<string | null>(null)
+  const dragStateRef = useRef<PointerDragState | null>(null)
+  const expandTimerRef = useRef<number | null>(null)
+  const suppressClickRef = useRef(false)
   const trimmedQuery = query.trim().toLowerCase()
   const visibleNodes = trimmedQuery ? filterNodes(nodes, trimmedQuery) : nodes
 
   useEffect(() => {
     setExpanded((current) => ({ ...collectDirectoryPaths(nodes), ...current }))
   }, [nodes])
+
+  useEffect(() => {
+    dragStateRef.current = dragState
+  }, [dragState])
+
+  useEffect(() => {
+    return () => {
+      if (expandTimerRef.current !== null) {
+        window.clearTimeout(expandTimerRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (!contextMenu) {
@@ -385,8 +420,71 @@ export function FileTree({
     }))
   }
 
-  function currentDraggedPath(dataTransfer: DataTransfer | null) {
-    return draggedNodePathRef.current ?? draggedNodePath ?? getDraggedFilePayload(dataTransfer)?.path ?? null
+  function clearPendingExpand() {
+    if (expandTimerRef.current !== null) {
+      window.clearTimeout(expandTimerRef.current)
+      expandTimerRef.current = null
+    }
+  }
+
+  function scheduleDirectoryExpand(path: string, shouldExpand: boolean) {
+    clearPendingExpand()
+
+    if (!shouldExpand || trimmedQuery) {
+      return
+    }
+
+    expandTimerRef.current = window.setTimeout(() => {
+      setExpanded((current) => (current[path] ? current : { ...current, [path]: true }))
+      expandTimerRef.current = null
+    }, 320)
+  }
+
+  function consumeSuppressedClick() {
+    if (!suppressClickRef.current) {
+      return false
+    }
+
+    suppressClickRef.current = false
+    return true
+  }
+
+  function dropTargetLabel(targetPath: string) {
+    if (rootDirectoryPath && normalizeFsPath(targetPath) === normalizeFsPath(rootDirectoryPath)) {
+      return 'Workspace Root'
+    }
+
+    const pathParts = targetPath.split(/[\\/]/).filter(Boolean)
+    return pathParts[pathParts.length - 1] ?? targetPath
+  }
+
+  function resolveDropTargetFromPoint(clientX: number, clientY: number, sourcePath: string) {
+    if (typeof document === 'undefined') {
+      return null
+    }
+
+    const elementAtPoint = document.elementFromPoint(clientX, clientY) as HTMLElement | null
+    const dropElement = elementAtPoint?.closest<HTMLElement>('[data-file-tree-drop-path], [data-file-tree-root-drop="true"]')
+
+    if (!dropElement) {
+      clearPendingExpand()
+      return null
+    }
+
+    const candidatePath =
+      dropElement.dataset.fileTreeDropPath ??
+      (dropElement.dataset.fileTreeRootDrop === 'true' ? rootDirectoryPath : null)
+
+    if (!candidatePath || !canMoveNodeIntoDirectory(sourcePath, candidatePath)) {
+      clearPendingExpand()
+      return null
+    }
+
+    const directoryHover = dropElement.dataset.fileTreeDirectory === 'true'
+    const isExpanded = trimmedQuery ? true : expanded[candidatePath] ?? true
+    scheduleDirectoryExpand(candidatePath, directoryHover && !isExpanded)
+
+    return candidatePath
   }
 
   function openContextMenu(event: ReactMouseEvent, node: FileTreeNode | null, directoryPath: string) {
@@ -468,162 +566,278 @@ export function FileTree({
     onRevealNodeInFinder(node.path)
   }
 
-  function startDraggingNode(event: ReactDragEvent, node: FileTreeNode) {
-    draggedNodePathRef.current = node.path
-    setDraggedNodePath(node.path)
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData(
-      COLLABORATOR_FILE_MIME,
-      JSON.stringify({
-        path: node.path,
-        name: node.name,
-        fileKind: node.fileKind
-      })
-    )
+  function startDraggingNode(event: ReactPointerEvent, node: FileTreeNode) {
+    if (event.button !== 0) {
+      return
+    }
+
+    clearPendingExpand()
+    const nextDragState: PointerDragState = {
+      active: false,
+      currentX: event.clientX,
+      currentY: event.clientY,
+      sourceFileKind: node.kind === 'file' ? node.fileKind : undefined,
+      sourceKind: node.kind,
+      sourceName: node.name,
+      sourcePath: node.path,
+      startX: event.clientX,
+      startY: event.clientY
+    }
+
+    dragStateRef.current = nextDragState
+    setDragState(nextDragState)
+    setDropTargetPath(null)
+
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Ignore browsers/environments that reject explicit pointer capture.
+    }
   }
+
+  useEffect(() => {
+    if (!dragState) {
+      return
+    }
+
+    function clearDragState() {
+      clearPendingExpand()
+      dragStateRef.current = null
+      setDragState(null)
+      setDropTargetPath(null)
+    }
+
+    function handlePointerMove(event: PointerEvent) {
+      const currentDragState = dragStateRef.current
+
+      if (!currentDragState) {
+        return
+      }
+
+      const deltaX = event.clientX - currentDragState.startX
+      const deltaY = event.clientY - currentDragState.startY
+      const nextActive = currentDragState.active || Math.hypot(deltaX, deltaY) >= 4
+      const nextDragState: PointerDragState = {
+        ...currentDragState,
+        active: nextActive,
+        currentX: event.clientX,
+        currentY: event.clientY
+      }
+
+      dragStateRef.current = nextDragState
+      setDragState(nextDragState)
+
+      if (!nextActive) {
+        return
+      }
+
+      const nextDropTargetPath = resolveDropTargetFromPoint(
+        event.clientX,
+        event.clientY,
+        currentDragState.sourcePath
+      )
+
+      setDropTargetPath((currentPath) => (currentPath === nextDropTargetPath ? currentPath : nextDropTargetPath))
+      event.preventDefault()
+    }
+
+    function handlePointerEnd(event: PointerEvent) {
+      const currentDragState = dragStateRef.current
+
+      if (!currentDragState) {
+        return
+      }
+
+      const nextDropTargetPath = currentDragState.active
+        ? resolveDropTargetFromPoint(event.clientX, event.clientY, currentDragState.sourcePath)
+        : null
+
+      clearDragState()
+
+      if (!currentDragState.active || !nextDropTargetPath) {
+        return
+      }
+
+      suppressClickRef.current = true
+      window.setTimeout(() => {
+        suppressClickRef.current = false
+      }, 0)
+      onMoveFile(currentDragState.sourcePath, nextDropTargetPath)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerEnd)
+    window.addEventListener('pointercancel', clearDragState)
+    window.addEventListener('blur', clearDragState)
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerEnd)
+      window.removeEventListener('pointercancel', clearDragState)
+      window.removeEventListener('blur', clearDragState)
+    }
+  }, [dragState, expanded, onMoveFile, rootDirectoryPath, trimmedQuery])
 
   function renderNode(node: FileTreeNode, depth: number) {
     if (node.kind === 'directory') {
       const isExpanded = trimmedQuery ? true : expanded[node.path] ?? true
+      const childCount = directChildCount(node)
 
       return (
-        <div key={node.path}>
-          <button
-            draggable
-            data-file-tree-node="true"
-            className={clsx(
-              'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px] font-medium text-[var(--text-dim)] transition',
-              'rounded-[4px] border border-transparent hover:bg-[var(--surface-0)]',
-              activePath === node.path &&
-                'border-[color:var(--line)] bg-[var(--surface-selected)] text-[var(--text)]',
-              dropTargetPath === node.path &&
-                'border-[color:var(--line)] bg-[var(--surface-selected)] text-[var(--text)]'
-            )}
-            style={{ paddingLeft: 10 + depth * INDENT }}
-            onMouseDown={(event) => {
-              if (event.button === 2) {
-                event.preventDefault()
-                event.stopPropagation()
-              }
-            }}
-            onClick={() => {
-              onSelectNode(node)
-              toggleDirectory(node.path)
-            }}
-            onContextMenu={(event) => openContextMenu(event, node, node.path)}
-            title={`Toggle folder: ${node.name}`}
-            onDragStart={(event) => startDraggingNode(event, node)}
-            onDragEnd={() => {
-              draggedNodePathRef.current = null
-              setDraggedNodePath(null)
-              setDropTargetPath(null)
-            }}
-            onDragOver={(event) => {
-              const draggedPath = currentDraggedPath(event.dataTransfer)
+        <div key={node.path} className="space-y-0.5">
+          <div className="relative">
+            {depth > 0 ? (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute left-[-14px] top-1/2 h-px w-3.5 -translate-y-1/2 bg-[var(--line)]"
+              />
+            ) : null}
+            <button
+              data-file-tree-node="true"
+              data-file-tree-directory="true"
+              data-file-tree-drop-path={node.path}
+              className={clsx(
+                'flex w-full cursor-grab items-center gap-2 px-2 py-1.5 text-left text-[13px] font-medium transition active:cursor-grabbing',
+                'rounded-[4px] border border-transparent hover:bg-[color:color-mix(in_srgb,var(--surface-selected)_65%,transparent)]',
+                activePath === node.path &&
+                  'border-[color:var(--line)] bg-[color:color-mix(in_srgb,var(--surface-selected)_85%,transparent)] text-[var(--text)]',
+                dragState?.sourcePath === node.path && 'opacity-55',
+                dropTargetPath === node.path &&
+                  'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
+              )}
+              onMouseDown={(event) => {
+                if (event.button === 2) {
+                  event.preventDefault()
+                  event.stopPropagation()
+                }
+              }}
+              onClick={() => {
+                if (consumeSuppressedClick()) {
+                  return
+                }
 
-              if (!draggedPath || !canMoveNodeIntoDirectory(draggedPath, node.path)) {
-                return
-              }
-
-              event.preventDefault()
-              event.dataTransfer.dropEffect = 'move'
-
-              if (dropTargetPath !== node.path) {
-                setDropTargetPath(node.path)
-              }
-            }}
-            onDragLeave={(event) => {
-              const relatedTarget = event.relatedTarget as Node | null
-
-              if (relatedTarget && event.currentTarget.contains(relatedTarget)) {
-                return
-              }
-
-              if (dropTargetPath === node.path) {
-                setDropTargetPath(null)
-              }
-            }}
-            onDrop={(event) => {
-              const draggedPath = currentDraggedPath(event.dataTransfer)
-
-              draggedNodePathRef.current = null
-              setDraggedNodePath(null)
-              setDropTargetPath(null)
-
-              if (!draggedPath || !canMoveNodeIntoDirectory(draggedPath, node.path)) {
-                return
-              }
-
-              event.preventDefault()
-              event.stopPropagation()
-              onMoveFile(draggedPath, node.path)
-            }}
-          >
-            <span className="text-[var(--text-faint)]">
-              <ChevronIcon expanded={isExpanded} />
-            </span>
-            <span className={clsx('flex h-4.5 w-4.5 items-center justify-center', iconToneClasses('directory', darkMode))}>
-              <FolderIcon />
-            </span>
-            <span className="min-w-0 flex-1 truncate">
-              {node.name}
-            </span>
-          </button>
+                onSelectNode(node)
+                toggleDirectory(node.path)
+              }}
+              onContextMenu={(event) => openContextMenu(event, node, node.path)}
+              title={`Toggle folder: ${node.name}`}
+              onPointerDown={(event) => startDraggingNode(event, node)}
+            >
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[var(--text-faint)]">
+                <ChevronIcon expanded={isExpanded} />
+              </span>
+              <span
+                className={clsx(
+                  'flex h-4.5 w-4.5 shrink-0 items-center justify-center',
+                  iconToneClasses('directory', darkMode)
+                )}
+              >
+                <FolderIcon />
+              </span>
+              <span className={clsx('min-w-0 flex-1 truncate', directoryNameTone(node.name, darkMode))}>
+                {node.name}
+              </span>
+              <span
+                className={clsx(
+                  'shrink-0 rounded-full border px-1.5 py-[1px] text-[10px] font-semibold leading-none',
+                  activePath === node.path || dropTargetPath === node.path
+                    ? 'border-current/20 bg-white/10 text-current'
+                    : 'border-[color:var(--line)] bg-[var(--surface-2)] text-[var(--text-faint)]'
+                )}
+                title={
+                  node.descendantFileCount !== undefined
+                    ? `${childCount} direct item${childCount === 1 ? '' : 's'}, ${node.descendantFileCount} file${node.descendantFileCount === 1 ? '' : 's'} inside`
+                    : `${childCount} direct item${childCount === 1 ? '' : 's'}`
+                }
+              >
+                {childCount}
+              </span>
+            </button>
+          </div>
           {isExpanded ? (
-            <div>{node.children?.map((child) => renderNode(child, depth + 1))}</div>
+            <div className="relative ml-4">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute bottom-1 left-[7px] top-0 w-px bg-[var(--line)]"
+              />
+              <div className="space-y-0.5 pl-4">{node.children?.map((child) => renderNode(child, depth + 1))}</div>
+            </div>
           ) : null}
         </div>
       )
     }
 
+    const { extensionLabel, stem } = displayFileNameParts(node)
+
     return (
-      <button
-        key={node.path}
-        draggable
-        data-file-tree-node="true"
-        onDragStart={(event) => {
-          startDraggingNode(event, node)
-        }}
-        onDragEnd={() => {
-          draggedNodePathRef.current = null
-          setDraggedNodePath(null)
-          setDropTargetPath(null)
-        }}
-        className={clsx(
-          'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px] font-medium transition',
-          'rounded-[4px] border border-transparent',
-          activePath === node.path
-            ? 'border-[color:var(--line)] bg-[var(--surface-selected)] text-[var(--text)]'
-            : 'text-[var(--text-dim)] hover:bg-[var(--surface-0)]'
-        )}
-        style={{ paddingLeft: 10 + depth * INDENT }}
-        onMouseDown={(event) => {
-          if (event.button === 2) {
-            event.preventDefault()
-            event.stopPropagation()
+      <div key={node.path} className="relative">
+        {depth > 0 ? (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute left-[-14px] top-1/2 h-px w-3.5 -translate-y-1/2 bg-[var(--line)]"
+          />
+        ) : null}
+        <button
+          data-file-tree-node="true"
+          data-file-tree-drop-path={parentDirectoryPath(node.path) ?? rootDirectoryPath ?? undefined}
+          className={clsx(
+            'flex w-full cursor-grab items-center gap-2 px-2 py-1.5 text-left text-[13px] font-medium transition active:cursor-grabbing',
+            'rounded-[4px] border border-transparent',
+            dragState?.sourcePath === node.path && 'opacity-55',
+            activePath === node.path
+              ? 'border-[color:var(--line)] bg-[color:color-mix(in_srgb,var(--surface-selected)_85%,transparent)] text-[var(--text)]'
+              : 'text-[var(--text-dim)] hover:bg-[color:color-mix(in_srgb,var(--surface-selected)_65%,transparent)]'
+          )}
+          onMouseDown={(event) => {
+            if (event.button === 2) {
+              event.preventDefault()
+              event.stopPropagation()
+            }
+          }}
+          onClick={() => {
+            if (consumeSuppressedClick()) {
+              return
+            }
+
+            onSelectNode(node)
+          }}
+          onContextMenu={(event) =>
+            openContextMenu(event, node, parentDirectoryPath(node.path) ?? rootDirectoryPath ?? node.path)
           }
-        }}
-        onClick={() => onSelectNode(node)}
-        onContextMenu={(event) =>
-          openContextMenu(event, node, parentDirectoryPath(node.path) ?? rootDirectoryPath ?? node.path)
-        }
-        onDoubleClick={(event) => {
-          event.preventDefault()
-          onPlaceFile(node)
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && event.shiftKey) {
+          onDoubleClick={(event) => {
             event.preventDefault()
             onPlaceFile(node)
-          }
-        }}
-        title={`Preview ${node.name}. Double-click or Shift+Enter to place it on the canvas.`}
-      >
-        <FileKindIcon darkMode={darkMode} fileKind={node.fileKind} />
-        <span className="min-w-0 flex-1 truncate">
-          {node.name}
-        </span>
-      </button>
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && event.shiftKey) {
+              event.preventDefault()
+              onPlaceFile(node)
+            }
+          }}
+          onPointerDown={(event) => startDraggingNode(event, node)}
+          title={`Preview ${node.name}. Double-click or Shift+Enter to place it on the canvas.`}
+        >
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center text-transparent">
+            <ChevronIcon expanded={false} />
+          </span>
+          <FileKindIcon darkMode={darkMode} fileKind={node.fileKind} />
+          <span className="min-w-0 flex-1 truncate">
+            <span
+              className={clsx(
+                'truncate',
+                node.fileKind === 'note' ? (darkMode ? 'text-[#8be4c7]' : 'text-[#18885f]') : 'text-current'
+              )}
+            >
+              {stem}
+            </span>
+            {extensionLabel ? (
+              <span className="ml-1 align-middle text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-faint)]">
+                {extensionLabel}
+              </span>
+            ) : null}
+          </span>
+        </button>
+      </div>
     )
   }
 
@@ -631,36 +845,7 @@ export function FileTree({
     return (
       <div
         className="rounded-[4px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-0)] p-4 text-sm text-[var(--text-dim)]"
-        onDragOver={(event) => {
-          const draggedPath = currentDraggedPath(event.dataTransfer)
-
-          if (!rootDirectoryPath || !draggedPath || !canMoveNodeIntoDirectory(draggedPath, rootDirectoryPath)) {
-            return
-          }
-
-          event.preventDefault()
-          event.dataTransfer.dropEffect = 'move'
-          setDropTargetPath(rootDirectoryPath)
-        }}
-        onDragLeave={() => {
-          if (dropTargetPath === rootDirectoryPath) {
-            setDropTargetPath(null)
-          }
-        }}
-        onDrop={(event) => {
-          const draggedPath = currentDraggedPath(event.dataTransfer)
-
-          draggedNodePathRef.current = null
-          setDraggedNodePath(null)
-          setDropTargetPath(null)
-
-          if (!rootDirectoryPath || !draggedPath || !canMoveNodeIntoDirectory(draggedPath, rootDirectoryPath)) {
-            return
-          }
-
-          event.preventDefault()
-          onMoveFile(draggedPath, rootDirectoryPath)
-        }}
+        data-file-tree-root-drop={rootDirectoryPath ? 'true' : undefined}
         onContextMenu={(event) => {
           if (rootDirectoryPath) {
             openContextMenu(event, null, rootDirectoryPath)
@@ -676,36 +861,7 @@ export function FileTree({
     return (
       <div
         className="rounded-[4px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-0)] p-4 text-sm text-[var(--text-dim)]"
-        onDragOver={(event) => {
-          const draggedPath = currentDraggedPath(event.dataTransfer)
-
-          if (!rootDirectoryPath || !draggedPath || !canMoveNodeIntoDirectory(draggedPath, rootDirectoryPath)) {
-            return
-          }
-
-          event.preventDefault()
-          event.dataTransfer.dropEffect = 'move'
-          setDropTargetPath(rootDirectoryPath)
-        }}
-        onDragLeave={() => {
-          if (dropTargetPath === rootDirectoryPath) {
-            setDropTargetPath(null)
-          }
-        }}
-        onDrop={(event) => {
-          const draggedPath = currentDraggedPath(event.dataTransfer)
-
-          draggedNodePathRef.current = null
-          setDraggedNodePath(null)
-          setDropTargetPath(null)
-
-          if (!rootDirectoryPath || !draggedPath || !canMoveNodeIntoDirectory(draggedPath, rootDirectoryPath)) {
-            return
-          }
-
-          event.preventDefault()
-          onMoveFile(draggedPath, rootDirectoryPath)
-        }}
+        data-file-tree-root-drop={rootDirectoryPath ? 'true' : undefined}
         onContextMenu={(event) => {
           if (rootDirectoryPath) {
             openContextMenu(event, null, rootDirectoryPath)
@@ -719,58 +875,8 @@ export function FileTree({
 
   return (
     <div
-      className="space-y-0.5"
-      onDragOver={(event) => {
-        const target = event.target as HTMLElement | null
-
-        if (target?.closest('[data-file-tree-node="true"]')) {
-          return
-        }
-
-        const draggedPath = currentDraggedPath(event.dataTransfer)
-
-        if (!rootDirectoryPath || !draggedPath || !canMoveNodeIntoDirectory(draggedPath, rootDirectoryPath)) {
-          return
-        }
-
-        event.preventDefault()
-        event.dataTransfer.dropEffect = 'move'
-
-        if (dropTargetPath !== rootDirectoryPath) {
-          setDropTargetPath(rootDirectoryPath)
-        }
-      }}
-      onDragLeave={(event) => {
-        const relatedTarget = event.relatedTarget as Node | null
-
-        if (relatedTarget && event.currentTarget.contains(relatedTarget)) {
-          return
-        }
-
-        if (dropTargetPath === rootDirectoryPath) {
-          setDropTargetPath(null)
-        }
-      }}
-      onDrop={(event) => {
-        const target = event.target as HTMLElement | null
-
-        if (target?.closest('[data-file-tree-node="true"]')) {
-          return
-        }
-
-        const draggedPath = currentDraggedPath(event.dataTransfer)
-
-        draggedNodePathRef.current = null
-        setDraggedNodePath(null)
-        setDropTargetPath(null)
-
-        if (!rootDirectoryPath || !draggedPath || !canMoveNodeIntoDirectory(draggedPath, rootDirectoryPath)) {
-          return
-        }
-
-        event.preventDefault()
-        onMoveFile(draggedPath, rootDirectoryPath)
-      }}
+      className={clsx('space-y-0.5 font-[var(--font-mono)]', dragState?.active && 'select-none')}
+      data-file-tree-root-drop={rootDirectoryPath ? 'true' : undefined}
       onContextMenu={(event) => {
         if (!rootDirectoryPath) {
           return
@@ -785,8 +891,9 @@ export function FileTree({
         openContextMenu(event, null, rootDirectoryPath)
       }}
     >
-      {rootDirectoryPath && draggedNodePath ? (
+      {rootDirectoryPath && dragState?.active ? (
         <div
+          data-file-tree-root-drop="true"
           className={clsx(
             'mb-2 rounded-[6px] border border-dashed px-3 py-2 text-[11px] font-medium uppercase tracking-[0.14em] transition',
             dropTargetPath === rootDirectoryPath
@@ -798,6 +905,45 @@ export function FileTree({
         </div>
       ) : null}
       {visibleNodes.map((node) => renderNode(node, 0))}
+      {rootDirectoryPath && dragState?.active ? (
+        <div
+          data-file-tree-root-drop="true"
+          className={clsx(
+            'mt-2 rounded-[6px] border border-dashed px-3 py-2 text-[11px] font-medium uppercase tracking-[0.14em] transition',
+            dropTargetPath === rootDirectoryPath
+              ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
+              : 'border-[color:var(--line-strong)] bg-[var(--surface-0)] text-[var(--text-faint)]'
+          )}
+        >
+          Or Drop Here To Move Back To Root
+        </div>
+      ) : null}
+      {dragState?.active && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              className="pointer-events-none fixed z-[530] flex max-w-[18rem] items-center gap-2 rounded-[8px] border border-[color:var(--line-strong)] bg-[var(--surface-2)] px-3 py-2 text-[12px] shadow-[0_14px_30px_rgba(0,0,0,0.16)]"
+              style={{
+                left: Math.min(dragState.currentX + 14, window.innerWidth - 280),
+                top: Math.min(dragState.currentY + 14, window.innerHeight - 72)
+              }}
+            >
+              <span className="shrink-0 text-[var(--text-faint)]">
+                {dragState.sourceKind === 'directory' ? (
+                  <FolderIcon />
+                ) : (
+                  <FileKindIcon darkMode={darkMode} fileKind={dragState.sourceFileKind} />
+                )}
+              </span>
+              <div className="min-w-0">
+                <div className="truncate font-medium text-[var(--text)]">{dragState.sourceName}</div>
+                <div className="truncate text-[11px] text-[var(--text-faint)]">
+                  {dropTargetPath ? `Move to ${dropTargetLabel(dropTargetPath)}` : 'Drag into a folder or back to root'}
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
       {contextMenu && typeof document !== 'undefined'
         ? createPortal(
         <div
