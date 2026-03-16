@@ -35,6 +35,7 @@ import { HoverTooltip } from './HoverTooltip'
 import { TerminalPane } from './TerminalPane'
 import { keyboardShortcutsBlocked } from '../utils/keyboard'
 import { composeTooltipLabel } from '../utils/buttonTooltips'
+import { COLLABORATOR_TERMINAL_CARD_MIME, type TerminalCardTransferPayload } from '../utils/terminalCards'
 
 interface CanvasSurfaceProps {
   activeWorkspacePath: string | null
@@ -398,6 +399,12 @@ function canScrollElementForDelta(element: HTMLElement, deltaX: number, deltaY: 
 
 function hasCollaboratorFilePayload(dataTransfer: DataTransfer | null) {
   return Boolean(dataTransfer && Array.from(dataTransfer.types).includes(COLLABORATOR_FILE_MIME))
+}
+
+function hasCollaboratorTerminalCardPayload(dataTransfer: DataTransfer | null) {
+  return Boolean(
+    dataTransfer && Array.from(dataTransfer.types).includes(COLLABORATOR_TERMINAL_CARD_MIME)
+  )
 }
 
 function isImportableImageFile(file: File) {
@@ -2179,6 +2186,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         return
       }
 
+      if (hasCollaboratorTerminalCardPayload(event.dataTransfer)) {
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'copy'
+        return
+      }
+
       if (!activeWorkspacePath || droppedImageFiles(event.dataTransfer).length === 0) {
         return
       }
@@ -2216,6 +2229,49 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         appendTile(tile, { immediate: true })
         setSelectedTileId(tile.id)
         setFocusedTerminal(null)
+        return
+      }
+
+      if (hasCollaboratorTerminalCardPayload(event.dataTransfer)) {
+        event.preventDefault()
+        event.stopPropagation()
+        const payload = event.dataTransfer.getData(COLLABORATOR_TERMINAL_CARD_MIME)
+
+        if (!payload) {
+          return
+        }
+
+        const parsed = JSON.parse(payload) as TerminalCardTransferPayload
+        const dropClientX = event.clientX
+        const dropClientY = event.clientY
+
+        void (async () => {
+          const createdNode = await onCreateMarkdownCard({
+            baseName: parsed.baseName,
+            initialContent: parsed.content,
+            targetDirectoryPath: parsed.targetDirectoryPath
+          })
+
+          if (!createdNode) {
+            return
+          }
+
+          const point = pagePointFromClient(dropClientX, dropClientY)
+          const tile = createTileFromFile(
+            {
+              fileKind: 'note',
+              name: createdNode.name,
+              path: createdNode.path
+            },
+            point.x,
+            point.y,
+            nextZIndex(stateRef.current.tiles)
+          )
+
+          appendTile(tile, { immediate: true })
+          setSelectedTileId(tile.id)
+          setFocusedTerminal(null)
+        })()
         return
       }
 

@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState, type DragEvent as ReactDragEvent } from 'react'
 
 import clsx from 'clsx'
 import { FitAddon } from '@xterm/addon-fit'
@@ -6,7 +6,11 @@ import { Terminal } from '@xterm/xterm'
 
 import type { TerminalActivityItem, TerminalUiMode } from '@shared/types'
 
-import { createActivityCardPayload, createSelectionCardPayload } from '../utils/terminalCards'
+import {
+  COLLABORATOR_TERMINAL_CARD_MIME,
+  createActivityCardPayload,
+  createSelectionCardPayload
+} from '../utils/terminalCards'
 
 interface TerminalPaneProps {
   cwd: string | null
@@ -361,6 +365,20 @@ function TerminalPaneComponent({
     } finally {
       setCreatingCardKey((current) => (current === activity.id ? null : current))
     }
+  }
+
+  function handleActivityDragStart(
+    event: ReactDragEvent<HTMLDivElement>,
+    activity: TerminalActivityItem
+  ) {
+    const payload = {
+      ...createActivityCardPayload(activity, sessionLabel),
+      targetDirectoryPath: sessionCwd ?? undefined
+    }
+
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setData(COLLABORATOR_TERMINAL_CARD_MIME, JSON.stringify(payload))
+    event.dataTransfer.setData('text/plain', payload.baseName ?? 'Claude Card')
   }
 
   async function createCardFromSelection() {
@@ -908,10 +926,15 @@ function TerminalPaneComponent({
                   .map((activity) => (
                     <div
                       key={activity.id}
+                      draggable
                       className={clsx(
-                        'rounded-[4px] border px-3 py-3 shadow-[0_4px_10px_rgba(15,23,42,0.05)]',
+                        'rounded-[4px] border px-3 py-3 shadow-[0_4px_10px_rgba(15,23,42,0.05)] cursor-grab active:cursor-grabbing',
                         activityAccent(activity)
                       )}
+                      title="Drag to the canvas to create a markdown card"
+                      onDragStart={(event) => {
+                        handleActivityDragStart(event, activity)
+                      }}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">

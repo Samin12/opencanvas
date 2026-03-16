@@ -1,5 +1,13 @@
 import type { TerminalActivityItem } from '@shared/types'
 
+export const COLLABORATOR_TERMINAL_CARD_MIME = 'application/x-collaborator-terminal-card'
+
+export interface TerminalCardTransferPayload {
+  baseName?: string
+  content: string
+  targetDirectoryPath?: string
+}
+
 type MarkdownBlock =
   | { kind: 'bullet'; label?: string; text: string }
   | { kind: 'heading'; text: string }

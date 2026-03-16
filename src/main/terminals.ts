@@ -51,6 +51,7 @@ set -g extended-keys on
 }
 
 interface TerminalActivityParserState {
+  afterClaudePrompt: boolean
   captureReplayCounts: Map<string, number> | null
   nextId: number
   pendingBlockLines: string[] | null
@@ -112,6 +113,7 @@ function normalizeTerminalText(text: string): string {
 
 function makeParserState(): TerminalActivityParserState {
   return {
+    afterClaudePrompt: false,
     captureReplayCounts: null,
     nextId: 1,
     pendingBlockLines: null,
@@ -238,6 +240,8 @@ function flushPendingMessage(session: ManagedTerminalSession, shouldBroadcast: b
   if (parsed) {
     pushActivity(session, parsed, shouldBroadcast)
   }
+
+  session.parser.afterClaudePrompt = false
 }
 
 function readLikePath(value: string): string | undefined {
@@ -458,6 +462,10 @@ function processNormalizedLine(
     ) {
       flushPendingMessage(session, shouldBroadcast)
 
+      if (isClaudePromptLine(trimmed)) {
+        session.parser.afterClaudePrompt = true
+      }
+
       if (!parsedLine && !line.includes('<task-notification>') && !isClaudeMessageStart(line)) {
         return
       }
@@ -479,11 +487,18 @@ function processNormalizedLine(
     return
   }
 
-  if (trimmed.length === 0 || isClaudeUiBoundaryLine(trimmed) || isClaudePromptLine(trimmed)) {
+  if (isClaudePromptLine(trimmed)) {
+    session.parser.afterClaudePrompt = true
+    return
+  }
+
+  if (trimmed.length === 0 || isClaudeUiBoundaryLine(trimmed)) {
     return
   }
 
   if (line.includes('<task-notification>')) {
+    session.parser.afterClaudePrompt = false
+
     if (line.includes('</task-notification>')) {
       pushActivity(session, parseTaskNotification(line), shouldBroadcast)
       return
@@ -496,12 +511,20 @@ function processNormalizedLine(
   const parsed = parseLineActivity(line)
 
   if (parsed) {
+    session.parser.afterClaudePrompt = false
     pushActivity(session, parsed, shouldBroadcast)
     return
   }
 
   if (isClaudeMessageStart(line)) {
+    session.parser.afterClaudePrompt = false
     session.parser.pendingMessageLines = [normalizeClaudeMessageLine(stripClaudeLeadMarker(line.trim()))]
+    return
+  }
+
+  if (session.parser.afterClaudePrompt) {
+    session.parser.pendingMessageLines = [normalizeClaudeMessageLine(line)]
+    session.parser.afterClaudePrompt = false
   }
 }
 
