@@ -136,10 +136,10 @@ textarea {
 }
 
 .terminal-pane .xterm-viewport {
-  overflow-y: auto !important;
+  overflow-y: scroll !important;
   overscroll-behavior: contain;
   scrollbar-color: var(--line-strong) transparent;
-  scrollbar-gutter: stable;
+  scrollbar-gutter: stable both-edges;
   scrollbar-width: thin;
 }
 

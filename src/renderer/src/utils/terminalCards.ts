@@ -2,6 +2,9 @@ import type { TerminalActivityItem } from '@shared/types'
 
 export const COLLABORATOR_TERMINAL_CARD_MIME = 'application/x-collaborator-terminal-card'
 
+const ANSI_SEQUENCE_PATTERN =
+  /\u001B(?:\][^\u0007]*(?:\u0007|\u001B\\)|P[\s\S]*?\u001B\\|[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g
+
 export interface TerminalCardTransferPayload {
   baseName?: string
   content: string
@@ -23,7 +26,7 @@ function sanitizeBaseName(value: string, fallback: string): string {
 }
 
 function firstMeaningfulLine(value: string): string | null {
-  for (const line of value.split('\n')) {
+  for (const line of cleanTerminalCardText(value).split('\n')) {
     const trimmed = line.trim().replace(/^[-*#>\d.\s]+/, '').trim()
 
     if (trimmed.length > 0) {
@@ -34,12 +37,41 @@ function firstMeaningfulLine(value: string): string | null {
   return null
 }
 
-function formatSourceFooter(sourceLabel: string) {
-  return ['---', `Source: Claude session ${sourceLabel}`].join('\n')
-}
-
 function normalizeInlineWhitespace(value: string): string {
   return value.replace(/\u00a0/g, ' ').replace(/[ \t]+/g, ' ').trim()
+}
+
+function cleanTerminalCardText(value: string): string {
+  const cleanedLines = value
+    .replace(/\u001B\[(\d*)C/g, (_match, rawCount: string) =>
+      ' '.repeat(Math.max(1, Number.parseInt(rawCount || '1', 10) || 1))
+    )
+    .replace(ANSI_SEQUENCE_PATTERN, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/\s+$/g, ''))
+    .filter((line) => {
+      const trimmed = line.trim()
+      const compact = trimmed.replace(/\s+/g, ' ')
+
+      if (trimmed.length === 0) {
+        return true
+      }
+
+      return !(
+        /^[▐▛▜▝▘]+/u.test(trimmed) ||
+        /^claude code v/i.test(compact) ||
+        /^opus\b/i.test(compact) ||
+        /^[/?] for shortcuts/i.test(compact) ||
+        /^source:\s*claude session/i.test(compact)
+      )
+    })
+
+  return cleanedLines
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 function normalizeComparableText(value: string): string {
@@ -83,7 +115,7 @@ function nextNonEmptyLine(lines: string[], startIndex: number): string | null {
 }
 
 function buildReadableBlocks(value: string, title: string): MarkdownBlock[] {
-  const lines = value.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+  const lines = cleanTerminalCardText(value).split('\n')
   const blocks: MarkdownBlock[] = []
   let paragraphParts: string[] = []
   let activeBullet: { label?: string; parts: string[] } | null = null
@@ -229,18 +261,20 @@ function readableMarkdownBody(value: string, title: string): string {
 }
 
 function markdownBodyFromTerminalText(value: string, title: string): string {
-  if (looksStructuredBlock(value)) {
-    return ['```text', value.trimEnd(), '```'].join('\n')
+  const cleanedValue = cleanTerminalCardText(value)
+
+  if (looksStructuredBlock(cleanedValue)) {
+    return ['```text', cleanedValue.trimEnd(), '```'].join('\n')
   }
 
-  return readableMarkdownBody(value, title)
+  return readableMarkdownBody(cleanedValue, title)
 }
 
-function buildCardMarkdown(title: string, body: string, sourceLabel: string): string {
-  return [`## ${title}`, '', body, '', formatSourceFooter(sourceLabel)].join('\n')
+function buildCardMarkdown(title: string, body: string): string {
+  return [`## ${title}`, '', body].join('\n')
 }
 
-export function createActivityCardPayload(activity: TerminalActivityItem, sourceLabel: string): {
+export function createActivityCardPayload(activity: TerminalActivityItem): {
   baseName: string
   content: string
 } {
@@ -250,11 +284,11 @@ export function createActivityCardPayload(activity: TerminalActivityItem, source
 
   return {
     baseName: sanitizeBaseName(title, 'Claude Card'),
-    content: buildCardMarkdown(title, body, sourceLabel)
+    content: buildCardMarkdown(title, body)
   }
 }
 
-export function createSelectionCardPayload(selectionText: string, sourceLabel: string): {
+export function createSelectionCardPayload(selectionText: string): {
   baseName: string
   content: string
 } {
@@ -263,6 +297,6 @@ export function createSelectionCardPayload(selectionText: string, sourceLabel: s
 
   return {
     baseName: sanitizeBaseName(title, 'Claude Excerpt'),
-    content: buildCardMarkdown(title, body, sourceLabel)
+    content: buildCardMarkdown(title, body)
   }
 }

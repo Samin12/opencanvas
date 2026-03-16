@@ -100,11 +100,13 @@ function appendToBuffer(buffer: string, chunk: string): string {
 }
 
 function stripAnsi(text: string): string {
-  return text.replace(
+  return text
+    .replace(/\u001B\[(\d*)C/g, (_match, rawCount: string) => ' '.repeat(Math.max(1, Number.parseInt(rawCount || '1', 10) || 1)))
+    .replace(
     // Strip common CSI/OSC/DCS terminal escapes before activity parsing.
     /\u001B(?:\][^\u0007]*(?:\u0007|\u001B\\)|P[\s\S]*?\u001B\\|[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g,
     ''
-  )
+    )
 }
 
 function normalizeTerminalText(text: string): string {
@@ -187,9 +189,12 @@ function normalizeClaudeMessageLine(line: string): string {
 function isClaudeUiBoundaryLine(trimmed: string): boolean {
   return (
     /^[╭╰│]/u.test(trimmed) ||
+    /^[▐▛▜▝▘]+/u.test(trimmed) ||
     /^[─━]{8,}$/u.test(trimmed) ||
+    /^claude code v/i.test(trimmed) ||
+    /^opus\b/i.test(trimmed) ||
     /^esc to interrupt/i.test(trimmed) ||
-    /^\/ for shortcuts/i.test(trimmed)
+    /^[/?] for shortcuts/i.test(trimmed)
   )
 }
 
