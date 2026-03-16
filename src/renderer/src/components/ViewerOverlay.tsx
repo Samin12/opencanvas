@@ -117,6 +117,9 @@ function ViewerOverlayComponent({
               >
                 <PlaceIcon />
                 <span>Add To Canvas</span>
+                <span className="rounded-[4px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-2 py-1 font-[var(--font-mono)] text-[10px] font-semibold leading-none tracking-[0.08em] text-[var(--text-faint)]">
+                  Shift+Enter
+                </span>
               </button>
               <div className="hidden rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)] sm:block">
                 Esc
