@@ -178,6 +178,17 @@ function TerminalPaneComponent({
   const historyFocusActive = isSelected && historyOpen
   const sessionLabel = sessionId.slice(0, 8)
 
+  function submitComposerPrompt(prompt: string) {
+    const nextPrompt = prompt.trim()
+
+    if (nextPrompt.length === 0) {
+      return
+    }
+
+    // Tmux/xterm expects carriage return semantics for a real "press Enter".
+    window.collaborator.writeTerminalInput(sessionId, `${nextPrompt}\r`)
+  }
+
   function syncScrollMetrics(activeTerminal: Terminal | null) {
     if (!activeTerminal) {
       setScrollMetrics({
@@ -901,14 +912,7 @@ function TerminalPaneComponent({
 
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault()
-
-                const nextPrompt = composerValue.trim()
-
-                if (nextPrompt.length === 0) {
-                  return
-                }
-
-                window.collaborator.writeTerminalInput(sessionId, `${nextPrompt}\n`)
+                submitComposerPrompt(composerValue)
                 setComposerValue('')
               }
             }}
@@ -918,13 +922,7 @@ function TerminalPaneComponent({
             className="rounded-[6px] border border-[color:var(--accent)] bg-[var(--accent)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
             disabled={composerValue.trim().length === 0}
             onClick={() => {
-              const nextPrompt = composerValue.trim()
-
-              if (nextPrompt.length === 0) {
-                return
-              }
-
-              window.collaborator.writeTerminalInput(sessionId, `${nextPrompt}\n`)
+              submitComposerPrompt(composerValue)
               setComposerValue('')
             }}
           >

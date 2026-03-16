@@ -144,6 +144,8 @@ const MAX_ZOOM = 2
 const WHEEL_GESTURE_LOCK_MS = 180
 const MIN_TILE_WIDTH = 280
 const MIN_TILE_HEIGHT = 220
+const DEFAULT_TERMINAL_WIDTH = 760
+const DEFAULT_TERMINAL_HEIGHT = 560
 const CAMERA_EPSILON = 0.001
 const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
 const IMAGE_FILE_EXTENSIONS = new Set(['.gif', '.jpg', '.jpeg', '.png', '.svg', '.webp'])
@@ -856,7 +858,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       const prompt = buildClaudeCodeContextPromptForTileIds(nextContextTileIds)
 
       if (prompt && terminalTile.sessionId) {
-        window.collaborator.writeTerminalInput(terminalTile.sessionId, `${prompt}\n`)
+        window.collaborator.writeTerminalInput(terminalTile.sessionId, `${prompt}\r`)
       }
 
       setSelectedTileId(terminalTileId)
@@ -1296,8 +1298,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           title: titleForTerminal(stateRef.current.tiles),
           x: snap(x),
           y: snap(y),
-          width: 460,
-          height: 320,
+          width: DEFAULT_TERMINAL_WIDTH,
+          height: DEFAULT_TERMINAL_HEIGHT,
           zIndex: nextZIndex(stateRef.current.tiles),
           sessionId: sessionId()
         },
@@ -2075,8 +2077,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           title: titleForTerminal(stateRef.current.tiles),
           x: snap(point.x),
           y: snap(point.y),
-          width: 460,
-          height: 320,
+          width: DEFAULT_TERMINAL_WIDTH,
+          height: DEFAULT_TERMINAL_HEIGHT,
           zIndex: nextZIndex(stateRef.current.tiles),
           sessionId: sessionId()
         },
