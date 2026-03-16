@@ -122,6 +122,14 @@ interface FrameContextGroup {
 
 interface FrameBundleVisual extends FrameContextGroup {
   isEmpty: boolean
+  movableTiles: CanvasTile[]
+}
+
+interface FrameBoundsSnapshot {
+  height: number
+  width: number
+  x: number
+  y: number
 }
 
 type InteractionState =
@@ -165,6 +173,7 @@ const DEFAULT_TERMINAL_HEIGHT = 620
 const DEFAULT_TERMINAL_CARD_WIDTH = 460
 const DEFAULT_TERMINAL_CARD_HEIGHT = 520
 const CAMERA_EPSILON = 0.001
+const FRAME_MOVE_EPSILON = 0.01
 const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
 const IMAGE_FILE_EXTENSIONS = new Set(['.gif', '.jpg', '.jpeg', '.png', '.svg', '.webp'])
 const VIDEO_FILE_EXTENSIONS = new Set(['.avi', '.m4v', '.mkv', '.mov', '.mp4', '.webm'])
@@ -649,6 +658,18 @@ function tileSubtitleLabel(tile: CanvasTile) {
   return tile.filePath?.replace(/^.*[\\/]/, '') ?? ''
 }
 
+function tileCenterWithinBounds(tile: CanvasTile, bounds: FrameBoundsSnapshot) {
+  const centerX = tile.x + tile.width / 2
+  const centerY = tile.y + tile.height / 2
+
+  return (
+    centerX >= bounds.x &&
+    centerX <= bounds.x + bounds.width &&
+    centerY >= bounds.y &&
+    centerY <= bounds.y + bounds.height
+  )
+}
+
 function terminalConnectionKey(sourceTileId: string, terminalTileId: string) {
   return `${sourceTileId}:${terminalTileId}`
 }
@@ -724,6 +745,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const canvasActiveRef = useRef(true)
     const activeScrollCaptureElementRef = useRef<HTMLElement | null>(null)
     const lastPointerScrollActivationAtRef = useRef(0)
+    const frameBoundsRef = useRef<Map<string, FrameBoundsSnapshot>>(new Map())
     const stateRef = useRef(state)
     const drawColorRef = useRef<TLDefaultColorStyle>('black')
     const drawSizeRef = useRef<TLDefaultSizeStyle>('m')
@@ -800,21 +822,16 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             return []
           }
 
-          const containedTiles = stateRef.current.tiles.filter((tile) => {
-            if (!isContextSourceTile(tile)) {
-              return false
-            }
-
-            const centerX = tile.x + tile.width / 2
-            const centerY = tile.y + tile.height / 2
-
-            return (
-              centerX >= bounds.x &&
-              centerX <= bounds.x + bounds.w &&
-              centerY >= bounds.y &&
-              centerY <= bounds.y + bounds.h
-            )
-          })
+          const boundsSnapshot = {
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.w,
+            height: bounds.h
+          }
+          const movableTiles = stateRef.current.tiles.filter((tile) =>
+            tileCenterWithinBounds(tile, boundsSnapshot)
+          )
+          const containedTiles = movableTiles.filter(isContextSourceTile)
 
           return [
             {
@@ -832,6 +849,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               width: bounds.w,
               height: bounds.h,
               containedTiles,
+              movableTiles,
               isEmpty: containedTiles.length === 0
             }
           ]
@@ -840,6 +858,51 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
     function frameContextGroups(): FrameContextGroup[] {
       return frameBundleVisuals().filter((group) => !group.isEmpty)
+    }
+
+    function frameBoundsSnapshot(editor: Editor) {
+      const boundsById = new Map<string, FrameBoundsSnapshot>()
+
+      editor
+        .getCurrentPageShapes()
+        .filter((shape) => shape.type === 'frame')
+        .forEach((shape) => {
+          const bounds = editor.getShapePageBounds(shape.id)
+
+          if (!bounds) {
+            return
+          }
+
+          boundsById.set(shape.id, {
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.w,
+            height: bounds.h
+          })
+        })
+
+      return boundsById
+    }
+
+    function nextGroupFrameLabel(editor: Editor) {
+      const maxGroupNumber = editor
+        .getCurrentPageShapes()
+        .filter((shape) => shape.type === 'frame')
+        .reduce((maxNumber, shape) => {
+          const name =
+            typeof shape.props === 'object' &&
+            shape.props &&
+            'name' in shape.props &&
+            typeof shape.props.name === 'string'
+              ? shape.props.name.trim()
+              : ''
+          const match = /^Group\s+(\d+)$/i.exec(name)
+          const nextNumber = match ? Number.parseInt(match[1] ?? '0', 10) : 0
+
+          return Number.isFinite(nextNumber) ? Math.max(maxNumber, nextNumber) : maxNumber
+        }, 0)
+
+      return `Group ${maxGroupNumber + 1}`
     }
 
     function frameContextGroupById(groupId: string) {
@@ -1905,11 +1968,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       editor.setStyleForNextShapes(DefaultColorStyle, drawColor)
       editor.setStyleForNextShapes(DefaultSizeStyle, drawSize)
       applyBoardTool('hand')
+      frameBoundsRef.current = frameBoundsSnapshot(editor)
       setSelectedCanvasNoteId(selectedStickyNoteFromEditor(editor)?.shape.id ?? null)
 
       const handleCreatedShapes = (records: TLRecord[]) => {
         const nextColor = drawColorRef.current
         const nextSize = drawSizeRef.current
+        let nextGeneratedGroupNumber: number | null = null
         const drawShapeUpdates: DrawShapeUpdate[] = records.flatMap((record) => {
           if (record.typeName !== 'shape' || record.type !== 'draw') {
             return []
@@ -1951,7 +2016,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               id: record.id,
               type: 'frame',
               props: {
-                name: 'Group'
+                name: (() => {
+                  if (nextGeneratedGroupNumber === null) {
+                    const match = /(\d+)$/.exec(nextGroupFrameLabel(editor))
+                    nextGeneratedGroupNumber = match ? Number.parseInt(match[1] ?? '1', 10) : 1
+                  }
+
+                  const label = `Group ${nextGeneratedGroupNumber}`
+                  nextGeneratedGroupNumber += 1
+
+                  return label
+                })()
               }
             }
           ]
@@ -2008,9 +2083,78 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       const detachDocumentListener = editor.store.listen(
         () => {
+          const nextFrameBounds = frameBoundsSnapshot(editor)
+          const movedFrames = Array.from(nextFrameBounds.entries())
+            .flatMap(([frameId, bounds]) => {
+              const previousBounds = frameBoundsRef.current.get(frameId)
+
+              if (!previousBounds) {
+                return []
+              }
+
+              const deltaX = bounds.x - previousBounds.x
+              const deltaY = bounds.y - previousBounds.y
+
+              if (
+                Math.abs(deltaX) <= FRAME_MOVE_EPSILON &&
+                Math.abs(deltaY) <= FRAME_MOVE_EPSILON
+              ) {
+                return []
+              }
+
+              return [
+                {
+                  area: previousBounds.width * previousBounds.height,
+                  deltaX,
+                  deltaY,
+                  previousBounds
+                }
+              ]
+            })
+            .sort((left, right) => right.area - left.area)
+          const movedTileOffsets = new Map<string, { deltaX: number; deltaY: number }>()
+
+          for (const movedFrame of movedFrames) {
+            stateRef.current.tiles.forEach((tile) => {
+              if (movedTileOffsets.has(tile.id)) {
+                return
+              }
+
+              if (!tileCenterWithinBounds(tile, movedFrame.previousBounds)) {
+                return
+              }
+
+              movedTileOffsets.set(tile.id, {
+                deltaX: movedFrame.deltaX,
+                deltaY: movedFrame.deltaY
+              })
+            })
+          }
+
+          const nextTiles =
+            movedTileOffsets.size > 0
+              ? stateRef.current.tiles.map((tile) => {
+                  const offset = movedTileOffsets.get(tile.id)
+
+                  if (!offset) {
+                    return tile
+                  }
+
+                  return {
+                    ...tile,
+                    x: tile.x + offset.deltaX,
+                    y: tile.y + offset.deltaY
+                  }
+                })
+              : stateRef.current.tiles
+          const nextBoardSnapshot = editor.getSnapshot()
+
+          frameBoundsRef.current = nextFrameBounds
+
           updateState({
             ...stateRef.current,
-            boardSnapshot: editor.getSnapshot()
+            boardSnapshot: nextBoardSnapshot,
+            tiles: nextTiles
           })
         },
         {
@@ -2023,6 +2167,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         editor.off('created-shapes', handleCreatedShapes)
         detachStoreListener()
         detachDocumentListener()
+        frameBoundsRef.current.clear()
         setSelectedCanvasNoteId(null)
 
         if (editorRef.current === editor) {
@@ -3148,8 +3293,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             <div
               key={`bundle-shell:${group.id}`}
               className={clsx(
-                'pointer-events-none absolute rounded-[14px] border-2 border-dashed bg-[color:var(--link-line)]/6 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] transition',
-                group.isEmpty ? 'border-[color:var(--link-line)]/45' : 'border-[color:var(--link-line)]/70'
+                'pointer-events-none absolute overflow-hidden rounded-[12px] border shadow-[0_10px_22px_rgba(15,23,42,0.18)] transition',
+                darkMode
+                  ? 'border-[#545c76] bg-[#1a2030]/86'
+                  : 'border-[#3e455a] bg-[#edf1f7]/94'
               )}
               style={{
                 left: group.x,
@@ -3158,19 +3305,38 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 height: group.height
               }}
             >
-              <div className="absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] items-center gap-2">
-                <span className="rounded-full border border-[color:var(--link-line)]/50 bg-[color:var(--surface-overlay)] px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-[color:var(--link-line)]">
-                  Group
-                </span>
-                <span className="truncate rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-2.5 py-1 text-[10px] font-medium text-[var(--text)]">
-                  {group.label}
-                </span>
-                <span className="rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--text-faint)]">
-                  {group.containedTiles.length} items
+              <div
+                className={clsx(
+                  'flex h-8 items-center justify-between px-3 text-[11px] font-semibold',
+                  darkMode ? 'bg-[#22293d] text-[#f4f7fb]' : 'bg-[#262d43] text-white'
+                )}
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-[3px] bg-white/90" />
+                  <span className="truncate">{group.label}</span>
+                </div>
+                <span className="shrink-0 text-[10px] font-medium text-white/72">
+                  {group.movableTiles.length}
                 </span>
               </div>
-              <div className="absolute bottom-3 left-3 rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-2.5 py-1 text-[10px] font-medium text-[var(--text-dim)]">
-                {group.isEmpty ? 'Drop files into this group' : 'Drag blue handle to Claude'}
+              <div
+                className={clsx(
+                  'absolute inset-x-1.5 bottom-1.5 top-9 rounded-[8px] border',
+                  darkMode
+                    ? 'border-white/12 bg-[#111623]/72'
+                    : 'border-[#c5ccda] bg-[#f7f9fc]/92'
+                )}
+              >
+                {group.isEmpty ? (
+                  <div
+                    className={clsx(
+                      'flex h-full items-center justify-center text-[11px] font-medium',
+                      darkMode ? 'text-white/48' : 'text-[#707a90]'
+                    )}
+                  >
+                    Drop files into this group
+                  </div>
+                ) : null}
               </div>
             </div>
           ))}
