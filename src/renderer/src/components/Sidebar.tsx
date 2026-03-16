@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 
 import clsx from 'clsx'
-import type { AppConfig, FileTreeNode } from '@shared/types'
+import type { AppConfig, FileTreeNode, SidebarSide } from '@shared/types'
 
 import { FileTree } from './FileTree'
 
@@ -53,6 +53,24 @@ function SidebarIcon({ collapsed }: { collapsed: boolean }) {
       ) : (
         <path d="M11.5 8H7.75M9.25 6.25L7.5 8L9.25 9.75" strokeLinecap="round" strokeLinejoin="round" />
       )}
+    </svg>
+  )
+}
+
+function SidebarSideIcon({ side }: { side: SidebarSide }) {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.3]">
+      <rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2.25" />
+      <path d={side === 'left' ? 'M5.5 2.75V13.25' : 'M10.5 2.75V13.25'} />
+      <path
+        d={
+          side === 'left'
+            ? 'M8.75 8H12M10.5 6.25L12.25 8L10.5 9.75'
+            : 'M7.25 8H4M5.5 6.25L3.75 8L5.5 9.75'
+        }
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   )
 }
@@ -126,6 +144,7 @@ interface SidebarProps {
   onCreateNote: () => void
   onCreateTerminal: () => void
   onMoveFile: (sourcePath: string, targetDirectoryPath: string) => void
+  onMoveSidebar: (side: SidebarSide) => void
   onOpenSearch: () => void
   onPlaceFile: (node: FileTreeNode) => void
   onRemoveWorkspace: () => void
@@ -134,6 +153,7 @@ interface SidebarProps {
   onToggleSidebar: () => void
   onToggleDarkMode: () => void
   sidebarCollapsed: boolean
+  sidebarSide: SidebarSide
   workspaceTree: FileTreeNode[]
 }
 
@@ -146,6 +166,7 @@ export function Sidebar({
   onCreateNote,
   onCreateTerminal,
   onMoveFile,
+  onMoveSidebar,
   onOpenSearch,
   onPlaceFile,
   onRemoveWorkspace,
@@ -154,6 +175,7 @@ export function Sidebar({
   onToggleSidebar,
   onToggleDarkMode,
   sidebarCollapsed,
+  sidebarSide,
   workspaceTree
 }: SidebarProps) {
   const activeWorkspacePath = config.workspaces[config.activeWorkspace] ?? null
@@ -173,6 +195,12 @@ export function Sidebar({
           <div className="flex items-center justify-end gap-1.5">
             <ActionIconButton label="Search (Cmd+K)" onClick={onOpenSearch}>
               <SearchIcon />
+            </ActionIconButton>
+            <ActionIconButton
+              label={sidebarSide === 'left' ? 'Move Sidebar to the Right' : 'Move Sidebar to the Left'}
+              onClick={() => onMoveSidebar(sidebarSide === 'left' ? 'right' : 'left')}
+            >
+              <SidebarSideIcon side={sidebarSide} />
             </ActionIconButton>
             <ActionIconButton
               active={sidebarCollapsed}

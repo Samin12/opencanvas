@@ -1,4 +1,5 @@
 import * as electron from 'electron'
+import { resolve } from 'node:path'
 
 import type { AppConfig, CanvasState } from '../shared/types'
 
@@ -14,11 +15,29 @@ import {
   moveWorkspaceNode,
   readTextFileDocument,
   readWorkspaceTree,
+  subscribeToFileChanges,
   toFileUrl,
   writeTextFileDocument
 } from './workspaces'
 
 const { dialog, ipcMain } = electron
+const fileWatchSubscriptions = new Map<string, () => void>()
+const watchedSenders = new Set<number>()
+
+function fileWatchKey(senderId: number, filePath: string): string {
+  return `${senderId}:${resolve(filePath)}`
+}
+
+function disposeFileWatch(key: string): void {
+  const dispose = fileWatchSubscriptions.get(key)
+
+  if (!dispose) {
+    return
+  }
+
+  fileWatchSubscriptions.delete(key)
+  dispose()
+}
 
 export function registerIpcHandlers(): void {
   ipcMain.handle('bootstrap', async () => {
@@ -45,6 +64,39 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('file:write', async (_event, filePath: string, content: string) =>
     writeTextFileDocument(filePath, content)
   )
+  ipcMain.on('file:watch', (event, filePath: string) => {
+    const sender = event.sender
+    const key = fileWatchKey(sender.id, filePath)
+
+    if (fileWatchSubscriptions.has(key)) {
+      return
+    }
+
+    if (!watchedSenders.has(sender.id)) {
+      watchedSenders.add(sender.id)
+      sender.once('destroyed', () => {
+        watchedSenders.delete(sender.id)
+
+        for (const existingKey of Array.from(fileWatchSubscriptions.keys())) {
+          if (existingKey.startsWith(`${sender.id}:`)) {
+            disposeFileWatch(existingKey)
+          }
+        }
+      })
+    }
+
+    const resolvedFilePath = resolve(filePath)
+    const stopWatching = subscribeToFileChanges(resolvedFilePath, () => {
+      if (!sender.isDestroyed()) {
+        sender.send('file:changed', filePath)
+      }
+    })
+
+    fileWatchSubscriptions.set(key, stopWatching)
+  })
+  ipcMain.on('file:unwatch', (event, filePath: string) => {
+    disposeFileWatch(fileWatchKey(event.sender.id, filePath))
+  })
   ipcMain.handle('file:url', async (_event, filePath: string) => toFileUrl(filePath))
   ipcMain.handle(
     'terminal:create',

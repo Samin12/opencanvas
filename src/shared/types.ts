@@ -37,6 +37,8 @@ export interface WindowState {
   isMaximized: boolean
 }
 
+export type SidebarSide = 'left' | 'right'
+
 export interface AppConfig {
   workspaces: string[]
   activeWorkspace: number
@@ -44,6 +46,7 @@ export interface AppConfig {
   ui: {
     darkMode: boolean
     sidebarCollapsed: boolean
+    sidebarSide: SidebarSide
     sidebarWidth: number
   }
 }
@@ -97,6 +100,7 @@ export interface CollaboratorApi {
   readWorkspaceTree: (workspacePath: string) => Promise<FileTreeNode[]>
   readTextFile: (filePath: string) => Promise<TextFileDocument>
   writeTextFile: (filePath: string, content: string) => Promise<TextFileDocument>
+  onFileChanged: (filePath: string, listener: () => void) => () => void
   fileUrl: (filePath: string) => Promise<string>
   createTerminalSession: (options: {
     cols: number

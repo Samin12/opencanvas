@@ -16,6 +16,104 @@ interface FileTreeProps {
 const INDENT = 14
 const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
 
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className={clsx(
+        'h-3.5 w-3.5 fill-none stroke-current stroke-[1.7] transition-transform',
+        expanded ? 'rotate-90' : 'rotate-0'
+      )}
+    >
+      <path d="M6 3.5L10.5 8L6 12.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function FolderIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.35]">
+      <path
+        d="M2.25 4.25A1.75 1.75 0 0 1 4 2.5H6.4L7.6 3.85H12A1.75 1.75 0 0 1 13.75 5.6V11.75A1.75 1.75 0 0 1 12 13.5H4A1.75 1.75 0 0 1 2.25 11.75V4.25Z"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function NoteIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.35]">
+      <path
+        d="M4 2.25H9.25L12.5 5.5V12A1.75 1.75 0 0 1 10.75 13.75H4A1.75 1.75 0 0 1 2.25 12V4A1.75 1.75 0 0 1 4 2.25Z"
+        strokeLinejoin="round"
+      />
+      <path d="M9 2.75V5.75H12" strokeLinejoin="round" />
+      <path d="M5 8H9.5M5 10.5H8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function CodeIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.35]">
+      <path d="M6 4L3 8L6 12" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M10 4L13 8L10 12" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.75 3.5L7.25 12.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function ImageIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.35]">
+      <rect x="2.25" y="2.5" width="11.5" height="11" rx="2" />
+      <circle cx="5.4" cy="5.6" r="1.05" />
+      <path d="M3.75 11L6.85 7.9L8.8 9.85L10.4 8.25L12.25 10.1" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function iconToneClasses(kind: 'directory' | 'note' | 'code' | 'image', darkMode: boolean) {
+  if (kind === 'directory') {
+    return darkMode
+      ? 'border-amber-900/70 bg-amber-950/35 text-amber-300'
+      : 'border-amber-200 bg-amber-50 text-amber-700'
+  }
+
+  if (kind === 'note') {
+    return darkMode
+      ? 'border-lime-800/80 bg-lime-950/40 text-lime-300'
+      : 'border-lime-200 bg-lime-50 text-lime-700'
+  }
+
+  if (kind === 'image') {
+    return darkMode
+      ? 'border-sky-800/80 bg-sky-950/40 text-sky-300'
+      : 'border-sky-200 bg-sky-50 text-sky-700'
+  }
+
+  return darkMode
+    ? 'border-slate-700 bg-slate-900/60 text-slate-300'
+    : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-faint)]'
+}
+
+function FileKindIcon({ darkMode, fileKind }: { darkMode: boolean; fileKind: FileTreeNode['fileKind'] }) {
+  const kind = fileKind === 'note' || fileKind === 'image' ? fileKind : 'code'
+
+  return (
+    <span
+      className={clsx(
+        'flex h-6 w-6 items-center justify-center rounded-lg border',
+        iconToneClasses(kind, darkMode)
+      )}
+    >
+      {kind === 'note' ? <NoteIcon /> : kind === 'image' ? <ImageIcon /> : <CodeIcon />}
+    </span>
+  )
+}
+
 function getDraggedFilePayload(dataTransfer: DataTransfer | null) {
   const rawPayload = dataTransfer?.getData(COLLABORATOR_FILE_MIME)
 
@@ -114,9 +212,16 @@ export function FileTree({
               onMoveFile(draggedFile.path, node.path)
             }}
           >
-            <span className="text-xs text-[var(--text-faint)]">{isExpanded ? '▾' : '▸'}</span>
-            <span className="rounded-md border border-[color:var(--line)] bg-[var(--surface-0)] px-1.5 py-0.5 text-[10px] uppercase tracking-[0.2em] text-[var(--text-faint)]">
-              Dir
+            <span className="text-[var(--text-faint)]">
+              <ChevronIcon expanded={isExpanded} />
+            </span>
+            <span
+              className={clsx(
+                'flex h-6 w-6 items-center justify-center rounded-lg border',
+                iconToneClasses('directory', darkMode)
+              )}
+            >
+              <FolderIcon />
             </span>
             <span className="truncate">{node.name}</span>
           </button>
@@ -165,22 +270,7 @@ export function FileTree({
         }}
         title="Click to preview. Double-click or Shift+Enter to place on canvas."
       >
-        <span
-          className={clsx(
-            'rounded-md border px-1.5 py-0.5 text-[10px] uppercase tracking-[0.2em]',
-            node.fileKind === 'note'
-              ? darkMode
-                ? 'border-lime-800/80 bg-lime-950/40 text-lime-300'
-                : 'border-lime-200 bg-lime-50 text-lime-700'
-              : node.fileKind === 'image'
-                ? darkMode
-                  ? 'border-sky-800/80 bg-sky-950/40 text-sky-300'
-                  : 'border-sky-200 bg-sky-50 text-sky-700'
-                : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-faint)]'
-          )}
-        >
-          {node.fileKind}
-        </span>
+        <FileKindIcon darkMode={darkMode} fileKind={node.fileKind} />
         <span className="truncate">{node.name}</span>
       </button>
     )

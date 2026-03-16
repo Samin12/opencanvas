@@ -1567,16 +1567,23 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                             </div>
                           ))
                         )}
-                        <button
-                          className="ml-auto rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
-                          disabled={contextTiles.length === 0}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            pasteClaudeCodeContext(tile.id)
-                          }}
-                        >
-                          Paste Claude Code Context
-                        </button>
+                        <div className="relative ml-auto" onPointerDown={(event) => event.stopPropagation()}>
+                          <button
+                            className="peer flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
+                            aria-label="Paste linked Claude Code context into the terminal"
+                            disabled={contextTiles.length === 0}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              pasteClaudeCodeContext(tile.id)
+                            }}
+                            title="Paste linked Claude Code context into the terminal"
+                          >
+                            i
+                          </button>
+                          <div className="pointer-events-none absolute bottom-[calc(100%+8px)] right-0 z-30 w-52 rounded-[10px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-2 text-[10px] leading-4 text-[var(--text-dim)] opacity-0 shadow-[0_10px_22px_rgba(15,23,42,0.08)] backdrop-blur transition peer-hover:opacity-100 peer-focus-visible:opacity-100">
+                            Pastes the linked file paths into the terminal so Claude Code can read them as session context.
+                          </div>
+                        </div>
                       </div>
 
                       <div className="min-h-0 flex-1">
@@ -1622,14 +1629,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         </div>
 
         {zoomIndicator ? (
-          <div className="pointer-events-none absolute bottom-[4.5rem] right-4 z-[220] rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-1.5 text-[11px] font-medium tracking-[0.2em] text-[var(--text-dim)] backdrop-blur">
+          <div className="pointer-events-none absolute bottom-[4.5rem] right-4 z-[220] rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-3.5 py-1.5 text-[11px] font-medium tracking-[0.2em] text-[var(--text-dim)] shadow-[0_10px_22px_rgba(15,23,42,0.08)] backdrop-blur">
             {zoomIndicator}
           </div>
         ) : null}
 
         <div
           data-canvas-ui="true"
-          className="absolute bottom-4 right-4 z-[220] flex items-center gap-1 rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] p-1 shadow-[0_10px_22px_rgba(15,23,42,0.08)] backdrop-blur"
+          className="absolute bottom-4 right-4 z-[220] flex items-center gap-1.5 rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-1.5 py-1 shadow-[0_10px_22px_rgba(15,23,42,0.1)] backdrop-blur"
         >
           <button
             className="flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] text-lg leading-none text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
@@ -1643,7 +1650,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             -
           </button>
           <button
-            className="min-w-16 rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-[11px] font-medium tracking-[0.18em] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]"
+            className="min-w-[5.5rem] rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-4 py-2 text-[11px] font-medium tracking-[0.18em] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]"
             aria-label="Reset zoom"
             onClick={() => {
               resetViewportZoom()

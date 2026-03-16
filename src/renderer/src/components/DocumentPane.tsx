@@ -19,11 +19,12 @@ type DocumentStatus = 'idle' | 'loading' | 'saving' | 'error'
 interface SurfaceFrameProps {
   children: ReactNode
   fileKind: Exclude<FileKind, 'image'>
+  onRefresh?: () => void
   status: DocumentStatus
   variant: 'tile' | 'viewer'
 }
 
-function SurfaceFrame({ children, fileKind, status, variant }: SurfaceFrameProps) {
+function SurfaceFrame({ children, fileKind, onRefresh, status, variant }: SurfaceFrameProps) {
   return (
     <div
       className={clsx(
@@ -34,8 +35,28 @@ function SurfaceFrame({ children, fileKind, status, variant }: SurfaceFrameProps
       {variant === 'viewer' ? (
         <div className="flex items-center justify-between border-b border-[color:var(--line)] px-3 py-2 text-[11px] uppercase tracking-[0.2em] text-[var(--text-faint)]">
           <div>{fileKind === 'note' ? 'Note Surface' : 'Code Surface'}</div>
-          <span>{status === 'saving' ? 'Saving' : 'Live file'}</span>
+          <div className="flex items-center gap-2">
+            {onRefresh ? (
+              <button
+                className="rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-0.5 text-[10px] tracking-[0.16em] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                onClick={onRefresh}
+                title="Refresh file"
+              >
+                Refresh
+              </button>
+            ) : null}
+            <span>{status === 'saving' ? 'Saving' : 'Live file'}</span>
+          </div>
         </div>
+      ) : null}
+      {variant === 'tile' && onRefresh ? (
+        <button
+          className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] text-[12px] text-[var(--text-dim)] shadow-[0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]"
+          onClick={onRefresh}
+          title="Refresh file"
+        >
+          ↻
+        </button>
       ) : null}
       {children}
     </div>
@@ -68,12 +89,25 @@ function ErrorPane({ variant }: { variant: 'tile' | 'viewer' }) {
   )
 }
 
+function useFileChangeSignal(filePath: string) {
+  const [changeCount, setChangeCount] = useState(0)
+
+  useEffect(() => {
+    return window.collaborator.onFileChanged(filePath, () => {
+      setChangeCount((current) => current + 1)
+    })
+  }, [filePath])
+
+  return changeCount
+}
+
 function RichNoteEditor({
   filePath,
   initialContent,
   onDocumentChange,
   onPassthroughScroll,
   onStatusChange,
+  onRefresh,
   status,
   variant
 }: {
@@ -82,6 +116,7 @@ function RichNoteEditor({
   onDocumentChange: (document: TextFileDocument) => void
   onPassthroughScroll?: (deltaX: number, deltaY: number) => void
   onStatusChange: (status: DocumentStatus) => void
+  onRefresh: () => void
   status: DocumentStatus
   variant: 'tile' | 'viewer'
 }) {
@@ -202,7 +237,7 @@ function RichNoteEditor({
   }
 
   return (
-    <SurfaceFrame fileKind="note" status={status} variant={variant}>
+    <SurfaceFrame fileKind="note" onRefresh={onRefresh} status={status} variant={variant}>
       <div
         className="rich-note-editor min-h-0 flex-1"
         onWheel={(event) => {
@@ -224,13 +259,17 @@ function NoteDocumentPane({
   variant = 'tile'
 }: Omit<DocumentPaneProps, 'fileKind'>) {
   const [document, setDocument] = useState<TextFileDocument | null>(null)
+  const [reloadCount, setReloadCount] = useState(0)
   const [status, setStatus] = useState<DocumentStatus>('loading')
+  const fileChangeCount = useFileChangeSignal(filePath)
+
+  useEffect(() => {
+    setDocument(null)
+    setStatus('loading')
+  }, [filePath])
 
   useEffect(() => {
     let cancelled = false
-
-    setDocument(null)
-    setStatus('loading')
 
     async function load() {
       try {
@@ -252,7 +291,7 @@ function NoteDocumentPane({
     return () => {
       cancelled = true
     }
-  }, [filePath])
+  }, [filePath, fileChangeCount, reloadCount])
 
   if (status === 'error') {
     return <ErrorPane variant={variant} />
@@ -264,11 +303,12 @@ function NoteDocumentPane({
 
   return (
     <RichNoteEditor
-      key={filePath}
+      key={`${filePath}:${document.updatedAt}`}
       filePath={filePath}
       initialContent={document.content}
       onDocumentChange={setDocument}
       onPassthroughScroll={onPassthroughScroll}
+      onRefresh={() => setReloadCount((current) => current + 1)}
       onStatusChange={setStatus}
       status={status}
       variant={variant}
@@ -283,14 +323,18 @@ function CodeDocumentPane({
 }: Omit<DocumentPaneProps, 'fileKind'>) {
   const [document, setDocument] = useState<TextFileDocument | null>(null)
   const [draft, setDraft] = useState('')
+  const [reloadCount, setReloadCount] = useState(0)
   const [status, setStatus] = useState<DocumentStatus>('loading')
+  const fileChangeCount = useFileChangeSignal(filePath)
 
   useEffect(() => {
-    let cancelled = false
-
     setDocument(null)
     setDraft('')
     setStatus('loading')
+  }, [filePath])
+
+  useEffect(() => {
+    let cancelled = false
 
     async function load() {
       try {
@@ -313,7 +357,7 @@ function CodeDocumentPane({
     return () => {
       cancelled = true
     }
-  }, [filePath])
+  }, [filePath, fileChangeCount, reloadCount])
 
   async function save() {
     if (!document || draft === document.content) {
@@ -341,7 +385,12 @@ function CodeDocumentPane({
   }
 
   return (
-    <SurfaceFrame fileKind="code" status={status} variant={variant}>
+    <SurfaceFrame
+      fileKind="code"
+      onRefresh={() => setReloadCount((current) => current + 1)}
+      status={status}
+      variant={variant}
+    >
       <textarea
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
@@ -375,20 +424,24 @@ function ImageDocumentPane({
   variant = 'tile'
 }: Pick<DocumentPaneProps, 'filePath' | 'variant'>) {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const [reloadCount, setReloadCount] = useState(0)
   const [status, setStatus] = useState<DocumentStatus>('loading')
+  const fileChangeCount = useFileChangeSignal(filePath)
+
+  useEffect(() => {
+    setImageUrl(null)
+    setStatus('loading')
+  }, [filePath])
 
   useEffect(() => {
     let cancelled = false
-
-    setImageUrl(null)
-    setStatus('loading')
 
     async function load() {
       try {
         const nextImageUrl = await window.collaborator.fileUrl(filePath)
 
         if (!cancelled) {
-          setImageUrl(nextImageUrl)
+          setImageUrl(`${nextImageUrl}${nextImageUrl.includes('?') ? '&' : '?'}v=${Date.now()}`)
           setStatus('idle')
         }
       } catch {
@@ -403,7 +456,7 @@ function ImageDocumentPane({
     return () => {
       cancelled = true
     }
-  }, [filePath])
+  }, [filePath, fileChangeCount, reloadCount])
 
   if (status === 'error') {
     return <ErrorPane variant={variant} />
@@ -416,10 +469,20 @@ function ImageDocumentPane({
   return (
     <div
       className={clsx(
-        'flex h-full items-center justify-center overflow-hidden bg-[var(--surface-1)]',
+        'relative flex h-full items-center justify-center overflow-hidden bg-[var(--surface-1)]',
         variant === 'viewer' ? 'rounded-[16px] border border-[color:var(--line)]' : 'rounded-[10px]'
       )}
     >
+      <button
+        className={clsx(
+          'absolute z-10 flex h-6 min-w-6 items-center justify-center rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-2 text-[11px] text-[var(--text-dim)] shadow-[0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]',
+          variant === 'viewer' ? 'right-3 top-3' : 'right-2 top-2'
+        )}
+        onClick={() => setReloadCount((current) => current + 1)}
+        title="Refresh image"
+      >
+        ↻
+      </button>
       <img src={imageUrl} alt="" className="h-full w-full object-contain" />
     </div>
   )

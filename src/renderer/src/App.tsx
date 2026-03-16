@@ -1,7 +1,7 @@
 import { startTransition, useEffect, useRef, useState } from 'react'
 
 import clsx from 'clsx'
-import type { AppConfig, CanvasState, FileTreeNode } from '@shared/types'
+import type { AppConfig, CanvasState, FileTreeNode, SidebarSide } from '@shared/types'
 
 import { CanvasSurface, type CanvasSurfaceHandle } from './components/CanvasSurface'
 import { SearchDialog } from './components/SearchDialog'
@@ -46,9 +46,18 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
+function SidebarDockIcon({ side }: { side: SidebarSide }) {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.3]">
+      <rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2.25" />
+      <path d={side === 'left' ? 'M5.5 2.75V13.25' : 'M10.5 2.75V13.25'} />
+    </svg>
+  )
+}
+
 export default function App() {
   const canvasRef = useRef<CanvasSurfaceHandle>(null)
-  const resizeRef = useRef<{ startWidth: number; startX: number } | null>(null)
+  const resizeRef = useRef<{ side: SidebarSide; startWidth: number; startX: number } | null>(null)
   const canvasSaveTimerRef = useRef<number | null>(null)
 
   const [config, setConfig] = useState<AppConfig | null>(null)
@@ -58,6 +67,7 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(320)
   const [darkMode, setDarkMode] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarSide, setSidebarSide] = useState<SidebarSide>('left')
   const [searchOpen, setSearchOpen] = useState(false)
   const [loadingWorkspace, setLoadingWorkspace] = useState(false)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
@@ -82,6 +92,7 @@ export default function App() {
         setSidebarWidth(payload.config.ui.sidebarWidth)
         setDarkMode(payload.config.ui.darkMode)
         setSidebarCollapsed(payload.config.ui.sidebarCollapsed)
+        setSidebarSide(payload.config.ui.sidebarSide)
       } catch {
         if (!cancelled) {
           setBootError('The app state could not be loaded. Delete corrupted state or restart.')
@@ -238,7 +249,9 @@ export default function App() {
       }
 
       const nextWidth = clamp(
-        resizeRef.current.startWidth + event.clientX - resizeRef.current.startX,
+        resizeRef.current.side === 'left'
+          ? resizeRef.current.startWidth + event.clientX - resizeRef.current.startX
+          : resizeRef.current.startWidth - (event.clientX - resizeRef.current.startX),
         260,
         520
       )
@@ -276,6 +289,7 @@ export default function App() {
     setSidebarWidth(saved.ui.sidebarWidth)
     setDarkMode(saved.ui.darkMode)
     setSidebarCollapsed(saved.ui.sidebarCollapsed)
+    setSidebarSide(saved.ui.sidebarSide)
   }
 
   async function persistUi(nextUi: Partial<AppConfig['ui']>) {
@@ -422,6 +436,15 @@ export default function App() {
     canvasRef.current?.createTerminal()
   }
 
+  function setSidebarPlacement(nextSide: SidebarSide, nextCollapsed = false) {
+    setSidebarSide(nextSide)
+    setSidebarCollapsed(nextCollapsed)
+    void persistUi({
+      sidebarCollapsed: nextCollapsed,
+      sidebarSide: nextSide
+    })
+  }
+
   function handleCanvasStateChange(nextState: CanvasState, options?: { immediate?: boolean }) {
     setCanvasState(nextState)
 
@@ -460,58 +483,59 @@ export default function App() {
   return (
     <div className="app-shell">
       <div className="flex h-full min-w-0 flex-1">
-        <div
-          style={sidebarCollapsed ? { width: 0 } : { width: sidebarWidth }}
-          className={clsx(
-            'overflow-hidden transition-[width,opacity] duration-200',
-            sidebarCollapsed ? 'pointer-events-none w-0 opacity-0' : 'min-w-[260px] max-w-[520px] opacity-100'
-          )}
-        >
-          <Sidebar
-            activeFilePath={viewerFile?.path ?? null}
-            config={config}
-            darkMode={darkMode}
-            loadingWorkspace={loadingWorkspace}
-            onAddWorkspace={() => void addWorkspace()}
-            onCreateNote={() => void createRootNote()}
-            onCreateTerminal={createTerminal}
-            onMoveFile={(sourcePath, targetDirectoryPath) =>
-              void moveFileIntoDirectory(sourcePath, targetDirectoryPath)
-            }
-            onOpenSearch={() => setSearchOpen(true)}
-            onPlaceFile={placeFileOnCanvas}
-            onRemoveWorkspace={() => void removeActiveWorkspace()}
-            onSelectFile={previewFile}
-            onSelectWorkspace={(index) =>
-              void persistConfig({
-                ...config,
-                activeWorkspace: index
-              })
-            }
-            onToggleSidebar={() => {
-              const nextCollapsed = !sidebarCollapsed
-              setSidebarCollapsed(nextCollapsed)
-              void persistUi({
-                sidebarCollapsed: nextCollapsed
-              })
-            }}
-            onToggleDarkMode={() => {
-              const nextDarkMode = !darkMode
-              setDarkMode(nextDarkMode)
-              void persistUi({
-                darkMode: nextDarkMode
-              })
-            }}
-            sidebarCollapsed={sidebarCollapsed}
-            workspaceTree={workspaceTree}
-          />
-        </div>
+        {sidebarCollapsed || sidebarSide === 'right' ? null : (
+          <div
+            style={{ width: sidebarWidth }}
+            className="min-w-[260px] max-w-[520px] overflow-hidden opacity-100 transition-[width,opacity] duration-200"
+          >
+            <Sidebar
+              activeFilePath={viewerFile?.path ?? null}
+              config={config}
+              darkMode={darkMode}
+              loadingWorkspace={loadingWorkspace}
+              onAddWorkspace={() => void addWorkspace()}
+              onCreateNote={() => void createRootNote()}
+              onCreateTerminal={createTerminal}
+              onMoveFile={(sourcePath, targetDirectoryPath) =>
+                void moveFileIntoDirectory(sourcePath, targetDirectoryPath)
+              }
+              onMoveSidebar={setSidebarPlacement}
+              onOpenSearch={() => setSearchOpen(true)}
+              onPlaceFile={placeFileOnCanvas}
+              onRemoveWorkspace={() => void removeActiveWorkspace()}
+              onSelectFile={previewFile}
+              onSelectWorkspace={(index) =>
+                void persistConfig({
+                  ...config,
+                  activeWorkspace: index
+                })
+              }
+              onToggleSidebar={() => {
+                setSidebarCollapsed(true)
+                void persistUi({
+                  sidebarCollapsed: true
+                })
+              }}
+              onToggleDarkMode={() => {
+                const nextDarkMode = !darkMode
+                setDarkMode(nextDarkMode)
+                void persistUi({
+                  darkMode: nextDarkMode
+                })
+              }}
+              sidebarCollapsed={sidebarCollapsed}
+              sidebarSide={sidebarSide}
+              workspaceTree={workspaceTree}
+            />
+          </div>
+        )}
 
-        {sidebarCollapsed ? null : (
+        {sidebarCollapsed || sidebarSide === 'right' ? null : (
           <div
             className="w-3 cursor-col-resize"
             onPointerDown={(event) => {
               resizeRef.current = {
+                side: sidebarSide,
                 startX: event.clientX,
                 startWidth: sidebarWidth
               }
@@ -521,17 +545,29 @@ export default function App() {
 
         <main className="relative min-w-0 flex-1">
           {sidebarCollapsed ? (
-            <button
-              className="glass-panel absolute left-4 top-4 z-[270] rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-1.5 text-xs text-[var(--text-dim)] transition hover:bg-[var(--surface-1)]"
-              onClick={() => {
-                setSidebarCollapsed(false)
-                void persistUi({
-                  sidebarCollapsed: false
-                })
-              }}
+            <div
+              className={clsx(
+                'glass-panel absolute top-4 z-[270] flex items-center gap-1 rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] p-1',
+                sidebarSide === 'left' ? 'left-4' : 'right-4'
+              )}
             >
-              Show Sidebar
-            </button>
+              <button
+                className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                aria-label="Open sidebar on the left"
+                title="Open sidebar on the left"
+                onClick={() => setSidebarPlacement('left')}
+              >
+                <SidebarDockIcon side="left" />
+              </button>
+              <button
+                className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                aria-label="Open sidebar on the right"
+                title="Open sidebar on the right"
+                onClick={() => setSidebarPlacement('right')}
+              >
+                <SidebarDockIcon side="right" />
+              </button>
+            </div>
           ) : null}
           <CanvasSurface
             activeWorkspacePath={activeWorkspace}
@@ -552,6 +588,66 @@ export default function App() {
             </div>
           ) : null}
         </main>
+
+        {sidebarCollapsed || sidebarSide === 'left' ? null : (
+          <div
+            className="w-3 cursor-col-resize"
+            onPointerDown={(event) => {
+              resizeRef.current = {
+                side: sidebarSide,
+                startX: event.clientX,
+                startWidth: sidebarWidth
+              }
+            }}
+          />
+        )}
+
+        {sidebarCollapsed || sidebarSide === 'left' ? null : (
+          <div
+            style={{ width: sidebarWidth }}
+            className="min-w-[260px] max-w-[520px] overflow-hidden opacity-100 transition-[width,opacity] duration-200"
+          >
+            <Sidebar
+              activeFilePath={viewerFile?.path ?? null}
+              config={config}
+              darkMode={darkMode}
+              loadingWorkspace={loadingWorkspace}
+              onAddWorkspace={() => void addWorkspace()}
+              onCreateNote={() => void createRootNote()}
+              onCreateTerminal={createTerminal}
+              onMoveFile={(sourcePath, targetDirectoryPath) =>
+                void moveFileIntoDirectory(sourcePath, targetDirectoryPath)
+              }
+              onMoveSidebar={setSidebarPlacement}
+              onOpenSearch={() => setSearchOpen(true)}
+              onPlaceFile={placeFileOnCanvas}
+              onRemoveWorkspace={() => void removeActiveWorkspace()}
+              onSelectFile={previewFile}
+              onSelectWorkspace={(index) =>
+                void persistConfig({
+                  ...config,
+                  activeWorkspace: index
+                })
+              }
+              onToggleSidebar={() => {
+                setSidebarCollapsed(true)
+                void persistUi({
+                  sidebarCollapsed: true
+                })
+              }}
+              onToggleDarkMode={() => {
+                const nextDarkMode = !darkMode
+                setDarkMode(nextDarkMode)
+                void persistUi({
+                  darkMode: nextDarkMode
+                })
+              }}
+              sidebarCollapsed={sidebarCollapsed}
+              sidebarSide={sidebarSide}
+              workspaceTree={workspaceTree}
+            />
+          </div>
+        )}
       </div>
 
       <SearchDialog

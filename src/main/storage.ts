@@ -21,6 +21,7 @@ const DEFAULT_CONFIG: AppConfig = {
   ui: {
     darkMode: false,
     sidebarCollapsed: false,
+    sidebarSide: 'left',
     sidebarWidth: 320
   }
 }
@@ -83,6 +84,7 @@ function sanitizeConfig(input: Partial<AppConfig> | undefined): AppConfig {
         typeof input?.ui?.sidebarCollapsed === 'boolean'
           ? input.ui.sidebarCollapsed
           : Boolean((input?.ui as { canvasCollapsed?: boolean } | undefined)?.canvasCollapsed),
+      sidebarSide: input?.ui?.sidebarSide === 'right' ? 'right' : 'left',
       sidebarWidth:
         typeof input?.ui?.sidebarWidth === 'number'
           ? Math.min(Math.max(input.ui.sidebarWidth, 240), 480)

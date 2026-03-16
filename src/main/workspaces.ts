@@ -1,3 +1,4 @@
+import { unwatchFile, watchFile } from 'node:fs'
 import { lstat, mkdir, readdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -8,6 +9,7 @@ const NOTE_EXTENSIONS = new Set(['.md', '.mdx', '.markdown', '.txt'])
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'])
 const IGNORED_NAMES = new Set(['.DS_Store'])
 const IGNORED_DIRECTORIES = new Set(['.git', 'node_modules', 'dist', 'out'])
+const watchedFiles = new Map<string, Set<() => void>>()
 
 export function detectFileKind(filePath: string): FileKind {
   const extension = extname(filePath).toLowerCase()
@@ -168,6 +170,52 @@ export async function writeTextFileDocument(
   await mkdir(dirname(filePath), { recursive: true })
   await writeFile(filePath, content, 'utf8')
   return readTextFileDocument(filePath)
+}
+
+export function subscribeToFileChanges(filePath: string, listener: () => void): () => void {
+  const resolvedFilePath = resolve(filePath)
+  let listeners = watchedFiles.get(resolvedFilePath)
+
+  if (!listeners) {
+    listeners = new Set()
+    watchedFiles.set(resolvedFilePath, listeners)
+    watchFile(resolvedFilePath, { interval: 250 }, (current, previous) => {
+      if (
+        current.mtimeMs === previous.mtimeMs &&
+        current.size === previous.size &&
+        current.nlink === previous.nlink
+      ) {
+        return
+      }
+
+      const currentListeners = watchedFiles.get(resolvedFilePath)
+
+      if (!currentListeners) {
+        return
+      }
+
+      for (const notify of currentListeners) {
+        notify()
+      }
+    })
+  }
+
+  listeners.add(listener)
+
+  return () => {
+    const currentListeners = watchedFiles.get(resolvedFilePath)
+
+    if (!currentListeners) {
+      return
+    }
+
+    currentListeners.delete(listener)
+
+    if (currentListeners.size === 0) {
+      watchedFiles.delete(resolvedFilePath)
+      unwatchFile(resolvedFilePath)
+    }
+  }
 }
 
 export async function createWorkspaceNote(workspacePath: string): Promise<FileTreeNode> {

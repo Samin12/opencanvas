@@ -78,6 +78,22 @@ const api: CollaboratorApi = {
     ipcRenderer.invoke('file:read', filePath) as Promise<TextFileDocument>,
   writeTextFile: (filePath: string, content: string) =>
     ipcRenderer.invoke('file:write', filePath, content) as Promise<TextFileDocument>,
+  onFileChanged: (filePath, listener) => {
+    const channel = 'file:changed'
+    const handler = (_event: Electron.IpcRendererEvent, changedFilePath: string) => {
+      if (changedFilePath === filePath) {
+        listener()
+      }
+    }
+
+    ipcRenderer.on(channel, handler)
+    ipcRenderer.send('file:watch', filePath)
+
+    return () => {
+      ipcRenderer.off(channel, handler)
+      ipcRenderer.send('file:unwatch', filePath)
+    }
+  },
   fileUrl: (filePath: string) => ipcRenderer.invoke('file:url', filePath) as Promise<string>,
   releaseTerminalSession: (sessionId: string) => {
     ipcRenderer.send('terminal:release', sessionId)
