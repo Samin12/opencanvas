@@ -183,6 +183,8 @@ textarea {
 .markdown-preview {
   font-family: var(--font-ui);
   line-height: 1.65;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .rich-note-editor {
@@ -241,6 +243,12 @@ textarea {
 .markdown-preview pre,
 .markdown-preview table {
   margin: 0 0 1em;
+}
+
+.markdown-preview p,
+.markdown-preview li,
+.markdown-preview blockquote {
+  text-wrap: pretty;
 }
 
 .markdown-preview .markdown-image-node {

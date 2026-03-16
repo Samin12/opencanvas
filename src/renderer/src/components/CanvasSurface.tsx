@@ -147,6 +147,8 @@ const MIN_TILE_WIDTH = 280
 const MIN_TILE_HEIGHT = 220
 const DEFAULT_TERMINAL_WIDTH = 760
 const DEFAULT_TERMINAL_HEIGHT = 560
+const DEFAULT_TERMINAL_CARD_WIDTH = 460
+const DEFAULT_TERMINAL_CARD_HEIGHT = 520
 const CAMERA_EPSILON = 0.001
 const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
 const IMAGE_FILE_EXTENSIONS = new Set(['.gif', '.jpg', '.jpeg', '.png', '.svg', '.webp'])
@@ -938,6 +940,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       const createdTile = {
         ...draftTile,
+        width: DEFAULT_TERMINAL_CARD_WIDTH,
+        height: DEFAULT_TERMINAL_CARD_HEIGHT,
         x: snap(nextX),
         y: snap(nextY)
       }

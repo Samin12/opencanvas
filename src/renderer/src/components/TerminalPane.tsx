@@ -157,6 +157,8 @@ function TerminalPaneComponent({
   const historyRequestIdRef = useRef(0)
   const activityRequestIdRef = useRef(0)
   const pendingSelectionCardTextRef = useRef('')
+  const terminalWheelEnabledRef = useRef(false)
+  const terminalWheelRemainderRef = useRef(0)
   const terminalRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const [layout, setLayout] = useState<'split' | 'stack'>('split')
@@ -180,6 +182,7 @@ function TerminalPaneComponent({
   })
   const statusMeta = terminalStatusMeta(status)
   const shellFocusActive = isSelected && focusMode === 'shell' && !historyOpen
+  const terminalWheelActive = isSelected && !historyOpen
   const chatFocusActive = isSelected && focusMode === 'chat'
   const historyFocusActive = isSelected && historyOpen
   const sessionLabel = sessionId.slice(0, 8)
@@ -231,6 +234,30 @@ function TerminalPaneComponent({
     const ratio = Math.min(Math.max((clientY - rect.top) / rect.height, 0), 1)
     terminal.scrollToLine(Math.round(ratio * terminal.buffer.active.baseY))
     syncScrollMetrics(terminal)
+  }
+
+  function scrollTerminalByWheelDelta(activeTerminal: Terminal, deltaY: number, deltaMode: number) {
+    const linesDelta =
+      deltaMode === 1
+        ? deltaY
+        : deltaMode === 2
+          ? deltaY * Math.max(activeTerminal.rows - 1, 1)
+          : deltaY / 20
+
+    terminalWheelRemainderRef.current += linesDelta
+
+    const wholeLines =
+      terminalWheelRemainderRef.current > 0
+        ? Math.floor(terminalWheelRemainderRef.current)
+        : Math.ceil(terminalWheelRemainderRef.current)
+
+    if (wholeLines === 0) {
+      return
+    }
+
+    terminalWheelRemainderRef.current -= wholeLines
+    activeTerminal.scrollLines(wholeLines)
+    syncScrollMetrics(activeTerminal)
   }
 
   function stopScrollbarDrag() {
@@ -441,7 +468,25 @@ function TerminalPaneComponent({
 
     terminalRef.current = terminal
     fitRef.current = fitAddon
-    syncTerminalWheelAttributes(host, shellFocusActive)
+    syncTerminalWheelAttributes(host, terminalWheelActive)
+
+    const viewport = host.querySelector<HTMLElement>('.xterm-viewport')
+    const handleViewportWheel = (event: WheelEvent) => {
+      if (!terminalWheelEnabledRef.current) {
+        return
+      }
+
+      if (Math.abs(event.deltaY) < Math.abs(event.deltaX) || terminal.buffer.active.baseY <= 0) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation?.()
+      scrollTerminalByWheelDelta(terminal, event.deltaY, event.deltaMode)
+    }
+
+    viewport?.addEventListener('wheel', handleViewportWheel, { passive: false, capture: true })
 
     const disposeData = terminal.onData((data) => {
       window.collaborator.writeTerminalInput(sessionId, data)
@@ -554,6 +599,7 @@ function TerminalPaneComponent({
       }
       resizeObserver.disconnect()
       stopScrollbarDrag()
+      viewport?.removeEventListener('wheel', handleViewportWheel, true)
       detachTerminalActivity()
       detachTerminalData()
       detachTerminalExit()
@@ -569,12 +615,13 @@ function TerminalPaneComponent({
   }, [cwd, sessionId])
 
   useEffect(() => {
-    syncTerminalWheelAttributes(hostRef.current, shellFocusActive)
+    terminalWheelEnabledRef.current = terminalWheelActive
+    syncTerminalWheelAttributes(hostRef.current, terminalWheelActive)
 
     if (shellFocusActive) {
       terminalRef.current?.focus()
     }
-  }, [shellFocusActive])
+  }, [shellFocusActive, terminalWheelActive])
 
   useEffect(() => {
     if (!chatFocusActive || historyOpen) {
@@ -602,6 +649,7 @@ function TerminalPaneComponent({
     setActivities([])
     setSelectedText('')
     setSessionCwd(cwd)
+    terminalWheelRemainderRef.current = 0
     pendingSelectionCardTextRef.current = ''
     setComposerValue('')
   }, [sessionId])
@@ -782,7 +830,7 @@ function TerminalPaneComponent({
             </div>
           ) : null}
 
-          {shellFocusActive && scrollMetrics.maxViewportY > 0 ? (
+          {isSelected && !historyOpen && scrollMetrics.maxViewportY > 0 ? (
             <div
               ref={scrollbarTrackRef}
               className="absolute bottom-2 right-1.5 top-2 z-20 w-3 rounded-full bg-[rgba(15,23,42,0.08)]"
