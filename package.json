@@ -6,9 +6,9 @@
   "main": "./out/main/index.cjs",
   "type": "module",
   "scripts": {
-    "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
+    "dev": "node scripts/prepare-dev-electron.mjs && env -u ELECTRON_RUN_AS_NODE electron-vite dev",
     "build": "electron-vite build",
-    "preview": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
+    "preview": "node scripts/prepare-dev-electron.mjs && env -u ELECTRON_RUN_AS_NODE electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.renderer.json"
   },
   "dependencies": {
