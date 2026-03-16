@@ -148,6 +148,10 @@ export default function App() {
     () => (selectedTreePath ? findNodeByPath(workspaceTree, selectedTreePath) : null),
     [selectedTreePath, workspaceTree]
   )
+  const selectedFileNode = useMemo(
+    () => (selectedTreeNode?.kind === 'file' ? selectedTreeNode : null),
+    [selectedTreeNode]
+  )
   const noteTargetPath = useMemo(() => {
     if (!activeWorkspace) {
       return null
@@ -336,9 +340,11 @@ export default function App() {
         return
       }
 
-      if (event.shiftKey && event.key === 'Enter' && viewerFile) {
+      const fileToPlace = viewerFile ?? selectedFileNode
+
+      if (event.shiftKey && event.key === 'Enter' && fileToPlace) {
         event.preventDefault()
-        placeFileOnCanvas(viewerFile)
+        placeFileOnCanvas(fileToPlace)
         return
       }
 
@@ -374,7 +380,16 @@ export default function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [activeWorkspace, darkMode, noteTargetPath, searchOpen, sidebarCollapsed, sidebarSide, viewerFile])
+  }, [
+    activeWorkspace,
+    darkMode,
+    noteTargetPath,
+    searchOpen,
+    selectedFileNode,
+    sidebarCollapsed,
+    sidebarSide,
+    viewerFile
+  ])
 
   useEffect(() => {
     function handlePaste(event: ClipboardEvent) {
@@ -950,6 +965,7 @@ export default function App() {
           <ViewerOverlay
             file={viewerFile}
             onClose={() => setViewerFile(null)}
+            onImportImageFile={importWorkspaceImageFile}
             onPlaceOnCanvas={placeFileOnCanvas}
           />
           {workspaceError ? (

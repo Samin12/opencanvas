@@ -772,7 +772,7 @@ function SidebarComponent({
                               event.preventDefault()
                               onPlaceFile(file)
                             }}
-                            title="Click to preview. Double-click to place on canvas."
+                            title="Click to preview. Double-click or press Shift+Enter to place on canvas."
                           >
                             <FileKindIcon darkMode={darkMode} fileKind={file.fileKind} />
                             <div className="min-w-0 flex-1">

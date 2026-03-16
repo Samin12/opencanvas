@@ -8,6 +8,7 @@ import { composeTooltipLabel } from '../utils/buttonTooltips'
 interface ViewerOverlayProps {
   file: FileTreeNode | null
   onClose: () => void
+  onImportImageFile?: (file: File) => Promise<{ name: string; path: string } | null>
   onPlaceOnCanvas: (file: FileTreeNode) => void
 }
 
@@ -48,7 +49,12 @@ function viewerKindLabel(file: FileTreeNode): string {
   return 'Code'
 }
 
-function ViewerOverlayComponent({ file, onClose, onPlaceOnCanvas }: ViewerOverlayProps) {
+function ViewerOverlayComponent({
+  file,
+  onClose,
+  onImportImageFile,
+  onPlaceOnCanvas
+}: ViewerOverlayProps) {
   const [refreshToken, setRefreshToken] = useState(0)
 
   useEffect(() => {
@@ -79,7 +85,7 @@ function ViewerOverlayComponent({ file, onClose, onPlaceOnCanvas }: ViewerOverla
                   {viewerKindLabel(file)}
                 </div>
               </div>
-              <div className="mt-4 truncate font-[var(--font-display)] text-[2.1rem] font-semibold leading-[0.92] tracking-[-0.05em] text-[var(--text)]">
+              <div className="mt-4 truncate px-0.5 pb-1 pt-0.5 font-[var(--font-display)] text-[2.1rem] font-semibold leading-[1.02] tracking-[-0.05em] text-[var(--text)]">
                 {file.name}
               </div>
               <div className="mt-4 rounded-[4px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3.5 py-3">
@@ -130,6 +136,7 @@ function ViewerOverlayComponent({ file, onClose, onPlaceOnCanvas }: ViewerOverla
           <DocumentPane
             fileKind={file.fileKind ?? 'code'}
             filePath={file.path}
+            onImportImageFile={onImportImageFile}
             refreshToken={refreshToken}
             showViewerRefreshButton={false}
             variant="viewer"
