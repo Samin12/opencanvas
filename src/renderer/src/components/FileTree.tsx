@@ -78,24 +78,24 @@ function ImageIcon() {
 function iconToneClasses(kind: 'directory' | 'note' | 'code' | 'image', darkMode: boolean) {
   if (kind === 'directory') {
     return darkMode
-      ? 'border-amber-900/70 bg-amber-950/35 text-amber-300'
-      : 'border-amber-200 bg-amber-50 text-amber-700'
+      ? 'border-amber-500/25 bg-[rgba(120,53,15,0.16)] text-amber-200'
+      : 'border-amber-300/80 bg-amber-50 text-amber-800'
   }
 
   if (kind === 'note') {
     return darkMode
-      ? 'border-lime-800/80 bg-lime-950/40 text-lime-300'
-      : 'border-lime-200 bg-lime-50 text-lime-700'
+      ? 'border-lime-500/25 bg-[rgba(63,98,18,0.16)] text-lime-200'
+      : 'border-lime-300/80 bg-lime-50 text-lime-800'
   }
 
   if (kind === 'image') {
     return darkMode
-      ? 'border-sky-800/80 bg-sky-950/40 text-sky-300'
-      : 'border-sky-200 bg-sky-50 text-sky-700'
+      ? 'border-sky-500/25 bg-[rgba(7,89,133,0.16)] text-sky-200'
+      : 'border-sky-300/80 bg-sky-50 text-sky-800'
   }
 
   return darkMode
-    ? 'border-slate-700 bg-slate-900/60 text-slate-300'
+    ? 'border-slate-500/25 bg-[rgba(30,41,59,0.26)] text-slate-300'
     : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-faint)]'
 }
 
@@ -105,7 +105,7 @@ function FileKindIcon({ darkMode, fileKind }: { darkMode: boolean; fileKind: Fil
   return (
     <span
       className={clsx(
-        'flex h-6 w-6 items-center justify-center rounded-lg border',
+        'flex h-6 w-6 items-center justify-center rounded-[6px] border',
         iconToneClasses(kind, darkMode)
       )}
     >
@@ -168,8 +168,9 @@ export function FileTree({
         <div key={node.path}>
           <button
             className={clsx(
-              'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-[var(--text-dim)] transition hover:bg-[var(--surface-1)]',
-              dropTargetPath === node.path && 'bg-[var(--surface-selected)] ring-1 ring-[color:var(--line-strong)]'
+              'flex w-full items-center gap-2.5 rounded-[8px] px-3 py-2.5 text-left text-[13px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)]',
+              dropTargetPath === node.path &&
+                'bg-[var(--surface-selected)] text-[var(--text)] ring-1 ring-[color:var(--line-strong)]'
             )}
             style={{ paddingLeft: 12 + depth * INDENT }}
             onClick={() => toggleDirectory(node.path)}
@@ -217,13 +218,15 @@ export function FileTree({
             </span>
             <span
               className={clsx(
-                'flex h-6 w-6 items-center justify-center rounded-lg border',
+                'flex h-6 w-6 items-center justify-center rounded-[6px] border',
                 iconToneClasses('directory', darkMode)
               )}
             >
               <FolderIcon />
             </span>
-            <span className="truncate">{node.name}</span>
+            <span className="truncate font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace]">
+              {node.name}
+            </span>
           </button>
           {isExpanded ? (
             <div>{node.children?.map((child) => renderNode(child, depth + 1))}</div>
@@ -251,7 +254,7 @@ export function FileTree({
           setDropTargetPath(null)
         }}
         className={clsx(
-          'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm transition',
+          'flex w-full items-center gap-2.5 rounded-[8px] px-3 py-2.5 text-left text-[13px] transition',
           activeFilePath === node.path
             ? 'bg-[var(--surface-selected)] text-[var(--text)] ring-1 ring-[color:var(--line-strong)]'
             : 'text-[var(--text-dim)] hover:bg-[var(--surface-1)]'
@@ -271,18 +274,24 @@ export function FileTree({
         title="Click to preview. Double-click or Shift+Enter to place on canvas."
       >
         <FileKindIcon darkMode={darkMode} fileKind={node.fileKind} />
-        <span className="truncate">{node.name}</span>
+        <span className="truncate font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace]">
+          {node.name}
+        </span>
       </button>
     )
   }
 
   if (nodes.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-1)] p-4 text-sm text-[var(--text-dim)]">
+      <div className="rounded-[8px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-1)] p-4 text-sm text-[var(--text-dim)]">
         This workspace is empty.
       </div>
     )
   }
 
-  return <div className="space-y-1">{nodes.map((node) => renderNode(node, 0))}</div>
+  return (
+    <div className="space-y-1 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace]">
+      {nodes.map((node) => renderNode(node, 0))}
+    </div>
+  )
 }

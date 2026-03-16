@@ -70,6 +70,13 @@ export interface TextFileDocument {
 export interface BootstrapData {
   config: AppConfig
   canvasState: CanvasState
+  terminalDependencies: TerminalDependencyState
+}
+
+export interface TerminalDependencyState {
+  claudeCommand: string
+  claudeInstalled: boolean
+  tmuxInstalled: boolean
 }
 
 export interface TerminalSessionSnapshot {

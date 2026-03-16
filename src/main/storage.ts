@@ -19,7 +19,7 @@ const DEFAULT_CONFIG: AppConfig = {
   activeWorkspace: 0,
   windowState: DEFAULT_WINDOW_STATE,
   ui: {
-    darkMode: false,
+    darkMode: true,
     sidebarCollapsed: false,
     sidebarSide: 'left',
     sidebarWidth: 320

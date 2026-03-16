@@ -9,6 +9,7 @@ Electron + React foundation for a clean-room recreation of the Collaborator desk
 - Workspace file tree with drag-to-canvas behavior
 - Infinite pan/zoom canvas with dot grid
 - Tile creation, dragging, resizing, z-index ordering, and persistence
+- xterm.js terminal tiles with tmux-backed session persistence
 - Double-click canvas to create terminal session placeholders
 - File-backed note, code, and image tiles
 - Viewer overlay and quick file search (`Cmd+K`)
@@ -32,6 +33,20 @@ TLDraw still makes sense later for:
 - relationship maps / graph overlays
 - embedded whiteboard zones in the same workspace
 - richer multiplayer or shape tooling, if the project grows that way
+
+## Prerequisites
+
+- Node.js and npm
+- `tmux` installed and available on your `PATH`
+- Claude Code installed and available as the `claude` command on your `PATH`
+
+On macOS, install `tmux` with:
+
+```bash
+brew install tmux
+```
+
+If you launch Claude with a different command, set `COLLABORATOR_CLAUDE_COMMAND` before starting the app.
 
 ## Run
 

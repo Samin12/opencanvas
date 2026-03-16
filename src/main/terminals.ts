@@ -6,7 +6,7 @@ import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import type { TerminalSessionSnapshot } from '../shared/types'
+import type { TerminalDependencyState, TerminalSessionSnapshot } from '../shared/types'
 import { APP_DIRECTORY } from './storage'
 
 const { app, webContents } = electron
@@ -162,6 +162,34 @@ function resolveTmuxBinary(): string | null {
   return null
 }
 
+function primaryCommandName(command: string): string {
+  const trimmed = command.trim()
+
+  if (trimmed.length === 0) {
+    return 'claude'
+  }
+
+  return trimmed.split(/\s+/)[0] ?? 'claude'
+}
+
+function shellEscape(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+function resolveCommandBinary(commandName: string): string | null {
+  const result = spawnSync(defaultShell(), ['-lc', `command -v -- ${shellEscape(commandName)}`], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore']
+  })
+
+  if (result.status !== 0) {
+    return null
+  }
+
+  const resolved = result.stdout.trim().split('\n').at(-1)
+  return resolved && resolved.length > 0 ? resolved : null
+}
+
 function tmuxSessionExists(tmuxBinary: string, tmuxSessionName: string): boolean {
   const result = spawnSync(tmuxBinary, [...tmuxBaseArgs(), 'has-session', '-t', tmuxSessionName], {
     stdio: 'ignore'
@@ -220,6 +248,29 @@ function ensureNodePtyHelperPermissions(): void {
   }
 }
 
+function terminalEnvironment(shell: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    COLORTERM: 'truecolor',
+    SHELL: shell,
+    TERM: 'xterm-256color'
+  }
+
+  delete env.CLAUDECODE
+
+  return env
+}
+
+export function readTerminalDependencyState(): TerminalDependencyState {
+  const claudeCommand = primaryCommandName(CLAUDE_START_COMMAND)
+
+  return {
+    tmuxInstalled: resolveTmuxBinary() !== null,
+    claudeCommand,
+    claudeInstalled: resolveCommandBinary(claudeCommand) !== null
+  }
+}
+
 export function createOrAttachTerminalSession(options: {
   cols: number
   cwd?: string
@@ -238,17 +289,17 @@ export function createOrAttachTerminalSession(options: {
   }
 
   const tmuxBinary = resolveTmuxBinary()
+  const cwd = resolveSessionCwd(options)
+  ensureNodePtyHelperPermissions()
 
   if (!tmuxBinary) {
-    throw new Error('tmux is required for persistent terminal sessions but was not found.')
+    throw new Error('tmux is required for terminal sessions. Install tmux and restart the app.')
   }
 
   const persisted = readPersistedTerminalSession(options.sessionId)
-  const cwd = resolveSessionCwd(options)
   const tmuxSessionName = persisted?.tmuxSessionName ?? tmuxSessionNameFor(options.sessionId)
   const sessionAlreadyExists = tmuxSessionExists(tmuxBinary, tmuxSessionName)
   const shouldAutoLaunchClaude = !sessionAlreadyExists && Boolean(options.cwd && existsSync(options.cwd))
-  ensureNodePtyHelperPermissions()
   const pty = nodePty.spawn(
     tmuxBinary,
     [...tmuxBaseArgs(), 'new-session', '-A', '-s', tmuxSessionName, '-c', cwd],
@@ -257,12 +308,7 @@ export function createOrAttachTerminalSession(options: {
       cols: sanitizeSize(options.cols, 80),
       rows: sanitizeSize(options.rows, 24),
       cwd,
-      env: {
-        ...process.env,
-        COLORTERM: 'truecolor',
-        SHELL: defaultShell(),
-        TERM: 'xterm-256color'
-      }
+      env: terminalEnvironment(defaultShell())
     }
   )
 

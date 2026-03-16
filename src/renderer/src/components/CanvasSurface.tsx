@@ -109,6 +109,7 @@ const MIN_TILE_WIDTH = 280
 const MIN_TILE_HEIGHT = 220
 const CAMERA_EPSILON = 0.001
 const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
+const SCROLL_LOCK_SELECTOR = '[data-scroll-lock="true"]'
 const SHORTCUT_ITEMS: Array<{ action: ShortcutAction; key: string; label: string }> = [
   { action: 'terminal', key: 'Shift+T', label: 'Terminal' },
   { action: 'hand', key: 'M', label: 'Move' },
@@ -137,6 +138,47 @@ function clamp(value: number, min: number, max: number) {
 
 function snap(value: number) {
   return Math.round(value / GRID_SIZE) * GRID_SIZE
+}
+
+function isScrollableOverflow(value: string) {
+  return value === 'auto' || value === 'overlay' || value === 'scroll'
+}
+
+function scrollableElementFromTarget(
+  target: EventTarget | null,
+  boundary: HTMLElement
+): HTMLElement | null {
+  if (!(target instanceof Node)) {
+    return null
+  }
+
+  let element = target instanceof Element ? target : target.parentElement
+
+  while (element) {
+    if (element instanceof HTMLElement) {
+      if (element.matches(SCROLL_LOCK_SELECTOR)) {
+        return element
+      }
+
+      const styles = window.getComputedStyle(element)
+      const canScrollY =
+        isScrollableOverflow(styles.overflowY) && element.scrollHeight > element.clientHeight
+      const canScrollX =
+        isScrollableOverflow(styles.overflowX) && element.scrollWidth > element.clientWidth
+
+      if (canScrollX || canScrollY) {
+        return element
+      }
+    }
+
+    if (element === boundary) {
+      break
+    }
+
+    element = element.parentElement
+  }
+
+  return null
 }
 
 function hasCollaboratorFilePayload(dataTransfer: DataTransfer | null) {
@@ -917,6 +959,34 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       const gestureContainer = container
 
+      function handleWheel(event: WheelEvent) {
+        if (scrollableElementFromTarget(event.target, gestureContainer)) {
+          if (event.ctrlKey || event.metaKey) {
+            event.preventDefault()
+          }
+
+          return
+        }
+
+        event.preventDefault()
+
+        if (event.ctrlKey || event.metaKey) {
+          // Trackpad pinch-to-zoom fires as ctrl+wheel in Chromium/Electron.
+          // Shift+scroll also zooms for mouse wheel users.
+          const zoomDelta = -event.deltaY * 0.01
+          const nextZoom = clamp(
+            stateRef.current.viewport.zoom * Math.exp(zoomDelta),
+            MIN_ZOOM,
+            MAX_ZOOM
+          )
+
+          zoomAt(event.clientX, event.clientY, nextZoom)
+        } else {
+          // Two-finger scroll (or three-finger drag with system setting) → pan
+          panBy(event.deltaX, event.deltaY)
+        }
+      }
+
       function handleGestureStart(rawEvent: Event) {
         const event = rawEvent as GestureLikeEvent
         beginPinch(event.clientX, event.clientY)
@@ -934,6 +1004,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         endPinch()
       }
 
+      gestureContainer.addEventListener('wheel', handleWheel, { passive: false })
       gestureContainer.addEventListener('gesturestart', handleGestureStart as EventListener, {
         passive: false
       })
@@ -943,6 +1014,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       gestureContainer.addEventListener('gestureend', handleGestureEnd as EventListener)
 
       return () => {
+        gestureContainer.removeEventListener('wheel', handleWheel)
         gestureContainer.removeEventListener('gesturestart', handleGestureStart as EventListener)
         gestureContainer.removeEventListener('gesturechange', handleGestureChange as EventListener)
         gestureContainer.removeEventListener('gestureend', handleGestureEnd as EventListener)
@@ -1347,7 +1419,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       <div
         ref={containerRef}
         className={clsx(
-          'canvas-surface relative h-full overflow-hidden rounded-[24px] border border-[color:var(--line-strong)] bg-[var(--canvas-bg)] touch-none [overscroll-behavior:none]'
+          'canvas-surface relative h-full overflow-hidden rounded-[10px] border border-[color:var(--line-strong)] bg-[var(--canvas-bg)] touch-none [overscroll-behavior:none]'
         )}
         onPointerDownCapture={(event) => {
           const target = event.target as HTMLElement
@@ -1376,14 +1448,16 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       >
         <div
           data-canvas-ui="true"
-          className="group absolute right-4 top-4 z-[220]"
+          className="group absolute right-3 top-3 z-[220]"
         >
-          <div className="flex min-h-10 w-10 origin-top-right items-start overflow-hidden rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] shadow-[0_10px_22px_rgba(15,23,42,0.08)] backdrop-blur transition-[width,max-height,border-radius] duration-200 ease-out max-h-10 group-hover:w-[332px] group-hover:max-h-[220px] group-hover:rounded-[18px] group-focus-within:w-[332px] group-focus-within:max-h-[220px] group-focus-within:rounded-[18px]">
+          <div className="flex min-h-10 w-10 origin-top-right items-start overflow-hidden rounded-[10px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] shadow-[0_10px_22px_rgba(15,23,42,0.12)] backdrop-blur transition-[width,max-height,border-radius] duration-200 ease-out max-h-10 group-hover:w-[332px] group-hover:max-h-[220px] group-hover:rounded-[10px] group-focus-within:w-[332px] group-focus-within:max-h-[220px] group-focus-within:rounded-[10px]">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center self-start text-[13px] font-semibold tracking-[0.2em] text-[var(--text-dim)]">
               ?
             </div>
             <div className="min-w-0 flex-1 self-stretch pr-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-              <div className="pt-2 text-[10px] uppercase tracking-[0.22em] text-[var(--text-faint)]">Canvas Keys</div>
+              <div className="pt-2 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">
+                Canvas Keys
+              </div>
               <div className="mt-1.5 grid grid-cols-3 gap-1.5 pb-2">
                 {SHORTCUT_ITEMS.map((shortcut) => {
                   const isActive =
@@ -1393,19 +1467,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     <button
                       key={shortcut.action}
                       className={clsx(
-                        'flex items-center justify-between rounded-[10px] border px-2 py-1.5 text-left transition',
+                        'flex items-center justify-between rounded-[8px] border px-2 py-1.5 text-left transition',
                         isActive
                           ? 'border-[color:var(--text)] bg-[var(--text)] text-[var(--surface-0)]'
                           : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:text-[var(--text)]'
                       )}
                       onClick={() => runShortcutAction(shortcut.action)}
                     >
-                      <span className="truncate pr-2 text-[10px] uppercase tracking-[0.14em]">
+                      <span className="truncate pr-2 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] uppercase tracking-[0.12em]">
                         {shortcut.label}
                       </span>
                       <span
                         className={clsx(
-                          'shrink-0 rounded-md border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.16em]',
+                          'shrink-0 rounded-[5px] border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.14em]',
                           isActive
                             ? 'border-white/25 bg-white/12 text-white'
                             : 'border-[color:var(--line)] bg-[var(--surface-1)] text-[var(--text-faint)]'
@@ -1417,7 +1491,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   )
                 })}
               </div>
-              <div className="border-t border-[color:var(--line)] py-2 text-[10px] uppercase tracking-[0.16em] text-[var(--text-faint)]">
+              <div className="border-t border-[color:var(--line)] py-2 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
                 Drag from a file or frame dot to a terminal dot. Dropping there sends the grouped
                 file context into Claude.
               </div>
@@ -1426,7 +1500,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         </div>
 
         {linkSourceTile ? (
-          <div className="pointer-events-none absolute left-4 top-4 z-[210] rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-1.5 text-[11px] font-medium tracking-[0.16em] text-[var(--text-dim)] backdrop-blur">
+          <div className="pointer-events-none absolute left-3 top-3 z-[210] rounded-[8px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-1.5 text-[11px] font-medium tracking-[0.12em] text-[var(--text-dim)] backdrop-blur">
             Drag <span className="text-[var(--text)]">{linkSourceTile.title}</span> into a terminal
             dot, or press Esc to cancel.
           </div>
@@ -1583,9 +1657,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     data-tile-root="true"
                     data-terminal-connector-id={tile.type === 'term' ? tile.id : undefined}
                     className={clsx(
-                      'pointer-events-auto absolute overflow-visible rounded-[10px] border bg-[var(--surface-0)] shadow-[0_6px_14px_rgba(15,23,42,0.10)]',
+                      'pointer-events-auto absolute overflow-visible rounded-[8px] border bg-[var(--surface-0)] shadow-[0_8px_18px_rgba(0,0,0,0.22)]',
                       selectedTileId === tile.id
-                        ? 'border-[color:var(--line-strong)] shadow-[0_0_0_2px_rgba(71,85,105,0.18),0_6px_14px_rgba(15,23,42,0.10)]'
+                        ? 'border-[color:var(--line-strong)] shadow-[0_0_0_1px_rgba(148,163,184,0.22),0_8px_18px_rgba(0,0,0,0.24)]'
                         : 'border-[color:var(--line)]',
                       isPendingLinkSource && 'border-[color:var(--link-line)]'
                     )}
@@ -1646,7 +1720,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   />
                 ) : null}
                 <div
-                  className="flex items-center justify-between rounded-t-[10px] border-b border-[color:var(--line)] bg-[var(--surface-1)] px-3 py-1.5"
+                  className="flex items-center justify-between rounded-t-[8px] border-b border-[color:var(--line)] bg-[var(--surface-1)] px-3 py-1.5"
                   onPointerDown={(event) => {
                     if (event.button !== 0) {
                       return
@@ -1667,8 +1741,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   }}
                 >
                   <div className="min-w-0">
-                    <div className="truncate text-[11px] font-medium text-[var(--text)]">{tile.title}</div>
-                    <div className="truncate text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">
+                    <div className="truncate font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] font-medium text-[var(--text)]">
+                      {tile.title}
+                    </div>
+                    <div className="truncate font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
                       {tile.type === 'term'
                         ? tile.sessionId
                         : tile.filePath?.replace(/^.*\//, '')}
@@ -1677,7 +1753,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   <div className="flex items-center gap-2">
                     {tile.filePath ? (
                       <button
-                        className="flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] text-[12px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                        className="flex h-6 w-6 items-center justify-center rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[12px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
                         onPointerDown={(event) => event.stopPropagation()}
                         title="Open preview"
                         onClick={(event) => {
@@ -1694,7 +1770,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       </button>
                     ) : null}
                     <button
-                      className="flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] text-[14px] leading-none text-[var(--text-dim)] transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
+                      className="flex h-6 w-6 items-center justify-center rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[14px] leading-none text-[var(--text-dim)] transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
                       title="Close tile"
                       onPointerDown={(event) => event.stopPropagation()}
                       onClick={(event) => {
@@ -1711,12 +1787,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   {tile.type === 'term' ? (
                     <div className="flex h-full min-h-0 flex-col gap-2">
                       <div
-                        className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-1)] px-2 py-1.5"
+                        className="flex flex-wrap items-center gap-2 rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-1)] px-2.5 py-2"
                         data-terminal-control="true"
                         onPointerDown={(event) => event.stopPropagation()}
                       >
                         {contextTiles.length === 0 ? (
-                          <div className="text-[11px] text-[var(--text-dim)]">
+                          <div className="font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] text-[var(--text-dim)]">
                             {linkSourceTile
                               ? 'Drop the dragged connector on this terminal dot to attach it.'
                               : 'Drag a file dot or a frame-group dot into this terminal to build Claude Code context.'}
@@ -1725,11 +1801,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                           contextTiles.map((contextTile) => (
                             <div
                               key={contextTile.id}
-                              className="flex items-center gap-1 rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[10px] text-[var(--text-dim)]"
+                              className="flex items-center gap-1 rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] text-[var(--text-dim)]"
                             >
                               <span className="max-w-[120px] truncate">{contextTile.title}</span>
                               <button
-                                className="rounded-full px-1 text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                                className="rounded-[4px] px-1 text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
                                 title="Remove linked context"
                                 onClick={(event) => {
                                   event.stopPropagation()
@@ -1786,17 +1862,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         </div>
 
         {zoomIndicator ? (
-          <div className="pointer-events-none absolute bottom-[4.5rem] right-4 z-[220] rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-3.5 py-1.5 text-[11px] font-medium tracking-[0.2em] text-[var(--text-dim)] shadow-[0_10px_22px_rgba(15,23,42,0.08)] backdrop-blur">
+          <div className="pointer-events-none absolute bottom-[4.5rem] right-3 z-[220] rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3.5 py-1.5 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] font-medium tracking-[0.14em] text-[var(--text-dim)] shadow-[0_10px_22px_rgba(15,23,42,0.08)] backdrop-blur">
             {zoomIndicator}
           </div>
         ) : null}
 
         <div
           data-canvas-ui="true"
-          className="absolute bottom-4 right-4 z-[220] flex items-center gap-1.5 rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-1.5 py-1 shadow-[0_10px_22px_rgba(15,23,42,0.1)] backdrop-blur"
+          className="absolute bottom-3 right-3 z-[220] flex items-center gap-1.5 rounded-[10px] border border-[color:var(--line)] bg-[var(--surface-0)] px-1.5 py-1 shadow-[0_10px_22px_rgba(15,23,42,0.1)] backdrop-blur"
         >
           <button
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] text-lg leading-none text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
+            className="flex h-9 w-9 items-center justify-center rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-0)] text-lg leading-none text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
             aria-label="Zoom out"
             disabled={!canZoomOut}
             onClick={() => {
@@ -1807,7 +1883,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             -
           </button>
           <button
-            className="min-w-[5.5rem] rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-4 py-2 text-[11px] font-medium tracking-[0.18em] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]"
+            className="min-w-[5.5rem] rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-0)] px-4 py-2 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] font-medium tracking-[0.14em] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]"
             aria-label="Reset zoom"
             onClick={() => {
               resetViewportZoom()
@@ -1817,7 +1893,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             {zoomLabel}
           </button>
           <button
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] text-lg leading-none text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
+            className="flex h-9 w-9 items-center justify-center rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-0)] text-lg leading-none text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
             aria-label="Zoom in"
             disabled={!canZoomIn}
             onClick={() => {

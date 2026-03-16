@@ -6,6 +6,7 @@ import type { AppConfig, CanvasState } from '../shared/types'
 import { loadCanvasState, loadConfig, saveCanvasState, saveConfig } from './storage'
 import {
   createOrAttachTerminalSession,
+  readTerminalDependencyState,
   releaseTerminalSession,
   resizeTerminalSession,
   writeTerminalInput
@@ -45,7 +46,8 @@ export function registerIpcHandlers(): void {
 
     return {
       config,
-      canvasState
+      canvasState,
+      terminalDependencies: readTerminalDependencyState()
     }
   })
 

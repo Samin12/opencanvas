@@ -1,7 +1,13 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 
 import clsx from 'clsx'
-import type { AppConfig, CanvasState, FileTreeNode, SidebarSide } from '@shared/types'
+import type {
+  AppConfig,
+  CanvasState,
+  FileTreeNode,
+  SidebarSide,
+  TerminalDependencyState
+} from '@shared/types'
 
 import { CanvasSurface, type CanvasSurfaceHandle } from './components/CanvasSurface'
 import { SearchDialog } from './components/SearchDialog'
@@ -74,9 +80,22 @@ export default function App() {
   const [loadingWorkspace, setLoadingWorkspace] = useState(false)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [bootError, setBootError] = useState<string | null>(null)
+  const [terminalDependencies, setTerminalDependencies] = useState<TerminalDependencyState | null>(null)
 
   const activeWorkspace = config ? config.workspaces[config.activeWorkspace] ?? null : null
   const flatFiles = useMemo(() => flattenFiles(workspaceTree), [workspaceTree])
+  const missingTerminalDependencies =
+    terminalDependencies === null
+      ? []
+      : [
+          terminalDependencies.tmuxInstalled ? null : 'tmux',
+          terminalDependencies.claudeInstalled ? null : terminalDependencies.claudeCommand
+        ].filter((dependency): dependency is string => Boolean(dependency))
+  const terminalReady = terminalDependencies !== null && missingTerminalDependencies.length === 0
+  const terminalDependencyMessage =
+    terminalDependencies === null || terminalReady
+      ? null
+      : `Install ${missingTerminalDependencies.join(' and ')} and restart the app before creating terminal tiles.`
 
   useEffect(() => {
     let cancelled = false
@@ -96,6 +115,7 @@ export default function App() {
         setDarkMode(payload.config.ui.darkMode)
         setSidebarCollapsed(payload.config.ui.sidebarCollapsed)
         setSidebarSide(payload.config.ui.sidebarSide)
+        setTerminalDependencies(payload.terminalDependencies)
       } catch {
         if (!cancelled) {
           setBootError('The app state could not be loaded. Delete corrupted state or restart.')
@@ -430,6 +450,13 @@ export default function App() {
   }
 
   function createTerminal() {
+    if (!terminalReady) {
+      setWorkspaceError(
+        terminalDependencyMessage ?? 'Terminal prerequisites are missing. Install tmux and Claude Code, then restart the app.'
+      )
+      return
+    }
+
     canvasRef.current?.createTerminal()
   }
 
@@ -492,7 +519,7 @@ export default function App() {
   if (bootError) {
     return (
       <div className="app-shell">
-        <div className="glass-panel flex flex-1 items-center justify-center rounded-[32px] text-center">
+        <div className="glass-panel flex flex-1 items-center justify-center rounded-[10px] text-center">
           <div className="max-w-lg p-8">
             <div className="text-[11px] uppercase tracking-[0.25em] text-[var(--text-faint)]">
               Boot Error
@@ -507,7 +534,7 @@ export default function App() {
   if (!config || !canvasState) {
     return (
       <div className="app-shell">
-        <div className="glass-panel flex flex-1 items-center justify-center rounded-[32px]">
+        <div className="glass-panel flex flex-1 items-center justify-center rounded-[10px]">
           <div className="text-sm uppercase tracking-[0.25em] text-[var(--text-faint)]">
             Initializing…
           </div>
@@ -546,6 +573,8 @@ export default function App() {
                   activeWorkspace: index
                 })
               }
+              terminalDependencyMessage={terminalDependencyMessage}
+              terminalReady={terminalReady}
               onToggleSidebar={() => {
                 setSidebarCollapsed(true)
                 void persistUi({
@@ -583,12 +612,12 @@ export default function App() {
           {sidebarCollapsed ? (
             <div
               className={clsx(
-                'glass-panel absolute top-4 z-[270] flex items-center gap-1 rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] p-1',
-                sidebarSide === 'left' ? 'left-4' : 'right-4'
+                'glass-panel absolute top-3 z-[270] flex items-center gap-1 rounded-[10px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] p-1.5',
+                sidebarSide === 'left' ? 'left-3' : 'right-3'
               )}
             >
               <button
-                className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                className="flex h-9 w-9 items-center justify-center rounded-[8px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
                 aria-label="Open sidebar on the left"
                 title="Open sidebar on the left"
                 onClick={() => setSidebarPlacement('left')}
@@ -596,7 +625,7 @@ export default function App() {
                 <SidebarDockIcon side="left" />
               </button>
               <button
-                className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                className="flex h-9 w-9 items-center justify-center rounded-[8px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
                 aria-label="Open sidebar on the right"
                 title="Open sidebar on the right"
                 onClick={() => setSidebarPlacement('right')}
@@ -619,7 +648,7 @@ export default function App() {
             onPlaceOnCanvas={placeFileOnCanvas}
           />
           {workspaceError ? (
-            <div className="glass-panel absolute right-4 top-4 z-[260] rounded-2xl border border-rose-200 px-4 py-3 text-sm text-rose-700">
+            <div className="glass-panel absolute right-3 top-3 z-[260] max-w-[24rem] rounded-[10px] border border-amber-500/30 bg-[rgba(120,53,15,0.16)] px-4 py-3 text-sm text-amber-100">
               {workspaceError}
             </div>
           ) : null}
@@ -665,6 +694,8 @@ export default function App() {
                   activeWorkspace: index
                 })
               }
+              terminalDependencyMessage={terminalDependencyMessage}
+              terminalReady={terminalReady}
               onToggleSidebar={() => {
                 setSidebarCollapsed(true)
                 void persistUi({

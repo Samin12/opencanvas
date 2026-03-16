@@ -116,10 +116,10 @@ function ActionIconButton({
       disabled={disabled}
       title={label}
       className={clsx(
-        'flex h-8 w-8 items-center justify-center rounded-full border transition',
+        'flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] border transition',
         active
-          ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
-          : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:bg-[var(--surface-1)]',
+          ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
+          : 'border-[color:var(--line-strong)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line)] hover:bg-[var(--surface-1)] hover:text-[var(--text)]',
         'disabled:cursor-not-allowed disabled:opacity-40',
         className
       )}
@@ -150,6 +150,8 @@ interface SidebarProps {
   onRemoveWorkspace: () => void
   onSelectFile: (node: FileTreeNode) => void
   onSelectWorkspace: (index: number) => void
+  terminalDependencyMessage: string | null
+  terminalReady: boolean
   onToggleSidebar: () => void
   onToggleDarkMode: () => void
   sidebarCollapsed: boolean
@@ -172,6 +174,8 @@ function SidebarComponent({
   onRemoveWorkspace,
   onSelectFile,
   onSelectWorkspace,
+  terminalDependencyMessage,
+  terminalReady,
   onToggleSidebar,
   onToggleDarkMode,
   sidebarCollapsed,
@@ -181,18 +185,18 @@ function SidebarComponent({
   const activeWorkspacePath = config.workspaces[config.activeWorkspace] ?? null
 
   return (
-    <aside className="glass-panel flex h-full min-w-0 flex-col rounded-[28px]">
-      <div className="border-b border-[color:var(--line)] px-4 pb-4 pt-5">
-        <div className="mb-4 flex items-start justify-between gap-3">
+    <aside className="glass-panel flex h-full min-w-0 flex-col rounded-[10px]">
+      <div className="border-b border-[color:var(--line)] px-5 pb-5 pt-5">
+        <div className="mb-5 space-y-4">
           <div>
-            <div className="text-[11px] uppercase tracking-[0.25em] text-[var(--text-faint)]">
+            <div className="font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] uppercase tracking-[0.24em] text-[var(--text-faint)]">
               Navigator
             </div>
-            <h1 className="mt-2 text-xl font-semibold tracking-tight text-[var(--text)]">
+            <h1 className="mt-3 max-w-[12ch] text-[2.15rem] font-semibold leading-[0.92] tracking-[-0.055em] text-[var(--text)]">
               Collaborator Clone
             </h1>
           </div>
-          <div className="flex items-center justify-end gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
             <ActionIconButton label="Search (Cmd+K)" onClick={onOpenSearch}>
               <SearchIcon />
             </ActionIconButton>
@@ -219,12 +223,12 @@ function SidebarComponent({
           </div>
         </div>
 
-        <div className="space-y-2">
-          <div className="text-[11px] uppercase tracking-[0.25em] text-[var(--text-faint)]">
+        <div className="space-y-3">
+          <div className="font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] uppercase tracking-[0.24em] text-[var(--text-faint)]">
             Workspace
           </div>
           <select
-            className="w-full rounded-2xl border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2.5 text-sm text-[var(--text)] outline-none transition focus:border-[color:var(--accent)]"
+            className="w-full rounded-[8px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-3.5 py-3 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[13px] text-[var(--text)] outline-none transition focus:border-[color:var(--accent)]"
             value={config.activeWorkspace}
             onChange={(event) => onSelectWorkspace(Number(event.target.value))}
             disabled={config.workspaces.length === 0}
@@ -242,14 +246,14 @@ function SidebarComponent({
 
           <div className="flex gap-2">
             <ActionIconButton
-              className="h-10 w-10 rounded-2xl"
+              className="h-10 w-10 rounded-[8px]"
               label="Add Workspace"
               onClick={onAddWorkspace}
             >
               <AddWorkspaceIcon />
             </ActionIconButton>
             <ActionIconButton
-              className="h-10 w-10 rounded-2xl"
+              className="h-10 w-10 rounded-[8px]"
               disabled={!activeWorkspacePath}
               label="New Note"
               onClick={onCreateNote}
@@ -257,8 +261,8 @@ function SidebarComponent({
               <NewNoteIcon />
             </ActionIconButton>
             <ActionIconButton
-              className="h-10 w-10 rounded-2xl"
-              disabled={!activeWorkspacePath}
+              className="h-10 w-10 rounded-[8px]"
+              disabled={!activeWorkspacePath || !terminalReady}
               label="New Terminal"
               onClick={onCreateTerminal}
             >
@@ -266,10 +270,18 @@ function SidebarComponent({
             </ActionIconButton>
           </div>
 
-          <div className="flex items-center justify-between rounded-2xl border border-[color:var(--line)] bg-[var(--surface-1)] px-3 py-3 text-xs text-[var(--text-dim)]">
-            <span className="truncate">{activeWorkspacePath ?? 'Add a folder to start building a spatial workspace.'}</span>
+          {terminalDependencyMessage ? (
+            <div className="rounded-[8px] border border-amber-500/25 bg-[rgba(120,53,15,0.16)] px-3.5 py-3 text-[12px] text-amber-100">
+              {terminalDependencyMessage}
+            </div>
+          ) : null}
+
+          <div className="flex items-center justify-between gap-3 rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-1)] px-3.5 py-3 text-xs text-[var(--text-dim)]">
+            <span className="truncate font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace]">
+              {activeWorkspacePath ?? 'Add a folder to start building a spatial workspace.'}
+            </span>
             <button
-              className="rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-2.5 py-1 text-[11px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="shrink-0 rounded-[7px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-2.5 py-1.5 text-[11px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] disabled:cursor-not-allowed disabled:opacity-40"
               onClick={onRemoveWorkspace}
               disabled={!activeWorkspacePath}
             >
@@ -279,12 +291,14 @@ function SidebarComponent({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-3 py-4">
+      <div className="min-h-0 flex-1 overflow-auto px-4 py-4">
         <div className="mb-3 flex items-center justify-between px-1">
-          <div className="text-[11px] uppercase tracking-[0.25em] text-[var(--text-faint)]">Files</div>
+          <div className="font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] uppercase tracking-[0.24em] text-[var(--text-faint)]">
+            Files
+          </div>
           {loadingWorkspace ? <div className="text-xs text-[var(--text-faint)]">Refreshing…</div> : null}
         </div>
-        <div className="mb-3 rounded-2xl border border-[color:var(--line)] bg-[var(--surface-1)] px-3 py-2 text-xs text-[var(--text-dim)]">
+        <div className="mb-3 rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-1)] px-3.5 py-3 text-xs leading-5 text-[var(--text-dim)]">
           Click a file to preview it. Double-click or press Shift+Enter to open a fresh tile on the canvas.
         </div>
         {activeWorkspacePath ? (
@@ -297,7 +311,7 @@ function SidebarComponent({
             onSelectFile={onSelectFile}
           />
         ) : (
-          <div className="rounded-2xl border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-1)] p-4 text-sm text-[var(--text-dim)]">
+          <div className="rounded-[8px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-1)] p-4 text-sm text-[var(--text-dim)]">
             Add a workspace with <span className="text-[var(--text)]">Cmd+Shift+O</span> to populate
             the navigator.
           </div>

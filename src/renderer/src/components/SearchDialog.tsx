@@ -38,8 +38,8 @@ export function SearchDialog({ files, open, onClose, onSelect }: SearchDialogPro
 
   return (
     <div className="absolute inset-0 z-[300] flex items-start justify-center bg-[color:var(--overlay)] px-6 py-20 backdrop-blur-sm">
-      <div className="glass-panel w-full max-w-2xl rounded-[28px] p-4">
-        <div className="mb-4 text-[11px] uppercase tracking-[0.25em] text-[var(--text-faint)]">
+      <div className="glass-panel w-full max-w-2xl rounded-[10px] p-5">
+        <div className="mb-4 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] uppercase tracking-[0.24em] text-[var(--text-faint)]">
           Workspace Search
         </div>
         <input
@@ -55,26 +55,28 @@ export function SearchDialog({ files, open, onClose, onSelect }: SearchDialogPro
               onSelect(results[0])
             }
           }}
-          className="w-full rounded-2xl border border-[color:var(--line)] bg-[var(--surface-0)] px-4 py-3 text-base text-[var(--text)] outline-none focus:border-[color:var(--accent)]"
+          className="w-full rounded-[8px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-4 py-3 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[15px] text-[var(--text)] outline-none transition focus:border-[color:var(--accent)]"
           placeholder="Search files by name or path"
         />
         <div className="mt-4 max-h-[56vh] space-y-2 overflow-auto">
           {results.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-1)] p-4 text-sm text-[var(--text-dim)]">
+            <div className="rounded-[8px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-1)] p-4 text-sm text-[var(--text-dim)]">
               No files match this query.
             </div>
           ) : (
             results.map((file) => (
               <button
                 key={file.path}
-                className="flex w-full items-start justify-between rounded-2xl border border-[color:var(--line)] bg-[var(--surface-0)] px-4 py-3 text-left transition hover:bg-[var(--surface-1)]"
+                className="flex w-full items-start justify-between gap-4 rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-0)] px-4 py-3 text-left transition hover:border-[color:var(--line-strong)] hover:bg-[var(--surface-1)]"
                 onClick={() => onSelect(file)}
               >
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-[var(--text)]">{file.name}</div>
+                  <div className="truncate font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[13px] font-medium text-[var(--text)]">
+                    {file.name}
+                  </div>
                   <div className="truncate text-xs text-[var(--text-dim)]">{file.path}</div>
                 </div>
-                <div className="rounded-full border border-[color:var(--line)] px-2 py-1 text-[10px] uppercase tracking-[0.25em] text-[var(--text-faint)]">
+                <div className="rounded-[6px] border border-[color:var(--line)] px-2 py-1 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] uppercase tracking-[0.18em] text-[var(--text-faint)]">
                   {file.fileKind}
                 </div>
               </button>

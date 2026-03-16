@@ -29,16 +29,16 @@ function SurfaceFrame({ children, fileKind, onRefresh, status, variant }: Surfac
     <div
       className={clsx(
         'relative flex h-full min-h-0 flex-col bg-[var(--surface-0)]',
-        variant === 'viewer' ? 'rounded-[16px] border border-[color:var(--line)]' : 'rounded-[10px]'
+        variant === 'viewer' ? 'rounded-[10px] border border-[color:var(--line)]' : 'rounded-[8px]'
       )}
     >
       {variant === 'viewer' ? (
-        <div className="flex items-center justify-between border-b border-[color:var(--line)] px-3 py-2 text-[11px] uppercase tracking-[0.2em] text-[var(--text-faint)]">
+        <div className="flex items-center justify-between border-b border-[color:var(--line)] px-3 py-2 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">
           <div>{fileKind === 'note' ? 'Note Surface' : 'Code Surface'}</div>
           <div className="flex items-center gap-2">
             {onRefresh ? (
               <button
-                className="rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-0.5 text-[10px] tracking-[0.16em] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                className="rounded-[6px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-2 py-0.5 text-[10px] tracking-[0.12em] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
                 onClick={onRefresh}
                 title="Refresh file"
               >
@@ -51,7 +51,7 @@ function SurfaceFrame({ children, fileKind, onRefresh, status, variant }: Surfac
       ) : null}
       {variant === 'tile' && onRefresh ? (
         <button
-          className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] text-[12px] text-[var(--text-dim)] shadow-[0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]"
+          className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-[6px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] text-[12px] text-[var(--text-dim)] shadow-[0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]"
           onClick={onRefresh}
           title="Refresh file"
         >
@@ -67,8 +67,8 @@ function LoadingPane({ variant }: { variant: 'tile' | 'viewer' }) {
   return (
     <div
       className={clsx(
-        'flex h-full items-center justify-center rounded-[16px] border border-[color:var(--line)] bg-[var(--surface-0)] text-sm text-[var(--text-dim)]',
-        variant === 'viewer' ? 'rounded-[16px]' : 'rounded-[10px]'
+        'flex h-full items-center justify-center rounded-[10px] border border-[color:var(--line)] bg-[var(--surface-0)] text-sm text-[var(--text-dim)]',
+        variant === 'viewer' ? 'rounded-[10px]' : 'rounded-[8px]'
       )}
     >
       Loading…
@@ -80,8 +80,8 @@ function ErrorPane({ variant }: { variant: 'tile' | 'viewer' }) {
   return (
     <div
       className={clsx(
-        'flex h-full items-center justify-center rounded-[22px] border border-rose-200 bg-rose-50 p-4 text-center text-sm text-rose-700',
-        variant === 'viewer' ? 'rounded-[16px]' : 'rounded-[10px]'
+        'flex h-full items-center justify-center rounded-[10px] border border-rose-200 bg-rose-50 p-4 text-center text-sm text-rose-700',
+        variant === 'viewer' ? 'rounded-[10px]' : 'rounded-[8px]'
       )}
     >
       This file could not be opened. Broken symlinks and deleted files should fail gracefully here.
@@ -240,6 +240,7 @@ function RichNoteEditor({
     <SurfaceFrame fileKind="note" onRefresh={onRefresh} status={status} variant={variant}>
       <div
         className="rich-note-editor min-h-0 flex-1"
+        data-scroll-lock="true"
         onWheel={(event) => {
           if (event.shiftKey && onPassthroughScroll) {
             event.preventDefault()
@@ -410,7 +411,7 @@ function CodeDocumentPane({
         data-scroll-lock="true"
         spellCheck={false}
         className={clsx(
-          'min-h-0 flex-1 bg-transparent leading-6 text-[var(--text)] outline-none',
+          'min-h-0 flex-1 bg-transparent leading-6 text-[var(--text)] outline-none [overscroll-behavior:contain]',
           variant === 'viewer' ? 'px-4 py-4 text-[15px]' : 'px-5 py-4 text-[13px]',
           'font-["IBM_Plex_Mono","SFMono-Regular","Menlo",monospace]'
         )}
@@ -470,12 +471,12 @@ function ImageDocumentPane({
     <div
       className={clsx(
         'relative flex h-full items-center justify-center overflow-hidden bg-[var(--surface-1)]',
-        variant === 'viewer' ? 'rounded-[16px] border border-[color:var(--line)]' : 'rounded-[10px]'
+        variant === 'viewer' ? 'rounded-[10px] border border-[color:var(--line)]' : 'rounded-[8px]'
       )}
     >
       <button
         className={clsx(
-          'absolute z-10 flex h-6 min-w-6 items-center justify-center rounded-full border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-2 text-[11px] text-[var(--text-dim)] shadow-[0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]',
+          'absolute z-10 flex h-6 min-w-6 items-center justify-center rounded-[6px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-2 text-[11px] text-[var(--text-dim)] shadow-[0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]',
           variant === 'viewer' ? 'right-3 top-3' : 'right-2 top-2'
         )}
         onClick={() => setReloadCount((current) => current + 1)}

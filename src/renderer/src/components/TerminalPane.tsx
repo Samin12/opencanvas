@@ -12,25 +12,25 @@ interface TerminalPaneProps {
 function terminalTheme(darkMode: boolean) {
   if (darkMode) {
     return {
-      background: '#111821',
-      foreground: '#d8e1ef',
-      cursor: '#f8fafc',
-      cursorAccent: '#111821',
-      selectionBackground: 'rgba(96, 165, 250, 0.22)',
-      black: '#0f172a',
+      background: '#0d1014',
+      foreground: '#d3d8e3',
+      cursor: '#f4f5f7',
+      cursorAccent: '#0d1014',
+      selectionBackground: 'rgba(120, 136, 160, 0.22)',
+      black: '#090b0d',
       red: '#f87171',
-      green: '#4ade80',
-      yellow: '#fbbf24',
-      blue: '#60a5fa',
-      magenta: '#c084fc',
+      green: '#7dd3a6',
+      yellow: '#facc15',
+      blue: '#7dd3fc',
+      magenta: '#d8b4fe',
       cyan: '#67e8f9',
       white: '#dbe4f0',
-      brightBlack: '#94a3b8',
+      brightBlack: '#7f8ba0',
       brightRed: '#fca5a5',
-      brightGreen: '#86efac',
-      brightYellow: '#fcd34d',
-      brightBlue: '#93c5fd',
-      brightMagenta: '#d8b4fe',
+      brightGreen: '#bbf7d0',
+      brightYellow: '#fde68a',
+      brightBlue: '#bfdbfe',
+      brightMagenta: '#e9d5ff',
       brightCyan: '#a5f3fc',
       brightWhite: '#f8fafc'
     }
@@ -134,13 +134,15 @@ function TerminalPaneComponent({ cwd, darkMode, sessionId }: TerminalPaneProps) 
         setStatus('live')
         fitAddon.fit()
         window.collaborator.resizeTerminalSession(sessionId, terminal.cols, terminal.rows)
-      } catch {
+      } catch (error) {
         if (cancelled) {
           return
         }
 
         setStatus('error')
-        terminal.write('\r\n\x1b[31mUnable to start terminal session.\x1b[0m\r\n')
+        terminal.write(
+          `\r\n\x1b[31m${error instanceof Error ? error.message : 'Unable to start terminal session.'}\x1b[0m\r\n`
+        )
       }
     }
 
@@ -198,12 +200,12 @@ function TerminalPaneComponent({ cwd, darkMode, sessionId }: TerminalPaneProps) 
 
   return (
     <div
-      className="terminal-pane flex h-full flex-col overflow-hidden rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-0)]"
+      className="terminal-pane flex h-full flex-col overflow-hidden rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-0)]"
       data-scroll-lock="true"
       onMouseDown={() => terminalRef.current?.focus()}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <div className="flex items-center justify-between border-b border-[color:var(--line)] px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-[var(--text-faint)]">
+      <div className="flex items-center justify-between border-b border-[color:var(--line)] px-3 py-1.5 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
         <span>Terminal</span>
         <span>
           {status === 'connecting'
