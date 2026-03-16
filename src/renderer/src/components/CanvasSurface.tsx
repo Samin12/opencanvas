@@ -49,10 +49,28 @@ type GestureLikeEvent = Event & {
   preventDefault: () => void
   scale: number
 }
-type DragConnectionState = {
-  currentX: number
-  currentY: number
-  sourceTileId: string
+type DragConnectionState =
+  | {
+      currentX: number
+      currentY: number
+      sourceKind: 'group'
+      sourceGroupId: string
+    }
+  | {
+      currentX: number
+      currentY: number
+      sourceKind: 'tile'
+      sourceTileId: string
+    }
+
+interface FrameContextGroup {
+  containedTiles: CanvasTile[]
+  height: number
+  id: string
+  label: string
+  width: number
+  x: number
+  y: number
 }
 
 type InteractionState =
@@ -231,10 +249,79 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         .filter(isContextSourceTile)
     }
 
+    function frameContextGroups(): FrameContextGroup[] {
+      const editor = editorRef.current
+
+      if (!editor) {
+        return []
+      }
+
+      return editor
+        .getCurrentPageShapes()
+        .filter((shape) => shape.type === 'frame')
+        .flatMap((shape) => {
+          const bounds = editor.getShapePageBounds(shape.id)
+
+          if (!bounds) {
+            return []
+          }
+
+          const containedTiles = stateRef.current.tiles.filter((tile) => {
+            if (!isContextSourceTile(tile)) {
+              return false
+            }
+
+            const centerX = tile.x + tile.width / 2
+            const centerY = tile.y + tile.height / 2
+
+            return (
+              centerX >= bounds.x &&
+              centerX <= bounds.x + bounds.w &&
+              centerY >= bounds.y &&
+              centerY <= bounds.y + bounds.h
+            )
+          })
+
+          if (containedTiles.length === 0) {
+            return []
+          }
+
+          return [
+            {
+              id: shape.id,
+              label:
+                typeof shape.props === 'object' &&
+                shape.props &&
+                'name' in shape.props &&
+                typeof shape.props.name === 'string' &&
+                shape.props.name.trim().length > 0
+                  ? shape.props.name
+                  : 'Group',
+              x: bounds.x,
+              y: bounds.y,
+              width: bounds.w,
+              height: bounds.h,
+              containedTiles
+            }
+          ]
+        })
+    }
+
+    function frameContextGroupById(groupId: string) {
+      return frameContextGroups().find((group) => group.id === groupId) ?? null
+    }
+
     function connectorCenterForTile(tile: CanvasTile) {
       return {
         x: tile.type === 'term' ? tile.x - 10 : tile.x + tile.width + 10,
         y: tile.y + tile.height / 2
+      }
+    }
+
+    function connectorCenterForGroup(group: FrameContextGroup) {
+      return {
+        x: group.x + group.width + 10,
+        y: group.y + group.height / 2
       }
     }
 
@@ -278,22 +365,69 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       setSelectedTileId(tileId)
       setLinkSourceTileId(tileId)
       setActiveDragConnection({
+        sourceKind: 'tile',
         sourceTileId: tileId,
         currentX: x,
         currentY: y
       })
     }
 
-    function attachContextTile(sourceTileId: string, terminalTileId: string) {
-      const sourceTile = tileById(sourceTileId)
-      const terminalTile = tileById(terminalTileId)
+    function beginGroupConnectionDrag(groupId: string, event: ReactPointerEvent<HTMLButtonElement>) {
+      const group = frameContextGroupById(groupId)
 
-      if (!isContextSourceTile(sourceTile) || !terminalTile || terminalTile.type !== 'term') {
+      if (!group) {
+        return
+      }
+
+      const { x, y } = connectorCenterForGroup(group)
+
+      event.stopPropagation()
+      setSelectedTileId(null)
+      setLinkSourceTileId(null)
+      setActiveDragConnection({
+        sourceKind: 'group',
+        sourceGroupId: groupId,
+        currentX: x,
+        currentY: y
+      })
+    }
+
+    function buildClaudeCodeContextPromptForTileIds(sourceTileIds: string[]) {
+      const contextPaths = Array.from(
+        new Set(
+          sourceTileIds
+            .map((sourceTileId) => tileById(sourceTileId))
+            .filter(isContextSourceTile)
+            .map((tile) => tile.filePath)
+            .filter((filePath): filePath is string => typeof filePath === 'string')
+        )
+      )
+
+      if (contextPaths.length === 0) {
+        return ''
+      }
+
+      return [
+        'Use these workspace files as context for this Claude Code session:',
+        '',
+        ...contextPaths.map((filePath) => `- ${filePath}`),
+        '',
+        'Read them before responding and keep them in working context.'
+      ].join('\n')
+    }
+
+    function attachContextTileIds(sourceTileIds: string[], terminalTileId: string) {
+      const terminalTile = tileById(terminalTileId)
+      const validSourceTileIds = sourceTileIds.filter((sourceTileId) =>
+        isContextSourceTile(tileById(sourceTileId))
+      )
+
+      if (validSourceTileIds.length === 0 || !terminalTile || terminalTile.type !== 'term') {
         return
       }
 
       const nextContextTileIds = Array.from(
-        new Set([...(terminalTile.contextTileIds ?? []), sourceTileId])
+        new Set([...(terminalTile.contextTileIds ?? []), ...validSourceTileIds])
       )
 
       updateState(
@@ -310,8 +444,32 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         },
         { immediate: true }
       )
+
+      const prompt = buildClaudeCodeContextPromptForTileIds(nextContextTileIds)
+
+      if (prompt && terminalTile.sessionId) {
+        window.collaborator.writeTerminalInput(terminalTile.sessionId, `${prompt}\n`)
+      }
+
       setSelectedTileId(terminalTileId)
       setLinkSourceTileId(null)
+    }
+
+    function attachContextTile(sourceTileId: string, terminalTileId: string) {
+      attachContextTileIds([sourceTileId], terminalTileId)
+    }
+
+    function attachContextGroup(groupId: string, terminalTileId: string) {
+      const group = frameContextGroupById(groupId)
+
+      if (!group) {
+        return
+      }
+
+      attachContextTileIds(
+        group.containedTiles.map((tile) => tile.id),
+        terminalTileId
+      )
     }
 
     function detachContextTile(terminalTileId: string, sourceTileId: string) {
@@ -331,50 +489,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         },
         { immediate: true }
       )
-    }
-
-    function buildClaudeCodeContextPrompt(terminalTileId: string) {
-      const terminalTile = tileById(terminalTileId)
-
-      if (!terminalTile || terminalTile.type !== 'term') {
-        return ''
-      }
-
-      const contextPaths = Array.from(
-        new Set(
-          contextTilesForTerminal(terminalTile)
-            .map((tile) => tile.filePath)
-            .filter((filePath): filePath is string => typeof filePath === 'string')
-        )
-      )
-
-      if (contextPaths.length === 0) {
-        return ''
-      }
-
-      return [
-        'Use these workspace files as context for this Claude Code session:',
-        '',
-        ...contextPaths.map((filePath) => `- ${filePath}`),
-        '',
-        'Read them before responding and keep them in working context.'
-      ].join('\n')
-    }
-
-    function pasteClaudeCodeContext(terminalTileId: string) {
-      const terminalTile = tileById(terminalTileId)
-
-      if (!terminalTile || terminalTile.type !== 'term' || !terminalTile.sessionId) {
-        return
-      }
-
-      const prompt = buildClaudeCodeContextPrompt(terminalTileId)
-
-      if (!prompt) {
-        return
-      }
-
-      window.collaborator.writeTerminalInput(terminalTile.sessionId, `${prompt}\n`)
     }
 
     function updateState(nextState: CanvasState, options?: { immediate?: boolean }) {
@@ -1046,7 +1160,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           const terminalTileId = terminalConnectorIdFromTarget(event.target)
 
           if (terminalTileId) {
-            attachContextTile(dragConnectionRef.current.sourceTileId, terminalTileId)
+            if (dragConnectionRef.current.sourceKind === 'tile') {
+              attachContextTile(dragConnectionRef.current.sourceTileId, terminalTileId)
+            } else {
+              attachContextGroup(dragConnectionRef.current.sourceGroupId, terminalTileId)
+            }
           } else {
             setLinkSourceTileId(null)
           }
@@ -1149,7 +1267,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         setLinkSourceTileId(null)
       }
 
-      if (dragConnectionRef.current?.sourceTileId === tileId) {
+      if (
+        dragConnectionRef.current?.sourceKind === 'tile' &&
+        dragConnectionRef.current.sourceTileId === tileId
+      ) {
         setActiveDragConnection(null)
       }
     }
@@ -1206,6 +1327,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
     const activeLinkSourceTile = tileById(linkSourceTileId)
     const linkSourceTile = isContextSourceTile(activeLinkSourceTile) ? activeLinkSourceTile : null
+    const frameGroups = frameContextGroups()
     const zoomLabel = `${Math.round(state.viewport.zoom * 100)}%`
     const canZoomIn = state.viewport.zoom < MAX_ZOOM - CAMERA_EPSILON
     const canZoomOut = state.viewport.zoom > MIN_ZOOM + CAMERA_EPSILON
@@ -1295,7 +1417,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 })}
               </div>
               <div className="border-t border-[color:var(--line)] py-2 text-[10px] uppercase tracking-[0.16em] text-[var(--text-faint)]">
-                Drag from a file dot to a terminal dot. Connected files become Claude Code context.
+                Drag from a file or frame dot to a terminal dot. Dropping there sends the grouped
+                file context into Claude.
               </div>
             </div>
           </div>
@@ -1361,13 +1484,23 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               )
             })}
             {dragConnection ? (() => {
-              const sourceTile = tileById(dragConnection.sourceTileId)
+              const start =
+                dragConnection.sourceKind === 'tile'
+                  ? (() => {
+                      const sourceTile = tileById(dragConnection.sourceTileId)
+                      return isContextSourceTile(sourceTile) ? connectorCenterForTile(sourceTile) : null
+                    })()
+                  : (() => {
+                      const sourceGroup = frameGroups.find(
+                        (group) => group.id === dragConnection.sourceGroupId
+                      )
+                      return sourceGroup ? connectorCenterForGroup(sourceGroup) : null
+                    })()
 
-              if (!isContextSourceTile(sourceTile)) {
+              if (!start) {
                 return null
               }
 
-              const start = connectorCenterForTile(sourceTile)
               const end = {
                 x: dragConnection.currentX,
                 y: dragConnection.currentY
@@ -1375,7 +1508,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               const controlOffset = Math.max(80, Math.abs(end.x - start.x) * 0.4)
 
               return (
-                <g key={`drag:${dragConnection.sourceTileId}`}>
+                <g
+                  key={
+                    dragConnection.sourceKind === 'tile'
+                      ? `drag:${dragConnection.sourceTileId}`
+                      : `drag:${dragConnection.sourceGroupId}`
+                  }
+                >
                   <path
                     d={`M ${start.x} ${start.y} C ${start.x + controlOffset} ${start.y}, ${end.x - controlOffset} ${end.y}, ${end.x} ${end.y}`}
                     fill="none"
@@ -1391,6 +1530,33 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             })() : null}
           </svg>
 
+          {frameGroups.map((group) => {
+            const connector = connectorCenterForGroup(group)
+            const isDraggingGroup =
+              dragConnection?.sourceKind === 'group' && dragConnection.sourceGroupId === group.id
+
+            return (
+              <button
+                key={group.id}
+                className={clsx(
+                  'pointer-events-auto absolute z-[205] flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border-2 shadow-[0_0_0_2px_var(--surface-0)] transition',
+                  isDraggingGroup
+                    ? 'border-[color:var(--link-line)] bg-[color:var(--link-line)] scale-110'
+                    : 'border-[color:var(--line-strong)] bg-[var(--surface-0)] hover:border-[color:var(--link-line)] hover:bg-[color:var(--link-line)]'
+                )}
+                style={{
+                  left: connector.x - 10,
+                  top: connector.y
+                }}
+                aria-label={`Attach ${group.label} (${group.containedTiles.length}) to a terminal`}
+                title={`Attach ${group.label} (${group.containedTiles.length}) to a terminal`}
+                onPointerDown={(event) => beginGroupConnectionDrag(group.id, event)}
+              >
+                <span className="pointer-events-none block h-full w-full rounded-full bg-transparent" />
+              </button>
+            )
+          })}
+
           {state.tiles
             .slice()
             .sort((left, right) => left.zIndex - right.zIndex)
@@ -1401,17 +1567,20 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 const isPendingLinkSource = linkSourceTileId === tile.id
                 const connectorLabel =
                   tile.type === 'term'
-                    ? linkSourceTile && linkSourceTile.id !== tile.id
-                      ? `Attach ${linkSourceTile.title} to ${tile.title}`
-                      : contextTiles.length > 0
-                        ? `${tile.title} has linked context`
-                        : `${tile.title} terminal connector`
+                    ? dragConnection?.sourceKind === 'group'
+                      ? `Attach ${frameGroups.find((group) => group.id === dragConnection.sourceGroupId)?.label ?? 'group'} to ${tile.title}`
+                      : linkSourceTile && linkSourceTile.id !== tile.id
+                        ? `Attach ${linkSourceTile.title} to ${tile.title}`
+                        : contextTiles.length > 0
+                          ? `${tile.title} has linked context`
+                          : `${tile.title} terminal connector`
                     : `Connect ${tile.title} to a terminal`
 
                 return (
                   <div
                     key={tile.id}
                     data-tile-root="true"
+                    data-terminal-connector-id={tile.type === 'term' ? tile.id : undefined}
                     className={clsx(
                       'pointer-events-auto absolute overflow-visible rounded-[10px] border bg-[var(--surface-0)] shadow-[0_6px_14px_rgba(15,23,42,0.10)]',
                       selectedTileId === tile.id
@@ -1460,14 +1629,18 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     onClick={(event) => {
                       event.stopPropagation()
 
-                      if (tile.type === 'term' && linkSourceTile && linkSourceTile.id !== tile.id) {
-                        attachContextTile(linkSourceTile.id, tile.id)
+                      if (tile.type === 'term') {
+                        if (linkSourceTile && linkSourceTile.id !== tile.id) {
+                          attachContextTile(linkSourceTile.id, tile.id)
+                        } else if (dragConnection?.sourceKind === 'group') {
+                          attachContextGroup(dragConnection.sourceGroupId, tile.id)
+                          setActiveDragConnection(null)
+                        }
+
                         return
                       }
 
-                      if (tile.type !== 'term') {
-                        toggleLinkMode(tile.id)
-                      }
+                      toggleLinkMode(tile.id)
                     }}
                   />
                 ) : null}
@@ -1545,7 +1718,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                           <div className="text-[11px] text-[var(--text-dim)]">
                             {linkSourceTile
                               ? 'Drop the dragged connector on this terminal dot to attach it.'
-                              : 'Drag a blue dot from a file tile into this terminal to build Claude Code context.'}
+                              : 'Drag a file dot or a frame-group dot into this terminal to build Claude Code context.'}
                           </div>
                         ) : (
                           contextTiles.map((contextTile) => (
@@ -1567,23 +1740,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                             </div>
                           ))
                         )}
-                        <div className="relative ml-auto" onPointerDown={(event) => event.stopPropagation()}>
-                          <button
-                            className="peer flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--line)] bg-[var(--surface-0)] text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
-                            aria-label="Paste linked Claude Code context into the terminal"
-                            disabled={contextTiles.length === 0}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              pasteClaudeCodeContext(tile.id)
-                            }}
-                            title="Paste linked Claude Code context into the terminal"
-                          >
-                            i
-                          </button>
-                          <div className="pointer-events-none absolute bottom-[calc(100%+8px)] right-0 z-30 w-52 rounded-[10px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-2 text-[10px] leading-4 text-[var(--text-dim)] opacity-0 shadow-[0_10px_22px_rgba(15,23,42,0.08)] backdrop-blur transition peer-hover:opacity-100 peer-focus-visible:opacity-100">
-                            Pastes the linked file paths into the terminal so Claude Code can read them as session context.
-                          </div>
-                        </div>
                       </div>
 
                       <div className="min-h-0 flex-1">
