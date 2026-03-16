@@ -135,7 +135,7 @@ textarea {
   position: fixed;
   z-index: 400;
   display: flex;
-  max-width: 20rem;
+  max-width: min(20rem, calc(100vw - 24px));
   align-items: center;
   gap: 0.5rem;
   border: 1px solid var(--line-strong);
@@ -149,11 +149,11 @@ textarea {
 }
 
 .app-tooltip--top {
-  transform: translate(-50%, calc(-100% - 10px));
+  transform: translateY(calc(-100% - 10px));
 }
 
 .app-tooltip--bottom {
-  transform: translate(-50%, 10px);
+  transform: translateY(10px);
 }
 
 .app-tooltip__label {
