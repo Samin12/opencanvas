@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { memo, type ReactNode } from 'react'
 
 import clsx from 'clsx'
 import type { AppConfig, FileTreeNode, SidebarSide } from '@shared/types'
@@ -157,7 +157,7 @@ interface SidebarProps {
   workspaceTree: FileTreeNode[]
 }
 
-export function Sidebar({
+function SidebarComponent({
   activeFilePath,
   config,
   darkMode,
@@ -306,3 +306,15 @@ export function Sidebar({
     </aside>
   )
 }
+
+export const Sidebar = memo(SidebarComponent, (previous, next) => {
+  return (
+    previous.activeFilePath === next.activeFilePath &&
+    previous.config === next.config &&
+    previous.darkMode === next.darkMode &&
+    previous.loadingWorkspace === next.loadingWorkspace &&
+    previous.sidebarCollapsed === next.sidebarCollapsed &&
+    previous.sidebarSide === next.sidebarSide &&
+    previous.workspaceTree === next.workspaceTree
+  )
+})

@@ -492,6 +492,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
 
     function updateState(nextState: CanvasState, options?: { immediate?: boolean }) {
+      stateRef.current = nextState
       onStateChange(nextState, options)
     }
 

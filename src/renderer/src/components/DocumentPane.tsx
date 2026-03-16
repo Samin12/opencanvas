@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { Markdown } from '@tiptap/markdown'
 import { EditorContent, useEditor } from '@tiptap/react'
@@ -488,7 +488,7 @@ function ImageDocumentPane({
   )
 }
 
-export function DocumentPane({
+function DocumentPaneComponent({
   fileKind,
   filePath,
   onPassthroughScroll,
@@ -516,3 +516,11 @@ export function DocumentPane({
     />
   )
 }
+
+export const DocumentPane = memo(DocumentPaneComponent, (previous, next) => {
+  return (
+    previous.fileKind === next.fileKind &&
+    previous.filePath === next.filePath &&
+    previous.variant === next.variant
+  )
+})

@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useRef, useState } from 'react'
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 
 import clsx from 'clsx'
 import type { AppConfig, CanvasState, FileTreeNode, SidebarSide } from '@shared/types'
@@ -58,7 +58,9 @@ function SidebarDockIcon({ side }: { side: SidebarSide }) {
 export default function App() {
   const canvasRef = useRef<CanvasSurfaceHandle>(null)
   const resizeRef = useRef<{ side: SidebarSide; startWidth: number; startX: number } | null>(null)
+  const canvasFrameRef = useRef<number | null>(null)
   const canvasSaveTimerRef = useRef<number | null>(null)
+  const canvasStateRef = useRef<CanvasState | null>(null)
 
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [canvasState, setCanvasState] = useState<CanvasState | null>(null)
@@ -74,7 +76,7 @@ export default function App() {
   const [bootError, setBootError] = useState<string | null>(null)
 
   const activeWorkspace = config ? config.workspaces[config.activeWorkspace] ?? null : null
-  const flatFiles = flattenFiles(workspaceTree)
+  const flatFiles = useMemo(() => flattenFiles(workspaceTree), [workspaceTree])
 
   useEffect(() => {
     let cancelled = false
@@ -89,6 +91,7 @@ export default function App() {
 
         setConfig(payload.config)
         setCanvasState(payload.canvasState)
+        canvasStateRef.current = payload.canvasState
         setSidebarWidth(payload.config.ui.sidebarWidth)
         setDarkMode(payload.config.ui.darkMode)
         setSidebarCollapsed(payload.config.ui.sidebarCollapsed)
@@ -157,24 +160,16 @@ export default function App() {
   }, [darkMode])
 
   useEffect(() => {
-    if (!canvasState) {
-      return
-    }
-
-    if (canvasSaveTimerRef.current !== null) {
-      window.clearTimeout(canvasSaveTimerRef.current)
-    }
-
-    canvasSaveTimerRef.current = window.setTimeout(() => {
-      void window.collaborator.saveCanvasState(canvasState)
-    }, 500)
-
     return () => {
+      if (canvasFrameRef.current !== null) {
+        window.cancelAnimationFrame(canvasFrameRef.current)
+      }
+
       if (canvasSaveTimerRef.current !== null) {
         window.clearTimeout(canvasSaveTimerRef.current)
       }
     }
-  }, [canvasState])
+  }, [])
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -406,10 +401,12 @@ export default function App() {
         setViewerFile(nextNode)
       }
 
-      if (canvasState) {
+      const currentCanvasState = canvasStateRef.current
+
+      if (currentCanvasState) {
         const nextCanvasState: CanvasState = {
-          ...canvasState,
-          tiles: canvasState.tiles.map((tile) =>
+          ...currentCanvasState,
+          tiles: currentCanvasState.tiles.map((tile) =>
             tile.filePath === sourcePath
               ? {
                   ...tile,
@@ -445,12 +442,51 @@ export default function App() {
     })
   }
 
+  function scheduleCanvasSave(nextState: CanvasState, immediate = false) {
+    if (canvasSaveTimerRef.current !== null) {
+      window.clearTimeout(canvasSaveTimerRef.current)
+      canvasSaveTimerRef.current = null
+    }
+
+    if (immediate) {
+      void window.collaborator.saveCanvasState(nextState)
+      return
+    }
+
+    canvasSaveTimerRef.current = window.setTimeout(() => {
+      canvasSaveTimerRef.current = null
+
+      if (canvasStateRef.current) {
+        void window.collaborator.saveCanvasState(canvasStateRef.current)
+      }
+    }, 500)
+  }
+
   function handleCanvasStateChange(nextState: CanvasState, options?: { immediate?: boolean }) {
-    setCanvasState(nextState)
+    canvasStateRef.current = nextState
 
     if (options?.immediate) {
-      void window.collaborator.saveCanvasState(nextState)
+      if (canvasFrameRef.current !== null) {
+        window.cancelAnimationFrame(canvasFrameRef.current)
+        canvasFrameRef.current = null
+      }
+
+      setCanvasState(nextState)
+      scheduleCanvasSave(nextState, true)
+      return
     }
+
+    if (canvasFrameRef.current === null) {
+      canvasFrameRef.current = window.requestAnimationFrame(() => {
+        canvasFrameRef.current = null
+
+        if (canvasStateRef.current) {
+          setCanvasState(canvasStateRef.current)
+        }
+      })
+    }
+
+    scheduleCanvasSave(nextState)
   }
 
   if (bootError) {

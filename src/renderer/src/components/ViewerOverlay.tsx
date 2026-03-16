@@ -1,3 +1,5 @@
+import { memo } from 'react'
+
 import type { FileTreeNode } from '@shared/types'
 
 import { DocumentPane } from './DocumentPane'
@@ -8,7 +10,7 @@ interface ViewerOverlayProps {
   onPlaceOnCanvas: (file: FileTreeNode) => void
 }
 
-export function ViewerOverlay({ file, onClose, onPlaceOnCanvas }: ViewerOverlayProps) {
+function ViewerOverlayComponent({ file, onClose, onPlaceOnCanvas }: ViewerOverlayProps) {
   if (!file) {
     return null
   }
@@ -45,3 +47,7 @@ export function ViewerOverlay({ file, onClose, onPlaceOnCanvas }: ViewerOverlayP
     </aside>
   )
 }
+
+export const ViewerOverlay = memo(ViewerOverlayComponent, (previous, next) => {
+  return previous.file?.path === next.file?.path && previous.file?.fileKind === next.file?.fileKind
+})

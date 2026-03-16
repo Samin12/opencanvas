@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
@@ -61,7 +61,7 @@ function terminalTheme(darkMode: boolean) {
   }
 }
 
-export function TerminalPane({ cwd, darkMode, sessionId }: TerminalPaneProps) {
+function TerminalPaneComponent({ cwd, darkMode, sessionId }: TerminalPaneProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -219,3 +219,11 @@ export function TerminalPane({ cwd, darkMode, sessionId }: TerminalPaneProps) {
     </div>
   )
 }
+
+export const TerminalPane = memo(TerminalPaneComponent, (previous, next) => {
+  return (
+    previous.cwd === next.cwd &&
+    previous.darkMode === next.darkMode &&
+    previous.sessionId === next.sessionId
+  )
+})
