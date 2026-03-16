@@ -357,7 +357,9 @@ textarea {
 
 .markdown-preview li > ul,
 .markdown-preview li > ol {
-  margin: 0.35em 0 0.1em;
+  margin: 0.38em 0 0.08em 0.15em;
+  padding-left: 1.2em;
+  border-left: 1px solid color-mix(in srgb, var(--line-strong) 72%, transparent);
 }
 
 .markdown-preview ul[data-type='taskList'] {
@@ -428,35 +430,40 @@ textarea {
 .markdown-preview li[data-type='taskItem']:has(> div > ul) > div > p:first-child,
 .markdown-preview li[data-type='taskItem']:has(> div > ol) > div > p:first-child {
   position: relative;
+  padding-left: 0.28em;
 }
 
 .markdown-preview li:has(> ul) > p:first-child::before,
 .markdown-preview li:has(> ol) > p:first-child::before,
 .markdown-preview li[data-type='taskItem']:has(> div > ul) > div > p:first-child::before,
 .markdown-preview li[data-type='taskItem']:has(> div > ol) > div > p:first-child::before {
-  content: '▾';
+  content: '';
   position: absolute;
-  left: -1.6em;
-  top: 0.16em;
-  display: grid;
-  width: 0.92rem;
-  height: 0.92rem;
-  place-items: center;
-  border: 1px solid var(--line-strong);
+  left: -1.92em;
+  top: 0.56em;
+  width: 0.62rem;
+  height: 0.62rem;
+  border: 1px solid color-mix(in srgb, var(--text-dim) 22%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-0) 94%, var(--surface-1) 6%);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
-  color: var(--text-faint);
-  font-size: 0.56rem;
-  font-weight: 600;
-  line-height: 1;
+  background:
+    radial-gradient(
+      circle at 50% 50%,
+      color-mix(in srgb, var(--surface-0) 92%, white 8%) 0 1.45px,
+      color-mix(in srgb, var(--text-dim) 82%, black 4%) 1.5px 100%
+    );
+  box-shadow: 0 0 0 3px var(--surface-0);
 }
 
 .markdown-preview li[data-collapsed='true']:has(> ul) > p:first-child::before,
 .markdown-preview li[data-collapsed='true']:has(> ol) > p:first-child::before,
 .markdown-preview li[data-type='taskItem'][data-collapsed='true']:has(> div > ul) > div > p:first-child::before,
 .markdown-preview li[data-type='taskItem'][data-collapsed='true']:has(> div > ol) > div > p:first-child::before {
-  content: '▸';
+  background:
+    radial-gradient(
+      circle at 50% 50%,
+      color-mix(in srgb, var(--surface-0) 92%, white 8%) 0 1.45px,
+      color-mix(in srgb, var(--text-dim) 82%, black 4%) 1.5px 100%
+    );
 }
 
 .markdown-preview li + li {
