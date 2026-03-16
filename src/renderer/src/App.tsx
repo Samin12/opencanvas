@@ -205,7 +205,10 @@ export default function App() {
         return
       }
 
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        (event.key.toLowerCase() === 'k' || event.key.toLowerCase() === 'o')
+      ) {
         event.preventDefault()
         setSearchOpen(true)
         return
@@ -609,7 +612,7 @@ export default function App() {
         )}
 
         <main className="relative min-w-0 flex-1">
-          {sidebarCollapsed ? (
+          {sidebarCollapsed && !viewerFile ? (
             <div
               className={clsx(
                 'glass-panel absolute top-3 z-[270] flex items-center gap-1 rounded-[10px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] p-1.5',

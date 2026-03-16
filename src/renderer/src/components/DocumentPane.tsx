@@ -25,27 +25,35 @@ interface SurfaceFrameProps {
 }
 
 function SurfaceFrame({ children, fileKind, onRefresh, status, variant }: SurfaceFrameProps) {
+  const statusLabel = status === 'saving' ? 'Saving' : 'Synced'
+
   return (
     <div
       className={clsx(
         'relative flex h-full min-h-0 flex-col bg-[var(--surface-0)]',
-        variant === 'viewer' ? 'rounded-[10px] border border-[color:var(--line)]' : 'rounded-[8px]'
+        variant === 'viewer'
+          ? 'overflow-hidden rounded-[12px] border border-[color:var(--line)] shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]'
+          : 'rounded-[8px]'
       )}
     >
       {variant === 'viewer' ? (
-        <div className="flex items-center justify-between border-b border-[color:var(--line)] px-3 py-2 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[11px] uppercase tracking-[0.18em] text-[var(--text-faint)]">
-          <div>{fileKind === 'note' ? 'Note Surface' : 'Code Surface'}</div>
+        <div className="flex items-center justify-between border-b border-[color:var(--line)] bg-[color:var(--surface-1)]/82 px-4 py-3">
+          <div className="font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
+            {fileKind === 'note' ? 'Note Surface' : 'Code Surface'}
+          </div>
           <div className="flex items-center gap-2">
             {onRefresh ? (
               <button
-                className="rounded-[6px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-2 py-0.5 text-[10px] tracking-[0.12em] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                className="rounded-[8px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-3 py-1 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] uppercase tracking-[0.12em] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
                 onClick={onRefresh}
                 title="Refresh file"
               >
                 Refresh
               </button>
             ) : null}
-            <span>{status === 'saving' ? 'Saving' : 'Live file'}</span>
+            <div className="rounded-[999px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2.5 py-1 font-['IBM_Plex_Mono','SFMono-Regular','Menlo',monospace] text-[10px] uppercase tracking-[0.12em] text-[var(--text-dim)]">
+              {statusLabel}
+            </div>
           </div>
         </div>
       ) : null}
@@ -216,6 +224,7 @@ function RichNoteEditor({
             'markdown-preview rich-note-editor__content h-full w-full text-[var(--text)] outline-none',
             variant === 'viewer' ? 'px-6 py-5 text-[16px]' : 'px-5 py-4 text-[13px]'
           ),
+          'data-scroll-lock': 'true',
           spellcheck: 'true'
         },
         handleDOMEvents: {
@@ -240,7 +249,6 @@ function RichNoteEditor({
     <SurfaceFrame fileKind="note" onRefresh={onRefresh} status={status} variant={variant}>
       <div
         className="rich-note-editor min-h-0 flex-1"
-        data-scroll-lock="true"
         onWheel={(event) => {
           if (event.shiftKey && onPassthroughScroll) {
             event.preventDefault()
