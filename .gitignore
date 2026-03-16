@@ -3,5 +3,7 @@ out
 output
 .playwright-cli
 .electron-dev
+build
+release
 .DS_Store
 npm-debug.log*

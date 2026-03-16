@@ -16,6 +16,11 @@ let mainWindow: AppWindow | null = null
 
 type NativeInputEvent = Electron.InputEvent & Record<string, unknown>
 
+function bundledResourcePath(...segments: string[]) {
+  const basePath = app.isPackaged ? process.resourcesPath : app.getAppPath()
+  return join(basePath, ...segments)
+}
+
 function readNumericField(
   input: NativeInputEvent,
   fieldNames: string[]
@@ -70,7 +75,7 @@ function toCanvasPinchPayload(
 
 async function createMainWindow(): Promise<void> {
   const config = await loadConfig()
-  const iconPath = join(app.getAppPath(), 'resources', 'claude-canvas-icon.png')
+  const iconPath = bundledResourcePath('resources', 'claude-canvas-icon.png')
 
   mainWindow = new BrowserWindow({
     x: config.windowState.x,
@@ -140,7 +145,7 @@ async function createMainWindow(): Promise<void> {
 app.whenReady().then(async () => {
   if (process.platform === 'darwin' && app.dock) {
     const dockIcon = electron.nativeImage.createFromPath(
-      join(app.getAppPath(), 'resources', 'claude-canvas-icon.png')
+      bundledResourcePath('resources', 'claude-canvas-icon.png')
     )
 
     if (!dockIcon.isEmpty()) {

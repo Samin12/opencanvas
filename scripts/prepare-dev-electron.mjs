@@ -10,10 +10,20 @@ if (process.platform !== 'darwin') {
 }
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const electronApp = resolve(projectRoot, 'node_modules/electron/dist/Electron.app')
+const distDirectory = resolve(projectRoot, 'node_modules/electron/dist')
+const stockBundleName = 'Electron.app'
+const renamedBundleName = `${APP_NAME}.app`
+const stockElectronApp = resolve(distDirectory, stockBundleName)
+const renamedElectronApp = resolve(distDirectory, renamedBundleName)
+const electronPathFile = resolve(projectRoot, 'node_modules/electron/path.txt')
+
+if (!existsSync(renamedElectronApp) && existsSync(stockElectronApp)) {
+  renameSync(stockElectronApp, renamedElectronApp)
+}
+
+const electronApp = existsSync(renamedElectronApp) ? renamedElectronApp : stockElectronApp
 const infoPlist = join(electronApp, 'Contents/Info.plist')
 const executableDir = join(electronApp, 'Contents/MacOS')
-const electronPathFile = resolve(projectRoot, 'node_modules/electron/path.txt')
 const stockExecutablePath = join(executableDir, 'Electron')
 const renamedExecutablePath = join(executableDir, APP_NAME)
 
@@ -50,4 +60,4 @@ for (const [key, value] of plistUpdates) {
   }
 }
 
-writeFileSync(electronPathFile, `Electron.app/Contents/MacOS/${APP_NAME}`)
+writeFileSync(electronPathFile, `${renamedBundleName}/Contents/MacOS/${APP_NAME}`)
