@@ -4,6 +4,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 
 import { pathToFileURL } from 'node:url'
 
 import type {
+  CreateWorkspaceNoteOptions,
   FileKind,
   FileTreeNode,
   ImageAssetData,
@@ -310,10 +311,10 @@ export function subscribeToFileChanges(filePath: string, listener: () => void): 
 
 export async function createWorkspaceNote(
   workspacePath: string,
-  targetDirectoryPath = workspacePath
+  options: CreateWorkspaceNoteOptions = {}
 ): Promise<FileTreeNode> {
   const resolvedWorkspacePath = resolve(workspacePath)
-  const resolvedTargetDirectoryPath = resolve(targetDirectoryPath)
+  const resolvedTargetDirectoryPath = resolve(options.targetDirectoryPath ?? workspacePath)
 
   if (!isWithinWorkspace(resolvedWorkspacePath, resolvedTargetDirectoryPath)) {
     throw new Error('Note target is outside the active workspace')
@@ -325,9 +326,13 @@ export async function createWorkspaceNote(
     throw new Error('Note target must be a directory')
   }
 
-  const targetPath = await createUniquePath(resolvedTargetDirectoryPath, 'Untitled', '.md')
+  const baseName = (options.baseName ?? 'Untitled')
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || 'Untitled'
+  const targetPath = await createUniquePath(resolvedTargetDirectoryPath, baseName, '.md')
 
-  await writeTextFileDocument(targetPath, '')
+  await writeTextFileDocument(targetPath, options.initialContent ?? '')
 
   return ensureFileNode(targetPath)
 }

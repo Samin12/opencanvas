@@ -590,17 +590,21 @@ export default function App() {
     canvasRef.current?.spawnFileTile(nextNode)
   }
 
-  async function createWorkspaceMarkdownNote(initialContent = ''): Promise<FileTreeNode | null> {
-    if (!activeWorkspace || !noteTargetPath) {
+  async function createWorkspaceMarkdownNote(options?: {
+    baseName?: string
+    initialContent?: string
+    targetDirectoryPath?: string
+  }): Promise<FileTreeNode | null> {
+    if (!activeWorkspace) {
       return null
     }
 
     try {
-      const createdNode = await window.collaborator.createWorkspaceNote(activeWorkspace, noteTargetPath)
-
-      if (initialContent.length > 0) {
-        await window.collaborator.writeTextFile(createdNode.path, initialContent)
-      }
+      const createdNode = await window.collaborator.createWorkspaceNote(activeWorkspace, {
+        baseName: options?.baseName,
+        initialContent: options?.initialContent,
+        targetDirectoryPath: options?.targetDirectoryPath ?? noteTargetPath ?? activeWorkspace
+      })
 
       const nextTree = await refreshWorkspaceTree(activeWorkspace)
       const nextNode = findNodeByPath(nextTree, createdNode.path) ?? createdNode
@@ -954,8 +958,13 @@ export default function App() {
             activeWorkspacePath={activeWorkspace}
             darkMode={darkMode}
             ref={canvasRef}
+            onCreateMarkdownCard={({ baseName, initialContent }) =>
+              createWorkspaceMarkdownNote({ baseName, initialContent })
+            }
             onCreateMarkdownNote={() => void createMarkdownNote()}
-            onConvertStickyNoteToMarkdown={(content) => createWorkspaceMarkdownNote(content)}
+            onConvertStickyNoteToMarkdown={(content) =>
+              createWorkspaceMarkdownNote({ initialContent: content })
+            }
             onImportImageFile={importWorkspaceImageFile}
             onOpenFile={previewFile}
             onStateChange={handleCanvasStateChange}

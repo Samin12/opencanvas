@@ -86,6 +86,12 @@ export interface WorkspaceImageImport {
   mimeType?: string | null
 }
 
+export interface CreateWorkspaceNoteOptions {
+  baseName?: string
+  initialContent?: string
+  targetDirectoryPath?: string
+}
+
 export interface TerminalDependencyState {
   claudeCommand: string
   claudeInstalled: boolean
@@ -96,6 +102,32 @@ export interface TerminalSessionSnapshot {
   buffer: string
   cwd: string
   sessionId: string
+}
+
+export type TerminalUiMode = 'chat' | 'shell'
+
+export type TerminalActivityKind =
+  | 'task'
+  | 'read'
+  | 'write'
+  | 'output'
+  | 'status'
+  | 'error'
+  | 'exit'
+  | 'message'
+
+export type TerminalActivityState = 'info' | 'working' | 'success' | 'error'
+
+export interface TerminalActivityItem {
+  body: string
+  createdAt: number
+  filePath?: string
+  id: string
+  kind: TerminalActivityKind
+  outputPath?: string
+  rawText: string
+  state: TerminalActivityState
+  title: string
 }
 
 export interface CanvasPinchPayload {
@@ -113,7 +145,10 @@ export interface CollaboratorApi {
   copyTextToClipboard: (text: string) => Promise<void>
   openPath: (targetPath: string) => Promise<void>
   pickWorkspaceDirectory: () => Promise<string | null>
-  createWorkspaceNote: (workspacePath: string, targetDirectoryPath?: string) => Promise<FileTreeNode>
+  createWorkspaceNote: (
+    workspacePath: string,
+    options?: CreateWorkspaceNoteOptions
+  ) => Promise<FileTreeNode>
   importWorkspaceImage: (
     workspacePath: string,
     image: WorkspaceImageImport
@@ -135,7 +170,12 @@ export interface CollaboratorApi {
     rows: number
     sessionId: string
   }) => Promise<TerminalSessionSnapshot>
+  readTerminalActivity: (sessionId: string) => Promise<TerminalActivityItem[]>
   readTerminalHistory: (sessionId: string, limit?: number) => Promise<string>
+  onTerminalActivity: (
+    sessionId: string,
+    listener: (activity: TerminalActivityItem) => void
+  ) => () => void
   onTerminalData: (sessionId: string, listener: (data: string) => void) => () => void
   onTerminalExit: (
     sessionId: string,

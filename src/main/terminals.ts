@@ -6,15 +6,22 @@ import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import type { TerminalDependencyState, TerminalSessionSnapshot } from '../shared/types'
+import type {
+  TerminalActivityItem,
+  TerminalActivityState,
+  TerminalDependencyState,
+  TerminalSessionSnapshot
+} from '../shared/types'
 import { APP_DIRECTORY } from './storage'
 
 const { app, webContents } = electron
 const require = createRequire(import.meta.url)
 
 const MAX_BUFFER_SIZE = 2_000_000
+const MAX_ACTIVITY_ITEMS = 240
+const ACTIVITY_REPLAY_SUPPRESSION_MS = 1_500
 const TMUX_HISTORY_LIMIT = '50000'
-const TMUX_SOCKET_NAME = 'collaborator-clone'
+const TMUX_SOCKET_NAME = process.env.OPEN_CANVAS_TMUX_SOCKET?.trim() || 'collaborator-clone'
 const TERMINAL_SESSIONS_DIRECTORY = join(APP_DIRECTORY, 'terminal-sessions')
 const TMUX_CONFIG_PATH = join(APP_DIRECTORY, 'tmux.conf')
 const CLAUDE_START_COMMAND = process.env.COLLABORATOR_CLAUDE_COMMAND ?? 'claude'
@@ -43,9 +50,19 @@ set -g extended-keys on
 `
 }
 
+interface TerminalActivityParserState {
+  nextId: number
+  pendingBlockLines: string[] | null
+  pendingText: string
+  replaySuppressionCounts: Map<string, number>
+  replaySuppressionUntil: number
+}
+
 interface ManagedTerminalSession {
+  activities: TerminalActivityItem[]
   buffer: string
   cwd: string
+  parser: TerminalActivityParserState
   pty: nodePty.IPty
   sessionId: string
   tmuxSessionName: string
@@ -77,6 +94,409 @@ function appendToBuffer(buffer: string, chunk: string): string {
   }
 
   return nextBuffer.slice(nextBuffer.length - MAX_BUFFER_SIZE)
+}
+
+function stripAnsi(text: string): string {
+  return text.replace(
+    // Strip common CSI/OSC/DCS terminal escapes before activity parsing.
+    /\u001B(?:\][^\u0007]*(?:\u0007|\u001B\\)|P[\s\S]*?\u001B\\|[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g,
+    ''
+  )
+}
+
+function normalizeTerminalText(text: string): string {
+  return stripAnsi(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+}
+
+function makeParserState(): TerminalActivityParserState {
+  return {
+    nextId: 1,
+    pendingBlockLines: null,
+    pendingText: '',
+    replaySuppressionCounts: new Map(),
+    replaySuppressionUntil: 0
+  }
+}
+
+function activityStateForStatus(status: string | null): TerminalActivityState {
+  const normalizedStatus = status?.trim().toLowerCase() ?? ''
+
+  if (
+    normalizedStatus.includes('fail') ||
+    normalizedStatus.includes('error') ||
+    normalizedStatus.includes('killed')
+  ) {
+    return 'error'
+  }
+
+  if (
+    normalizedStatus.includes('done') ||
+    normalizedStatus.includes('complete') ||
+    normalizedStatus.includes('success')
+  ) {
+    return 'success'
+  }
+
+  if (normalizedStatus.length > 0) {
+    return 'working'
+  }
+
+  return 'info'
+}
+
+function extractTaggedValue(block: string, tagName: string): string | undefined {
+  const match = block.match(new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, 'i'))
+  const value = match?.[1]?.trim()
+  return value && value.length > 0 ? value : undefined
+}
+
+function capitalize(value: string): string {
+  if (value.length === 0) {
+    return value
+  }
+
+  return `${value[0].toUpperCase()}${value.slice(1)}`
+}
+
+function readLikePath(value: string): string | undefined {
+  const trimmed = value.trim()
+
+  if (trimmed.length === 0) {
+    return undefined
+  }
+
+  if (
+    trimmed.startsWith('/') ||
+    trimmed.startsWith('./') ||
+    trimmed.startsWith('../') ||
+    trimmed.includes('.')
+  ) {
+    return trimmed
+  }
+
+  return undefined
+}
+
+function parseTaskNotification(block: string) {
+  const summary = extractTaggedValue(block, 'summary')
+  const status = extractTaggedValue(block, 'status')
+  const outputPath = extractTaggedValue(block, 'output-file')
+  const toolUse = extractTaggedValue(block, 'tool-use')
+  const taskId = extractTaggedValue(block, 'task-id')
+  const state = activityStateForStatus(status ?? null)
+  const statusLabel = status ? capitalize(status) : 'Update'
+  const title =
+    summary ??
+    (outputPath ? `${statusLabel}: output ready` : taskId ? `${statusLabel}: ${taskId}` : statusLabel)
+  const body = [
+    summary,
+    toolUse ? `Tool: ${toolUse}` : null,
+    outputPath ? `Output: ${outputPath}` : null,
+    status ? `Status: ${status}` : null
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join('\n')
+
+  return {
+    body,
+    filePath: outputPath,
+    item: {
+      body,
+      kind: outputPath ? ('output' as const) : ('task' as const),
+      outputPath,
+      rawText: block.trim(),
+      state,
+      title
+    },
+    key: `task:${taskId ?? summary ?? block.trim()}`
+  }
+}
+
+function parseLineActivity(line: string) {
+  const trimmed = line.trim()
+
+  if (trimmed.length === 0) {
+    return null
+  }
+
+  const readMatch = trimmed.match(/^Read\s+(.+)$/i)
+
+  if (readMatch) {
+    const filePath = readLikePath(readMatch[1] ?? '')
+    return {
+      body: trimmed,
+      filePath,
+      item: {
+        body: trimmed,
+        kind: 'read' as const,
+        rawText: trimmed,
+        state: 'info' as const,
+        title: filePath ? `Read ${filePath}` : 'Read'
+      },
+      key: `read:${trimmed}`
+    }
+  }
+
+  const actionMatch = trimmed.match(/^(Write|Update)\((.+?)\)/i)
+
+  if (actionMatch) {
+    const filePath = readLikePath(actionMatch[2] ?? '')
+    return {
+      body: trimmed,
+      filePath,
+      item: {
+        body: trimmed,
+        kind: 'write' as const,
+        rawText: trimmed,
+        state: 'working' as const,
+        title: filePath ? `${capitalize(actionMatch[1] ?? 'Write')} ${filePath}` : trimmed
+      },
+      key: `write:${trimmed}`
+    }
+  }
+
+  const exitMatch = trimmed.match(/^Exit code\s+(-?\d+)/i)
+
+  if (exitMatch) {
+    const exitCode = Number.parseInt(exitMatch[1] ?? '0', 10)
+    return {
+      body: trimmed,
+      item: {
+        body: trimmed,
+        kind: 'exit' as const,
+        rawText: trimmed,
+        state: exitCode === 0 ? ('success' as const) : ('error' as const),
+        title: exitCode === 0 ? 'Command exited successfully' : `Command exited with code ${exitCode}`
+      },
+      key: `exit:${trimmed}`
+    }
+  }
+
+  if (/error/i.test(trimmed) || /failed/i.test(trimmed)) {
+    return {
+      body: trimmed,
+      item: {
+        body: trimmed,
+        kind: 'error' as const,
+        rawText: trimmed,
+        state: 'error' as const,
+        title: trimmed
+      },
+      key: `error:${trimmed}`
+    }
+  }
+
+  if (/^Done\./.test(trimmed) || /^\*\s+/.test(trimmed)) {
+    return {
+      body: trimmed,
+      item: {
+        body: trimmed,
+        kind: 'status' as const,
+        rawText: trimmed,
+        state: 'success' as const,
+        title: trimmed
+      },
+      key: `status:${trimmed}`
+    }
+  }
+
+  return null
+}
+
+function pushActivity(
+  session: ManagedTerminalSession,
+  parsed: {
+    body: string
+    filePath?: string
+    item: Omit<TerminalActivityItem, 'createdAt' | 'filePath' | 'id'>
+    key: string
+  },
+  shouldBroadcast: boolean
+): void {
+  const now = Date.now()
+
+  if (session.parser.replaySuppressionUntil > now) {
+    const remaining = session.parser.replaySuppressionCounts.get(parsed.key) ?? 0
+
+    if (remaining > 0) {
+      if (remaining === 1) {
+        session.parser.replaySuppressionCounts.delete(parsed.key)
+      } else {
+        session.parser.replaySuppressionCounts.set(parsed.key, remaining - 1)
+      }
+
+      return
+    }
+  }
+
+  const activity: TerminalActivityItem = {
+    ...parsed.item,
+    createdAt: now,
+    filePath: parsed.filePath,
+    id: `${session.sessionId}-activity-${session.parser.nextId++}`
+  }
+
+  session.activities = [...session.activities.slice(-(MAX_ACTIVITY_ITEMS - 1)), activity]
+
+  if (shouldBroadcast) {
+    broadcast(`terminal:activity:${session.sessionId}`, activity)
+  }
+}
+
+function processNormalizedLine(
+  session: ManagedTerminalSession,
+  line: string,
+  shouldBroadcast: boolean
+): void {
+  if (session.parser.pendingBlockLines) {
+    session.parser.pendingBlockLines.push(line)
+
+    if (line.includes('</task-notification>')) {
+      const block = session.parser.pendingBlockLines.join('\n')
+      session.parser.pendingBlockLines = null
+      pushActivity(session, parseTaskNotification(block), shouldBroadcast)
+    }
+
+    return
+  }
+
+  if (line.includes('<task-notification>')) {
+    if (line.includes('</task-notification>')) {
+      pushActivity(session, parseTaskNotification(line), shouldBroadcast)
+      return
+    }
+
+    session.parser.pendingBlockLines = [line]
+    return
+  }
+
+  const parsed = parseLineActivity(line)
+
+  if (parsed) {
+    pushActivity(session, parsed, shouldBroadcast)
+  }
+}
+
+function ingestTerminalText(
+  session: ManagedTerminalSession,
+  text: string,
+  shouldBroadcast: boolean
+): void {
+  session.parser.pendingText += normalizeTerminalText(text)
+  const lines = session.parser.pendingText.split('\n')
+  session.parser.pendingText = lines.pop() ?? ''
+
+  for (const line of lines) {
+    processNormalizedLine(session, line, shouldBroadcast)
+  }
+}
+
+function readTerminalHistoryForTmuxSession(
+  tmuxSessionName: string,
+  fallback = '',
+  limit = 50_000
+): string {
+  const tmuxBinary = resolveTmuxBinary()
+
+  if (!tmuxBinary) {
+    return fallback
+  }
+
+  const result = spawnSync(
+    tmuxBinary,
+    [
+      ...tmuxBaseArgs(resolveTmuxDefaultTerminal()),
+      'capture-pane',
+      '-p',
+      '-J',
+      '-S',
+      `-${Math.max(1, Math.floor(limit))}`,
+      '-t',
+      tmuxTargetForSession(tmuxSessionName)
+    ],
+    {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore']
+    }
+  )
+
+  if (result.status !== 0) {
+    return fallback
+  }
+
+  return result.stdout
+}
+
+function initializeSessionActivities(session: ManagedTerminalSession): void {
+  session.activities = []
+  session.parser = makeParserState()
+
+  const history = readTerminalHistoryForTmuxSession(session.tmuxSessionName, session.buffer)
+
+  if (history.length === 0) {
+    return
+  }
+
+  const counts = new Map<string, number>()
+  const originalPushActivity = pushActivity
+
+  const capturePush = (
+    targetSession: ManagedTerminalSession,
+    parsed: {
+      body: string
+      filePath?: string
+      item: Omit<TerminalActivityItem, 'createdAt' | 'filePath' | 'id'>
+      key: string
+    },
+    shouldBroadcast: boolean
+  ) => {
+    counts.set(parsed.key, (counts.get(parsed.key) ?? 0) + 1)
+    originalPushActivity(targetSession, parsed, shouldBroadcast)
+  }
+
+  const lines = normalizeTerminalText(history)
+  session.parser.pendingText += lines
+  const resolvedLines = session.parser.pendingText.split('\n')
+  session.parser.pendingText = ''
+
+  for (const line of resolvedLines) {
+    if (line.length === 0) {
+      continue
+    }
+
+    if (session.parser.pendingBlockLines) {
+      session.parser.pendingBlockLines.push(line)
+
+      if (line.includes('</task-notification>')) {
+        const block = session.parser.pendingBlockLines.join('\n')
+        session.parser.pendingBlockLines = null
+        capturePush(session, parseTaskNotification(block), false)
+      }
+
+      continue
+    }
+
+    if (line.includes('<task-notification>')) {
+      if (line.includes('</task-notification>')) {
+        capturePush(session, parseTaskNotification(line), false)
+      } else {
+        session.parser.pendingBlockLines = [line]
+      }
+
+      continue
+    }
+
+    const parsed = parseLineActivity(line)
+
+    if (parsed) {
+      capturePush(session, parsed, false)
+    }
+  }
+
+  session.parser.pendingBlockLines = null
+  session.parser.pendingText = ''
+  session.parser.replaySuppressionCounts = counts
+  session.parser.replaySuppressionUntil = Date.now() + ACTIVITY_REPLAY_SUPPRESSION_MS
 }
 
 function defaultShell(): string {
@@ -360,17 +780,21 @@ export function createOrAttachTerminalSession(options: {
   )
 
   const session: ManagedTerminalSession = {
+    activities: [],
     sessionId: options.sessionId,
     cwd,
     buffer: '',
+    parser: makeParserState(),
     pty,
     tmuxSessionName
   }
 
   persistTerminalSessionMeta(session)
+  initializeSessionActivities(session)
 
   pty.onData((data) => {
     session.buffer = appendToBuffer(session.buffer, data)
+    ingestTerminalText(session, data, true)
     broadcast(`terminal:data:${session.sessionId}`, data)
   })
 
@@ -424,6 +848,33 @@ export function writeTerminalInput(sessionId: string, data: string): void {
   session.pty.write(data)
 }
 
+export function readTerminalActivity(sessionId: string): TerminalActivityItem[] {
+  const session = sessions.get(sessionId)
+
+  if (session) {
+    return session.activities
+  }
+
+  const persisted = readPersistedTerminalSession(sessionId)
+
+  if (!persisted) {
+    return []
+  }
+
+  const hydratedSession: ManagedTerminalSession = {
+    activities: [],
+    buffer: '',
+    cwd: persisted.cwd,
+    parser: makeParserState(),
+    pty: null as unknown as nodePty.IPty,
+    sessionId: persisted.sessionId,
+    tmuxSessionName: persisted.tmuxSessionName
+  }
+
+  initializeSessionActivities(hydratedSession)
+  return hydratedSession.activities
+}
+
 export function readTerminalHistory(sessionId: string, limit = 50_000): string {
   const activeSession = sessions.get(sessionId)
   const persisted = readPersistedTerminalSession(sessionId)
@@ -433,35 +884,7 @@ export function readTerminalHistory(sessionId: string, limit = 50_000): string {
     return activeSession?.buffer ?? ''
   }
 
-  const tmuxBinary = resolveTmuxBinary()
-
-  if (!tmuxBinary) {
-    return activeSession?.buffer ?? ''
-  }
-
-  const result = spawnSync(
-    tmuxBinary,
-    [
-      ...tmuxBaseArgs(resolveTmuxDefaultTerminal()),
-      'capture-pane',
-      '-p',
-      '-J',
-      '-S',
-      `-${Math.max(1, Math.floor(limit))}`,
-      '-t',
-      tmuxTargetForSession(tmuxSessionName)
-    ],
-    {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore']
-    }
-  )
-
-  if (result.status !== 0) {
-    return activeSession?.buffer ?? ''
-  }
-
-  return result.stdout
+  return readTerminalHistoryForTmuxSession(tmuxSessionName, activeSession?.buffer ?? '', limit)
 }
 
 export function releaseTerminalSession(sessionId: string): void {

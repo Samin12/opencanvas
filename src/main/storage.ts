@@ -4,7 +4,10 @@ import { dirname, join } from 'node:path'
 
 import type { AppConfig, CanvasState, WindowState } from '../shared/types'
 
-export const APP_DIRECTORY = join(homedir(), '.collaborator-clone')
+export const APP_DIRECTORY =
+  process.env.OPEN_CANVAS_APP_DIRECTORY && process.env.OPEN_CANVAS_APP_DIRECTORY.trim().length > 0
+    ? process.env.OPEN_CANVAS_APP_DIRECTORY
+    : join(homedir(), '.collaborator-clone')
 const CONFIG_PATH = join(APP_DIRECTORY, 'config.json')
 const CANVAS_STATE_PATH = join(APP_DIRECTORY, 'canvas-state.json')
 

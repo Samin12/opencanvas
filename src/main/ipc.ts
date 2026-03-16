@@ -2,11 +2,12 @@ import * as electron from 'electron'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import type { AppConfig, CanvasState, WorkspaceImageImport } from '../shared/types'
+import type { AppConfig, CanvasState, CreateWorkspaceNoteOptions, WorkspaceImageImport } from '../shared/types'
 
 import { loadCanvasState, loadConfig, saveCanvasState, saveConfig } from './storage'
 import {
   createOrAttachTerminalSession,
+  readTerminalActivity,
   readTerminalHistory,
   readTerminalDependencyState,
   releaseTerminalSession,
@@ -81,8 +82,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('workspace:tree', async (_event, workspacePath: string) => readWorkspaceTree(workspacePath))
   ipcMain.handle(
     'workspace:create-note',
-    async (_event, workspacePath: string, targetDirectoryPath?: string) =>
-      createWorkspaceNote(workspacePath, targetDirectoryPath)
+    async (_event, workspacePath: string, options?: CreateWorkspaceNoteOptions) =>
+      createWorkspaceNote(workspacePath, options)
   )
   ipcMain.handle(
     'workspace:import-image',
@@ -138,6 +139,7 @@ export function registerIpcHandlers(): void {
     async (_event, options: { cols: number; cwd?: string; rows: number; sessionId: string }) =>
       createOrAttachTerminalSession(options)
   )
+  ipcMain.handle('terminal:activity', async (_event, sessionId: string) => readTerminalActivity(sessionId))
   ipcMain.handle('terminal:history', async (_event, sessionId: string, limit?: number) =>
     readTerminalHistory(sessionId, limit)
   )

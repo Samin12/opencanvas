@@ -7,7 +7,8 @@ import { loadConfig, saveConfig } from './storage'
 
 const { app, BrowserWindow, screen } = electron
 type AppWindow = InstanceType<typeof BrowserWindow>
-const APP_NAME = 'Open Canvas'
+const INSTANCE_LABEL = process.env.OPEN_CANVAS_INSTANCE_LABEL?.trim()
+const APP_NAME = INSTANCE_LABEL ? `Open Canvas (${INSTANCE_LABEL})` : 'Open Canvas'
 
 app.setName(APP_NAME)
 

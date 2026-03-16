@@ -26,7 +26,8 @@ import type {
   CanvasState,
   CanvasTile,
   FileKind,
-  FileTreeNode
+  FileTreeNode,
+  TerminalUiMode
 } from '@shared/types'
 
 import { DocumentPane } from './DocumentPane'
@@ -38,6 +39,10 @@ import { composeTooltipLabel } from '../utils/buttonTooltips'
 interface CanvasSurfaceProps {
   activeWorkspacePath: string | null
   darkMode: boolean
+  onCreateMarkdownCard: (options: {
+    baseName?: string
+    initialContent: string
+  }) => Promise<FileTreeNode | null>
   onCreateMarkdownNote: () => void
   onConvertStickyNoteToMarkdown: (content: string) => Promise<FileTreeNode | null>
   onImportImageFile: (file: File) => Promise<FileTreeNode | null>
@@ -516,6 +521,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     {
       activeWorkspacePath,
       darkMode,
+      onCreateMarkdownCard,
       onCreateMarkdownNote,
       onConvertStickyNoteToMarkdown,
       onImportImageFile,
@@ -547,6 +553,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const [linkSourceTileId, setLinkSourceTileId] = useState<string | null>(null)
     const [selectedCanvasNoteId, setSelectedCanvasNoteId] = useState<string | null>(null)
     const [selectedTileId, setSelectedTileId] = useState<string | null>(null)
+    const [focusedTerminal, setFocusedTerminal] = useState<{ mode: TerminalUiMode; tileId: string } | null>(null)
     const [tileRefreshTokens, setTileRefreshTokens] = useState<Record<string, number>>({})
     const [convertingStickyNote, setConvertingStickyNote] = useState(false)
     const [zoomIndicator, setZoomIndicator] = useState<string | null>(null)
@@ -564,6 +571,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
     function isContextSourceTile(tile: CanvasTile | null): tile is CanvasTile {
       return Boolean(tile && tile.type !== 'term' && tile.filePath)
+    }
+
+    function focusTerminal(tileId: string, mode: TerminalUiMode) {
+      setSelectedTileId(tileId)
+      setFocusedTerminal({ tileId, mode })
+      bringTileToFront(tileId)
     }
 
     function selectedStickyNoteFromEditor(editor: Editor) {
@@ -774,6 +787,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       event.stopPropagation()
       setSelectedTileId(null)
+      setFocusedTerminal(null)
       setLinkSourceTileId(null)
       setActiveDragConnection({
         sourceKind: 'group',
@@ -846,6 +860,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       setSelectedTileId(terminalTileId)
+      setFocusedTerminal(null)
       setLinkSourceTileId(null)
     }
 
@@ -864,6 +879,41 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         group.containedTiles.map((tile) => tile.id),
         terminalTileId
       )
+    }
+
+    async function createMarkdownCardForTerminal(
+      tileId: string,
+      options: { baseName?: string; content: string }
+    ) {
+      const sourceTile = tileById(tileId)
+
+      if (!sourceTile || sourceTile.type !== 'term') {
+        return
+      }
+
+      const createdNode = await onCreateMarkdownCard({
+        baseName: options.baseName,
+        initialContent: options.content
+      })
+
+      if (!createdNode) {
+        return
+      }
+
+      const createdTile = createTileFromFile(
+        {
+          fileKind: 'note',
+          name: createdNode.name,
+          path: createdNode.path
+        },
+        sourceTile.x + sourceTile.width + 28,
+        sourceTile.y + 28,
+        nextZIndex(stateRef.current.tiles)
+      )
+
+      appendTile(createdTile, { immediate: true })
+      setSelectedTileId(createdTile.id)
+      setFocusedTerminal(null)
     }
 
     function detachContextTile(terminalTileId: string, sourceTileId: string) {
@@ -1254,6 +1304,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         { immediate: true }
       )
       setSelectedTileId(tileId)
+      setFocusedTerminal(null)
     }
 
     function spawnFileTile(file: FileTreeNode) {
@@ -1275,6 +1326,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         { immediate: true }
       )
       setSelectedTileId(tile.id)
+      setFocusedTerminal(null)
     }
 
     function spawnFileTileAtClientPoint(file: FileTreeNode, clientX: number, clientY: number) {
@@ -1293,6 +1345,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       appendTile(tile, { immediate: true })
       setSelectedTileId(tile.id)
+      setFocusedTerminal(null)
     }
 
     function applyBoardTool(nextTool: BoardTool) {
@@ -1335,6 +1388,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       setSelectedTileId(null)
+      setFocusedTerminal(null)
       applyBoardTool(action)
     }
 
@@ -1375,6 +1429,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         editor.deleteShapes([selectedNote.shape.id])
         setLinkSourceTileId(null)
         setSelectedTileId(replacementTile.id)
+        setFocusedTerminal(null)
       } finally {
         setConvertingStickyNote(false)
       }
@@ -1515,6 +1570,20 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     useEffect(() => {
       editorRef.current?.setStyleForNextShapes(DefaultColorStyle, drawColor)
     }, [drawColor])
+
+    useEffect(() => {
+      if (!focusedTerminal) {
+        return
+      }
+
+      const selectedTile = selectedTileId
+        ? state.tiles.find((tile) => tile.id === selectedTileId) ?? null
+        : null
+
+      if (!selectedTile || selectedTile.type !== 'term' || selectedTile.id !== focusedTerminal.tileId) {
+        setFocusedTerminal(null)
+      }
+    }, [focusedTerminal, selectedTileId, state.tiles])
 
     useEffect(() => {
       function shouldPreferResolvedWheelOwner(
@@ -1699,6 +1768,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             return
           }
 
+          if (focusedTerminal) {
+            event.preventDefault()
+            setFocusedTerminal(null)
+            return
+          }
+
           if (selectedTileId) {
             event.preventDefault()
             setSelectedTileId(null)
@@ -1757,7 +1832,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         window.removeEventListener('focusin', handleFocusIn, true)
         window.removeEventListener('keydown', handleKeyDown)
       }
-    }, [linkSourceTileId, selectedTileId, shortcutsSuspended])
+    }, [focusedTerminal, linkSourceTileId, selectedTileId, shortcutsSuspended])
 
     useEffect(() => {
       function handlePointerMove(event: PointerEvent) {
@@ -1959,6 +2034,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         setSelectedTileId(null)
       }
 
+      if (focusedTerminal?.tileId === tileId) {
+        setFocusedTerminal(null)
+      }
+
       if (linkSourceTileId === tileId) {
         setLinkSourceTileId(null)
       }
@@ -2004,6 +2083,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         { immediate: true }
       )
       setSelectedTileId(tileId)
+      setFocusedTerminal(null)
     }
 
     function handleDragOverCapture(event: ReactDragEvent<HTMLDivElement>) {
@@ -2061,6 +2141,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
         appendTile(tile, { immediate: true })
         setSelectedTileId(tile.id)
+        setFocusedTerminal(null)
         return
       }
 
@@ -2136,6 +2217,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           }
 
           setSelectedTileId(null)
+          setFocusedTerminal(null)
         }}
         onDoubleClick={(event: ReactMouseEvent<HTMLDivElement>) => {
           const target = event.target as HTMLElement
@@ -2417,8 +2499,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     data-terminal-connector-id={tile.type === 'term' ? tile.id : undefined}
                     className={clsx(
                       'pointer-events-auto absolute overflow-visible rounded-[4px] border bg-[var(--surface-0)] shadow-[0_8px_18px_rgba(0,0,0,0.22)]',
-                      selectedTileId === tile.id
-                        ? 'border-[color:var(--line-strong)] shadow-[0_0_0_1px_rgba(148,163,184,0.22),0_8px_18px_rgba(0,0,0,0.24)]'
+                      selectedTileId === tile.id && focusedTerminal?.tileId === tile.id
+                        ? 'border-[color:var(--accent)] shadow-[0_0_0_1px_var(--accent-soft),0_10px_22px_rgba(0,0,0,0.22)]'
+                        : selectedTileId === tile.id
+                          ? 'border-[color:var(--line-strong)] shadow-[0_0_0_1px_rgba(148,163,184,0.22),0_8px_18px_rgba(0,0,0,0.24)]'
                         : 'border-[color:var(--line)]',
                       isPendingLinkSource && 'border-[color:var(--link-line)]'
                     )}
@@ -2431,6 +2515,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     }}
                     onPointerDownCapture={() => {
                       setSelectedTileId(tile.id)
+                      if (tile.type !== 'term') {
+                        setFocusedTerminal(null)
+                      }
                       bringTileToFront(tile.id)
                     }}
                   >
@@ -2609,6 +2696,16 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                         <TerminalPane
                           cwd={activeWorkspacePath}
                           darkMode={darkMode}
+                          focusMode={
+                            selectedTileId === tile.id && focusedTerminal?.tileId === tile.id
+                              ? focusedTerminal.mode
+                              : null
+                          }
+                          isSelected={selectedTileId === tile.id}
+                          onCreateMarkdownCard={(options) => createMarkdownCardForTerminal(tile.id, options)}
+                          onFocusModeChange={(mode) => {
+                            focusTerminal(tile.id, mode)
+                          }}
                           sessionId={tile.sessionId as string}
                         />
                       </div>

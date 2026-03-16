@@ -6,8 +6,10 @@ import type {
   CanvasPinchPayload,
   CanvasState,
   CollaboratorApi,
+  CreateWorkspaceNoteOptions,
   FileTreeNode,
   ImageAssetData,
+  TerminalActivityItem,
   TerminalSessionSnapshot,
   TextFileDocument,
   WorkspaceImageImport
@@ -28,8 +30,21 @@ const api: CollaboratorApi = {
   copyTextToClipboard: (text: string) => ipcRenderer.invoke('system:copy-text', text) as Promise<void>,
   createTerminalSession: (options) =>
     ipcRenderer.invoke('terminal:create', options) as Promise<TerminalSessionSnapshot>,
+  readTerminalActivity: (sessionId: string) =>
+    ipcRenderer.invoke('terminal:activity', sessionId) as Promise<TerminalActivityItem[]>,
   readTerminalHistory: (sessionId: string, limit?: number) =>
     ipcRenderer.invoke('terminal:history', sessionId, limit) as Promise<string>,
+  onTerminalActivity: (sessionId, listener) => {
+    const channel = `terminal:activity:${sessionId}`
+    const handler = (_event: Electron.IpcRendererEvent, activity: TerminalActivityItem) =>
+      listener(activity)
+
+    ipcRenderer.on(channel, handler)
+
+    return () => {
+      ipcRenderer.off(channel, handler)
+    }
+  },
   onTerminalData: (sessionId, listener) => {
     const channel = `terminal:data:${sessionId}`
     const handler = (_event: Electron.IpcRendererEvent, data: string) => listener(data)
@@ -69,8 +84,8 @@ const api: CollaboratorApi = {
     ipcRenderer.invoke('canvas:save', state) as Promise<CanvasState>,
   openPath: (targetPath: string) => ipcRenderer.invoke('system:open-path', targetPath) as Promise<void>,
   pickWorkspaceDirectory: () => ipcRenderer.invoke('workspace:pick') as Promise<string | null>,
-  createWorkspaceNote: (workspacePath: string, targetDirectoryPath?: string) =>
-    ipcRenderer.invoke('workspace:create-note', workspacePath, targetDirectoryPath) as Promise<FileTreeNode>,
+  createWorkspaceNote: (workspacePath: string, options?: CreateWorkspaceNoteOptions) =>
+    ipcRenderer.invoke('workspace:create-note', workspacePath, options) as Promise<FileTreeNode>,
   importWorkspaceImage: (workspacePath: string, image: WorkspaceImageImport) =>
     ipcRenderer.invoke('workspace:import-image', workspacePath, image) as Promise<FileTreeNode>,
   moveWorkspaceNode: (workspacePath: string, sourcePath: string, targetDirectoryPath: string) =>
