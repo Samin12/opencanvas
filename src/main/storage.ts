@@ -114,6 +114,10 @@ function sanitizeCanvasState(input: Partial<CanvasState> | undefined): CanvasSta
             contextTileIds: Array.isArray(tile.contextTileIds)
               ? tile.contextTileIds.filter((value): value is string => typeof value === 'string')
               : undefined,
+            contextGroupIds: Array.isArray(tile.contextGroupIds)
+              ? tile.contextGroupIds.filter((value): value is string => typeof value === 'string')
+              : undefined,
+            embedUrl: typeof tile.embedUrl === 'string' ? tile.embedUrl : undefined,
             filePath: typeof tile.filePath === 'string' ? tile.filePath : undefined,
             sessionId: typeof tile.sessionId === 'string' ? tile.sessionId : undefined,
             terminalProvider:

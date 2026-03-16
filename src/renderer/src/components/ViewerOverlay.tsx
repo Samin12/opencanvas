@@ -46,6 +46,10 @@ function viewerKindLabel(file: FileTreeNode): string {
     return 'Image'
   }
 
+  if (file.fileKind === 'video') {
+    return 'Video'
+  }
+
   return 'Code'
 }
 

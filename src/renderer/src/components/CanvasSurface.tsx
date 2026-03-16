@@ -183,7 +183,7 @@ const SHORTCUT_ITEMS: Array<{ action: ShortcutAction; key: string; label: string
   { action: 'text', key: 'T', label: 'Text' },
   { action: 'note', key: 'N', label: 'Canvas Note' },
   { action: 'draw', key: 'D', label: 'Draw' },
-  { action: 'frame', key: 'F', label: 'Frame' }
+  { action: 'frame', key: 'G / Shift+G', label: 'Group Frame' }
 ]
 const QUICK_ACTION_ITEMS: Array<{ action: BoardTool; key: string; label: string }> = [
   { action: 'select', key: 'V', label: 'Select' },
@@ -221,7 +221,7 @@ const BOARD_TOOL_SHORTCUTS: Record<string, BoardTool> = {
   b: 'box',
   d: 'draw',
   e: 'eraser',
-  f: 'frame',
+  g: 'frame',
   m: 'hand',
   n: 'note',
   t: 'text',
@@ -543,6 +543,7 @@ function createTileFromFile(
 ): CanvasTile {
   const isImage = file.fileKind === 'image'
   const isNote = file.fileKind === 'note'
+  const isVideo = file.fileKind === 'video'
 
   return {
     id: `tile-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -550,11 +551,23 @@ function createTileFromFile(
     title: file.name,
     x: snap(x),
     y: snap(y),
-    width: isImage ? 420 : isNote ? 360 : 520,
-    height: isImage ? 320 : isNote ? 440 : 420,
+    width: isImage ? 420 : isVideo ? 480 : isNote ? 360 : 520,
+    height: isImage ? 320 : isVideo ? 320 : isNote ? 440 : 420,
     zIndex,
     filePath: file.path
   }
+}
+
+function contextResourceLabel(tile: CanvasTile) {
+  if (tile.type === 'image') {
+    return 'image'
+  }
+
+  if (tile.type === 'video') {
+    return 'video'
+  }
+
+  return 'file'
 }
 
 function terminalConnectionKey(sourceTileId: string, terminalTileId: string) {
@@ -690,16 +703,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
     }
 
-    function contextTilesForTerminal(tile: CanvasTile) {
-      if (tile.type !== 'term') {
-        return []
-      }
-
-      return (tile.contextTileIds ?? [])
-        .map((contextTileId) => tileById(contextTileId))
-        .filter(isContextSourceTile)
-    }
-
     function frameContextGroups(): FrameContextGroup[] {
       const editor = editorRef.current
 
@@ -760,6 +763,45 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
     function frameContextGroupById(groupId: string) {
       return frameContextGroups().find((group) => group.id === groupId) ?? null
+    }
+
+    function contextGroupsForTerminal(tile: CanvasTile) {
+      if (tile.type !== 'term') {
+        return []
+      }
+
+      return (tile.contextGroupIds ?? [])
+        .map((groupId) => frameContextGroupById(groupId))
+        .filter((group): group is FrameContextGroup => group !== null)
+    }
+
+    function contextTilesForTerminal(tile: CanvasTile) {
+      if (tile.type !== 'term') {
+        return []
+      }
+
+      const groupedTileIds = new Set(
+        contextGroupsForTerminal(tile).flatMap((group) => group.containedTiles.map((groupTile) => groupTile.id))
+      )
+
+      return (tile.contextTileIds ?? [])
+        .map((contextTileId) => tileById(contextTileId))
+        .filter(isContextSourceTile)
+        .filter((contextTile) => !groupedTileIds.has(contextTile.id))
+    }
+
+    function resolvedContextTilesForTerminal(tile: CanvasTile) {
+      if (tile.type !== 'term') {
+        return []
+      }
+
+      return Array.from(
+        new Map(
+          [...contextGroupsForTerminal(tile).flatMap((group) => group.containedTiles), ...contextTilesForTerminal(tile)]
+            .filter(isContextSourceTile)
+            .map((contextTile) => [contextTile.filePath, contextTile] as const)
+        ).values()
+      )
     }
 
     function connectorCenterForTile(tile: CanvasTile) {
@@ -887,34 +929,62 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       })
     }
 
-    function buildTerminalContextPromptForTileIds(
-      sourceTileIds: string[],
+    function buildTerminalContextPrompt(
+      terminalTile: CanvasTile,
       provider: TerminalProvider
     ) {
-      const contextTiles = Array.from(
-        new Map(
-          sourceTileIds
-            .map((sourceTileId) => tileById(sourceTileId))
-            .filter(isContextSourceTile)
-            .map((tile) => [tile.filePath, tile] as const)
-        ).values()
-      )
+      const contextGroups = contextGroupsForTerminal(terminalTile)
+      const contextTiles = resolvedContextTilesForTerminal(terminalTile)
 
       if (contextTiles.length === 0) {
         return ''
       }
 
       const hasImageContext = contextTiles.some((tile) => tile.type === 'image')
+      const hasVideoContext = contextTiles.some((tile) => tile.type === 'video')
+      const looseContextTiles = contextTilesForTerminal(terminalTile)
+      const lines = [
+        `Use these workspace resources as context for this ${terminalProviderLabel(provider)} session:`,
+        ''
+      ]
 
-      return [
-        `Use these workspace files as context for this ${terminalProviderLabel(provider)} session:`,
-        '',
-        ...contextTiles.map((tile) => `- ${tile.filePath}${tile.type === 'image' ? ' (image)' : ''}`),
-        '',
-        hasImageContext
-          ? 'Read the text files. For each path marked (image), open that image from the workspace and inspect it before responding. Keep all of them in working context.'
-          : 'Read them before responding and keep them in working context.'
-      ].join('\n')
+      if (contextGroups.length > 0) {
+        lines.push('Resource bundles:')
+        contextGroups.forEach((group) => {
+          lines.push(`- ${group.label} (${group.containedTiles.length} items)`)
+          group.containedTiles.forEach((groupTile) => {
+            lines.push(`  - ${groupTile.filePath} (${contextResourceLabel(groupTile)})`)
+          })
+        })
+      }
+
+      if (looseContextTiles.length > 0) {
+        if (contextGroups.length > 0) {
+          lines.push('')
+        }
+
+        lines.push('Loose resources:')
+        looseContextTiles.forEach((contextTile) => {
+          lines.push(`- ${contextTile.filePath} (${contextResourceLabel(contextTile)})`)
+        })
+      }
+
+      lines.push('')
+      lines.push('Read the text and code files before responding.')
+
+      if (hasImageContext) {
+        lines.push('For each path marked (image), inspect that image before responding.')
+      }
+
+      if (hasVideoContext) {
+        lines.push(
+          'For each path marked (video), inspect the video file or extract the relevant details before responding.'
+        )
+      }
+
+      lines.push('Keep all of these resources in working context for follow-up questions.')
+
+      return lines.join('\n')
     }
 
     function attachContextTileIds(sourceTileIds: string[], terminalTileId: string) {
@@ -946,8 +1016,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         { immediate: true }
       )
 
-      const prompt = buildTerminalContextPromptForTileIds(
-        nextContextTileIds,
+      const prompt = buildTerminalContextPrompt(
+        {
+          ...terminalTile,
+          contextTileIds: nextContextTileIds
+        },
         terminalProviderForTile(terminalTile)
       )
 
@@ -966,15 +1039,44 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
     function attachContextGroup(groupId: string, terminalTileId: string) {
       const group = frameContextGroupById(groupId)
+      const terminalTile = tileById(terminalTileId)
 
-      if (!group) {
+      if (!group || !terminalTile || terminalTile.type !== 'term') {
         return
       }
 
-      attachContextTileIds(
-        group.containedTiles.map((tile) => tile.id),
-        terminalTileId
+      const nextContextGroupIds = Array.from(new Set([...(terminalTile.contextGroupIds ?? []), groupId]))
+
+      updateState(
+        {
+          ...stateRef.current,
+          tiles: stateRef.current.tiles.map((tile) =>
+            tile.id === terminalTileId
+              ? {
+                  ...tile,
+                  contextGroupIds: nextContextGroupIds
+                }
+              : tile
+          )
+        },
+        { immediate: true }
       )
+
+      const prompt = buildTerminalContextPrompt(
+        {
+          ...terminalTile,
+          contextGroupIds: nextContextGroupIds
+        },
+        terminalProviderForTile(terminalTile)
+      )
+
+      if (prompt && terminalTile.sessionId) {
+        window.collaborator.writeTerminalInput(terminalTile.sessionId, `${prompt}\r`)
+      }
+
+      setSelectedTileId(terminalTileId)
+      setFocusedTerminal(null)
+      setLinkSourceTileId(null)
     }
 
     async function createMarkdownCardForTerminal(
@@ -1061,6 +1163,25 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       )
 
       clearHoveredConnection(terminalConnectionKey(sourceTileId, terminalTileId))
+    }
+
+    function detachContextGroup(terminalTileId: string, groupId: string) {
+      updateState(
+        {
+          ...stateRef.current,
+          tiles: stateRef.current.tiles.map((tile) =>
+            tile.id === terminalTileId
+              ? {
+                  ...tile,
+                  contextGroupIds: (tile.contextGroupIds ?? []).filter(
+                    (contextGroupId) => contextGroupId !== groupId
+                  )
+                }
+              : tile
+          )
+        },
+        { immediate: true }
+      )
     }
 
     function updateState(nextState: CanvasState, options?: { immediate?: boolean }) {
@@ -2560,10 +2681,18 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         return []
       }
 
-      return contextTilesForTerminal(terminalTile).map((sourceTile) => ({
-        sourceTile,
-        terminalTile
-      }))
+      return [
+        ...contextGroupsForTerminal(terminalTile).map((sourceGroup) => ({
+          sourceGroup,
+          sourceKind: 'group' as const,
+          terminalTile
+        })),
+        ...contextTilesForTerminal(terminalTile).map((sourceTile) => ({
+          sourceKind: 'tile' as const,
+          sourceTile,
+          terminalTile
+        }))
+      ]
     })
     const hoveredConnectionKey = hoveredConnection
       ? terminalConnectionKey(hoveredConnection.sourceTileId, hoveredConnection.terminalTileId)
@@ -2681,7 +2810,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 </div>
                 <div>
                   <span className="font-semibold text-[var(--text)]">Send to a terminal:</span>{' '}
-                  drag a file, image, or frame dot onto a terminal dot.
+                  drag a file, image, video, or frame bundle dot onto a terminal dot.
                 </div>
               </div>
             </div>
@@ -2723,16 +2852,44 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           }}
         >
           <svg className="absolute inset-0 h-full w-full" style={{ overflow: 'visible' }}>
-            {terminalConnections.map(({ sourceTile, terminalTile }) => {
-              const start = connectorCenterForTile(sourceTile)
-              const end = connectorCenterForTile(terminalTile)
+            {terminalConnections.map((connection) => {
+              const start =
+                connection.sourceKind === 'group'
+                  ? connectorCenterForGroup(connection.sourceGroup)
+                  : connectorCenterForTile(connection.sourceTile)
+              const connectionKey =
+                connection.sourceKind === 'group'
+                  ? `group:${connection.sourceGroup.id}:${connection.terminalTile.id}`
+                  : terminalConnectionKey(connection.sourceTile.id, connection.terminalTile.id)
+              const isHoveredConnection =
+                connection.sourceKind === 'tile' && hoveredConnectionKey === connectionKey
+              const end = connectorCenterForTile(connection.terminalTile)
               const { path } = connectionCurve(start, end)
-              const connectionKey = terminalConnectionKey(sourceTile.id, terminalTile.id)
-              const isHoveredConnection = hoveredConnectionKey === connectionKey
               const startX = start.x
               const startY = start.y
               const endX = end.x
               const endY = end.y
+
+              if (connection.sourceKind === 'group') {
+                return (
+                  <g key={connectionKey}>
+                    <path
+                      d={path}
+                      fill="none"
+                      stroke="var(--link-line)"
+                      strokeDasharray="10 6"
+                      strokeLinecap="round"
+                      strokeOpacity={0.92}
+                      strokeWidth={2.25}
+                    />
+                    <circle cx={startX} cy={startY} fill="var(--link-line)" r={4.5} />
+                    <circle cx={endX} cy={endY} fill="var(--link-line)" r={4} />
+                  </g>
+                )
+              }
+
+              const sourceTile = connection.sourceTile
+              const terminalTile = connection.terminalTile
 
               return (
                 <g key={connectionKey}>
@@ -2829,8 +2986,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   left: connector.x - 10,
                   top: connector.y
                 }}
-                aria-label={`Attach ${group.label} (${group.containedTiles.length}) to a terminal`}
-                title={`Attach ${group.label} (${group.containedTiles.length}) to a terminal`}
+                aria-label={`Attach bundle ${group.label} (${group.containedTiles.length}) to a terminal`}
+                title={`Attach bundle ${group.label} (${group.containedTiles.length}) to a terminal`}
                 onPointerDown={(event) => beginGroupConnectionDrag(group.id, event)}
               >
                 <span className="pointer-events-none block h-full w-full rounded-full bg-transparent" />
@@ -2844,6 +3001,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             .map((tile) => (
               (() => {
                 const contextTiles = tile.type === 'term' ? contextTilesForTerminal(tile) : []
+                const contextGroups = tile.type === 'term' ? contextGroupsForTerminal(tile) : []
+                const hasLinkedContext = contextGroups.length > 0 || contextTiles.length > 0
                 const isContextSource = isContextSourceTile(tile)
                 const isPendingLinkSource = linkSourceTileId === tile.id
                 const hasFileDocument = Boolean(tile.filePath)
@@ -2855,7 +3014,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       ? `Attach ${frameGroups.find((group) => group.id === dragConnection.sourceGroupId)?.label ?? 'group'} to ${tile.title}`
                       : linkSourceTile && linkSourceTile.id !== tile.id
                         ? `Attach ${linkSourceTile.title} to ${tile.title}`
-                        : contextTiles.length > 0
+                        : hasLinkedContext
                           ? `${tile.title} has linked context`
                           : `${tile.title} terminal connector`
                     : `Connect ${tile.title} to a terminal`
@@ -2898,7 +3057,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       tile.type === 'term'
                         ? linkSourceTile && linkSourceTile.id !== tile.id
                           ? 'bg-[color:var(--link-line)] scale-110'
-                          : contextTiles.length > 0
+                          : hasLinkedContext
                             ? 'bg-[color:var(--link-line)]'
                             : 'bg-[color:var(--link-line)]'
                         : isPendingLinkSource
@@ -2983,7 +3142,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       <button
                         className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[11px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
                         onPointerDown={(event) => event.stopPropagation()}
-                        title={tile.type === 'image' ? 'Refresh image' : 'Refresh file'}
+                        title={
+                          tile.type === 'image'
+                            ? 'Refresh image'
+                            : tile.type === 'video'
+                              ? 'Refresh video'
+                              : 'Refresh file'
+                        }
                         onClick={(event) => {
                           event.stopPropagation()
                           requestTileRefresh(tile.id)
@@ -3032,33 +3197,61 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                         data-terminal-control="true"
                         onPointerDown={(event) => event.stopPropagation()}
                       >
-                        {contextTiles.length === 0 ? (
+                        {!hasLinkedContext ? (
                           <div className="text-[11px] text-[var(--text-dim)]">
                             {linkSourceTile
                               ? 'Drop the dragged connector on this terminal dot to attach it.'
-                              : `Drag a file dot or a frame-group dot into this terminal to build ${terminalProviderLabel(
+                              : `Drag a file dot or a bundle dot into this terminal to build ${terminalProviderLabel(
                                   terminalProviderForTile(tile)
                                 )} context.`}
                           </div>
                         ) : (
-                          contextTiles.map((contextTile) => (
-                            <div
-                              key={contextTile.id}
-                              className="flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[10px] text-[var(--text-dim)]"
-                            >
-                              <span className="max-w-[120px] truncate">{contextTile.title}</span>
-                              <button
-                                className="rounded-[4px] px-1 text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
-                                title="Remove linked context"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  detachContextTile(tile.id, contextTile.id)
-                                }}
+                          <>
+                            {contextGroups.map((contextGroup) => (
+                              <div
+                                key={contextGroup.id}
+                                className="flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[10px] text-[var(--text-dim)]"
                               >
-                                ×
-                              </button>
-                            </div>
-                          ))
+                                <span className="font-semibold uppercase tracking-[0.08em] text-[var(--text-faint)]">
+                                  Bundle
+                                </span>
+                                <span className="max-w-[120px] truncate text-[var(--text)]">
+                                  {contextGroup.label}
+                                </span>
+                                <span className="rounded-[4px] bg-[var(--surface-1)] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-[var(--text-faint)]">
+                                  {contextGroup.containedTiles.length}
+                                </span>
+                                <button
+                                  className="rounded-[4px] px-1 text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                                  title="Remove linked bundle"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    detachContextGroup(tile.id, contextGroup.id)
+                                  }}
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                            {contextTiles.map((contextTile) => (
+                              <div
+                                key={contextTile.id}
+                                className="flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[10px] text-[var(--text-dim)]"
+                              >
+                                <span className="max-w-[120px] truncate">{contextTile.title}</span>
+                                <button
+                                  className="rounded-[4px] px-1 text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                                  title="Remove linked context"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    detachContextTile(tile.id, contextTile.id)
+                                  }}
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                          </>
                         )}
                       </div>
 

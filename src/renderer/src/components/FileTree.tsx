@@ -87,7 +87,21 @@ function ImageIcon() {
   )
 }
 
-function iconToneClasses(kind: 'directory' | 'note' | 'code' | 'image', darkMode: boolean) {
+function VideoIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+    >
+      <rect x="2.5" y="3" width="8" height="10" rx="1.5" />
+      <path d="M10.5 6.1 13.5 4.75V11.25L10.5 9.9" />
+      <path d="M5.7 6.2 8.45 8 5.7 9.8V6.2Z" />
+    </svg>
+  )
+}
+
+function iconToneClasses(kind: 'directory' | 'note' | 'code' | 'image' | 'video', darkMode: boolean) {
   if (kind === 'directory') {
     return darkMode ? 'text-[#d8d9d4]' : 'text-[#53584f]'
   }
@@ -100,6 +114,10 @@ function iconToneClasses(kind: 'directory' | 'note' | 'code' | 'image', darkMode
     return darkMode ? 'text-[#70d5ff]' : 'text-[#279dcd]'
   }
 
+  if (kind === 'video') {
+    return darkMode ? 'text-[#f6b26b]' : 'text-[#c76d28]'
+  }
+
   return darkMode ? 'text-[#c1c5bd]' : 'text-[#70756c]'
 }
 
@@ -110,11 +128,20 @@ export function FileKindIcon({
   darkMode: boolean
   fileKind: FileTreeNode['fileKind']
 }) {
-  const kind = fileKind === 'note' || fileKind === 'image' ? fileKind : 'code'
+  const kind =
+    fileKind === 'note' || fileKind === 'image' || fileKind === 'video' ? fileKind : 'code'
 
   return (
     <span className={clsx('flex h-4.5 w-4.5 items-center justify-center', iconToneClasses(kind, darkMode))}>
-      {kind === 'note' ? <NoteIcon /> : kind === 'image' ? <ImageIcon /> : <CodeIcon />}
+      {kind === 'note' ? (
+        <NoteIcon />
+      ) : kind === 'image' ? (
+        <ImageIcon />
+      ) : kind === 'video' ? (
+        <VideoIcon />
+      ) : (
+        <CodeIcon />
+      )}
     </span>
   )
 }

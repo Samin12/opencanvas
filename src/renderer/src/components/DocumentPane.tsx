@@ -47,7 +47,7 @@ type DocumentStatus = 'idle' | 'loading' | 'saving' | 'error'
 
 interface SurfaceFrameProps {
   children: ReactNode
-  fileKind: Exclude<FileKind, 'image'>
+  fileKind: 'note' | 'code'
   onRefresh?: () => void
   showTileRefreshButton?: boolean
   showViewerRefreshButton?: boolean
@@ -899,6 +899,112 @@ function ImageDocumentPane({
   )
 }
 
+function VideoDocumentPane({
+  filePath,
+  refreshToken = 0,
+  showTileRefreshButton = true,
+  showViewerRefreshButton = true,
+  variant = 'tile'
+}: Pick<
+  DocumentPaneProps,
+  'filePath' | 'refreshToken' | 'showTileRefreshButton' | 'showViewerRefreshButton' | 'variant'
+>) {
+  const [videoUrl, setVideoUrl] = useState<string | null>(null)
+  const [reloadCount, setReloadCount] = useState(0)
+  const [status, setStatus] = useState<DocumentStatus>('loading')
+  const fileChangeCount = useFileChangeSignal(filePath)
+
+  useEffect(() => {
+    setVideoUrl(null)
+    setStatus('loading')
+  }, [filePath])
+
+  useEffect(() => {
+    if (refreshToken > 0) {
+      setReloadCount((current) => current + 1)
+    }
+  }, [refreshToken])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      try {
+        const nextVideoUrl = await window.collaborator.fileUrl(filePath)
+
+        if (!cancelled) {
+          setVideoUrl(nextVideoUrl)
+          setStatus('idle')
+        }
+      } catch {
+        if (!cancelled) {
+          setStatus('error')
+        }
+      }
+    }
+
+    void load()
+
+    return () => {
+      cancelled = true
+    }
+  }, [filePath, fileChangeCount, reloadCount])
+
+  if (status === 'error') {
+    return <ErrorPane variant={variant} />
+  }
+
+  if (!videoUrl || status === 'loading') {
+    return <LoadingPane variant={variant} />
+  }
+
+  const dragPayload = JSON.stringify({
+    fileKind: 'video',
+    name: filePath.split(/[\\/]/).pop() ?? 'Video',
+    path: filePath
+  })
+
+  return (
+    <div
+      className={clsx(
+        'relative flex h-full items-center justify-center overflow-hidden bg-[var(--surface-1)]',
+        variant === 'viewer' ? 'rounded-[6px] border border-[color:var(--line)]' : 'rounded-[4px]'
+      )}
+    >
+      {(variant === 'tile' && showTileRefreshButton) ||
+      (variant === 'viewer' && showViewerRefreshButton) ? (
+        <button
+          className={clsx(
+            'absolute z-10 flex h-6 min-w-6 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-2 text-[11px] text-[var(--text-dim)] shadow-[0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]',
+            variant === 'viewer' ? 'right-3 top-3' : 'right-2 top-2'
+          )}
+          onClick={() => setReloadCount((current) => current + 1)}
+          title="Refresh video"
+        >
+          ↻
+        </button>
+      ) : null}
+      <video
+        key={`${fileChangeCount}:${reloadCount}`}
+        src={videoUrl}
+        controls
+        preload="metadata"
+        draggable
+        className="h-full w-full bg-black/10 object-contain"
+        onDragStart={(event) => {
+          if (!event.dataTransfer) {
+            return
+          }
+
+          event.dataTransfer.effectAllowed = 'copy'
+          event.dataTransfer.setData(COLLABORATOR_FILE_MIME, dragPayload)
+          event.dataTransfer.setData('text/plain', filePath)
+        }}
+      />
+    </div>
+  )
+}
+
 function DocumentPaneComponent({
   fileKind,
   filePath,
@@ -912,6 +1018,18 @@ function DocumentPaneComponent({
   if (fileKind === 'image') {
     return (
       <ImageDocumentPane
+        filePath={filePath}
+        refreshToken={refreshToken}
+        showTileRefreshButton={showTileRefreshButton}
+        showViewerRefreshButton={showViewerRefreshButton}
+        variant={variant}
+      />
+    )
+  }
+
+  if (fileKind === 'video') {
+    return (
+      <VideoDocumentPane
         filePath={filePath}
         refreshToken={refreshToken}
         showTileRefreshButton={showTileRefreshButton}

@@ -1,6 +1,6 @@
-export type TileType = 'term' | 'note' | 'code' | 'image'
+export type TileType = 'term' | 'note' | 'code' | 'image' | 'video' | 'pdf' | 'embed'
 
-export type FileKind = 'note' | 'code' | 'image'
+export type FileKind = 'note' | 'code' | 'image' | 'video' | 'pdf'
 export type TerminalProvider = 'claude' | 'codex'
 
 export interface CanvasTile {
@@ -13,6 +13,8 @@ export interface CanvasTile {
   height: number
   zIndex: number
   contextTileIds?: string[]
+  contextGroupIds?: string[]
+  embedUrl?: string
   filePath?: string
   sessionId?: string
   terminalProvider?: TerminalProvider
@@ -82,11 +84,13 @@ export interface BootstrapData {
   terminalDependencies: TerminalDependencyState
 }
 
-export interface WorkspaceImageImport {
+export interface WorkspaceAssetImport {
   bytes: ArrayBuffer | Uint8Array | number[]
   fileName?: string | null
   mimeType?: string | null
 }
+
+export type WorkspaceImageImport = WorkspaceAssetImport
 
 export interface CreateWorkspaceNoteOptions {
   baseName?: string
@@ -157,6 +161,10 @@ export interface CollaboratorApi {
   createWorkspaceNote: (
     workspacePath: string,
     options?: CreateWorkspaceNoteOptions
+  ) => Promise<FileTreeNode>
+  importWorkspaceAsset: (
+    workspacePath: string,
+    asset: WorkspaceAssetImport
   ) => Promise<FileTreeNode>
   importWorkspaceImage: (
     workspacePath: string,

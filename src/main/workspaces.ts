@@ -9,26 +9,36 @@ import type {
   FileTreeNode,
   ImageAssetData,
   TextFileDocument,
+  WorkspaceAssetImport,
   WorkspaceImageImport
 } from '../shared/types'
 
 const NOTE_EXTENSIONS = new Set(['.md', '.mdx', '.markdown', '.txt'])
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'])
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi'])
+const PDF_EXTENSIONS = new Set(['.pdf'])
 const IGNORED_NAMES = new Set(['.DS_Store'])
 const IGNORED_DIRECTORIES = new Set(['.claude-canvas', '.git', 'node_modules', 'dist', 'out'])
 const WORKSPACE_METADATA_DIRECTORY = '.claude-canvas'
 const WORKSPACE_ASSETS_DIRECTORY = 'assets'
 const watchedFiles = new Map<string, Set<() => void>>()
-const IMAGE_MIME_EXTENSIONS = new Map<string, string>([
+const ASSET_MIME_EXTENSIONS = new Map<string, string>([
   ['image/gif', '.gif'],
   ['image/jpeg', '.jpg'],
   ['image/jpg', '.jpg'],
   ['image/png', '.png'],
   ['image/svg+xml', '.svg'],
-  ['image/webp', '.webp']
+  ['image/webp', '.webp'],
+  ['video/mp4', '.mp4'],
+  ['video/quicktime', '.mov'],
+  ['video/webm', '.webm'],
+  ['video/x-m4v', '.m4v'],
+  ['application/pdf', '.pdf']
 ])
 const IMAGE_EXTENSION_MIME_TYPES = new Map<string, string>(
-  Array.from(IMAGE_MIME_EXTENSIONS.entries()).map(([mimeType, extension]) => [extension, mimeType])
+  Array.from(ASSET_MIME_EXTENSIONS.entries())
+    .filter(([_mimeType, extension]) => IMAGE_EXTENSIONS.has(extension))
+    .map(([mimeType, extension]) => [extension, mimeType])
 )
 
 export function detectFileKind(filePath: string): FileKind {
@@ -36,6 +46,14 @@ export function detectFileKind(filePath: string): FileKind {
 
   if (IMAGE_EXTENSIONS.has(extension)) {
     return 'image'
+  }
+
+  if (VIDEO_EXTENSIONS.has(extension)) {
+    return 'video'
+  }
+
+  if (PDF_EXTENSIONS.has(extension)) {
+    return 'pdf'
   }
 
   if (NOTE_EXTENSIONS.has(extension)) {
@@ -74,35 +92,39 @@ async function createUniquePath(directoryPath: string, baseName: string, extensi
   return candidatePath
 }
 
-function normalizeImageExtension(extension: string): string | null {
+function normalizeAssetExtension(extension: string): string | null {
   const normalized = extension.toLowerCase()
 
-  return IMAGE_EXTENSIONS.has(normalized) ? normalized : null
+  return IMAGE_EXTENSIONS.has(normalized) ||
+    VIDEO_EXTENSIONS.has(normalized) ||
+    PDF_EXTENSIONS.has(normalized)
+    ? normalized
+    : null
 }
 
-function imageImportExtension(input: Pick<WorkspaceImageImport, 'fileName' | 'mimeType'>): string {
-  const fileNameExtension = normalizeImageExtension(extname(input.fileName ?? ''))
+function assetImportExtension(input: Pick<WorkspaceAssetImport, 'fileName' | 'mimeType'>): string {
+  const fileNameExtension = normalizeAssetExtension(extname(input.fileName ?? ''))
 
   if (fileNameExtension) {
     return fileNameExtension
   }
 
   const mimeExtension =
-    typeof input.mimeType === 'string' ? IMAGE_MIME_EXTENSIONS.get(input.mimeType.toLowerCase()) : null
+    typeof input.mimeType === 'string' ? ASSET_MIME_EXTENSIONS.get(input.mimeType.toLowerCase()) : null
 
-  return mimeExtension ?? '.png'
+  return mimeExtension ?? '.bin'
 }
 
-function imageImportBaseName(fileName?: string | null): string {
+function assetImportBaseName(fileName?: string | null): string {
   const candidate = basename(fileName ?? '', extname(fileName ?? ''))
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 
-  return candidate.length > 0 ? candidate : 'Pasted image'
+  return candidate.length > 0 ? candidate : 'Imported asset'
 }
 
-function imageImportBytes(bytes: WorkspaceImageImport['bytes']): Uint8Array {
+function assetImportBytes(bytes: WorkspaceAssetImport['bytes']): Uint8Array {
   if (bytes instanceof ArrayBuffer) {
     return new Uint8Array(bytes)
   }
@@ -376,6 +398,13 @@ export async function importWorkspaceImage(
   workspacePath: string,
   image: WorkspaceImageImport
 ): Promise<FileTreeNode> {
+  return importWorkspaceAsset(workspacePath, image)
+}
+
+export async function importWorkspaceAsset(
+  workspacePath: string,
+  asset: WorkspaceAssetImport
+): Promise<FileTreeNode> {
   const resolvedWorkspacePath = resolve(workspacePath)
   const assetsDirectoryPath = join(
     resolvedWorkspacePath,
@@ -387,11 +416,11 @@ export async function importWorkspaceImage(
 
   const targetPath = await createUniquePath(
     assetsDirectoryPath,
-    imageImportBaseName(image.fileName),
-    imageImportExtension(image)
+    assetImportBaseName(asset.fileName),
+    assetImportExtension(asset)
   )
 
-  await writeFile(targetPath, imageImportBytes(image.bytes))
+  await writeFile(targetPath, assetImportBytes(asset.bytes))
 
   return ensureFileNode(targetPath)
 }
