@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -9,7 +9,9 @@ export const APP_DIRECTORY =
     ? process.env.OPEN_CANVAS_APP_DIRECTORY
     : join(homedir(), '.collaborator-clone')
 const CONFIG_PATH = join(APP_DIRECTORY, 'config.json')
-const CANVAS_STATE_PATH = join(APP_DIRECTORY, 'canvas-state.json')
+const LEGACY_CANVAS_STATE_PATH = join(APP_DIRECTORY, 'canvas-state.json')
+const WORKSPACE_METADATA_DIRECTORY = '.claude-canvas'
+const WORKSPACE_CANVAS_STATE_FILE = 'canvas.json'
 
 const DEFAULT_WINDOW_STATE: WindowState = {
   width: 1480,
@@ -29,17 +31,6 @@ const DEFAULT_CONFIG: AppConfig = {
   }
 }
 
-const DEFAULT_CANVAS_STATE: CanvasState = {
-  version: 1,
-  tiles: [],
-  viewport: {
-    panX: 0,
-    panY: 0,
-    zoom: 1
-  },
-  boardSnapshot: undefined
-}
-
 async function ensureDirectory(targetPath: string): Promise<void> {
   await mkdir(dirname(targetPath), { recursive: true })
 }
@@ -56,6 +47,15 @@ async function readJson<T>(targetPath: string, fallback: T): Promise<T> {
 async function writeJson(targetPath: string, value: unknown): Promise<void> {
   await ensureDirectory(targetPath)
   await writeFile(targetPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+}
+
+async function pathExists(targetPath: string): Promise<boolean> {
+  try {
+    await stat(targetPath)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function sanitizeWindowState(value: Partial<WindowState> | undefined): WindowState {
@@ -130,6 +130,14 @@ function sanitizeCanvasState(input: Partial<CanvasState> | undefined): CanvasSta
   }
 }
 
+export function createDefaultCanvasState(): CanvasState {
+  return sanitizeCanvasState(undefined)
+}
+
+function workspaceCanvasStatePath(workspacePath: string): string {
+  return join(workspacePath, WORKSPACE_METADATA_DIRECTORY, WORKSPACE_CANVAS_STATE_FILE)
+}
+
 export async function loadConfig(): Promise<AppConfig> {
   await mkdir(APP_DIRECTORY, { recursive: true })
   const config = sanitizeConfig(await readJson(CONFIG_PATH, DEFAULT_CONFIG))
@@ -143,15 +151,57 @@ export async function saveConfig(config: AppConfig): Promise<AppConfig> {
   return sanitized
 }
 
-export async function loadCanvasState(): Promise<CanvasState> {
-  await mkdir(APP_DIRECTORY, { recursive: true })
-  const state = sanitizeCanvasState(await readJson(CANVAS_STATE_PATH, DEFAULT_CANVAS_STATE))
-  await writeJson(CANVAS_STATE_PATH, state)
+export async function migrateLegacyCanvasStateToWorkspace(
+  workspacePath: string | null | undefined
+): Promise<void> {
+  if (!workspacePath) {
+    return
+  }
+
+  const workspaceCanvasPath = workspaceCanvasStatePath(workspacePath)
+
+  if (await pathExists(workspaceCanvasPath)) {
+    return
+  }
+
+  if (!(await pathExists(LEGACY_CANVAS_STATE_PATH))) {
+    return
+  }
+
+  const state = sanitizeCanvasState(await readJson(LEGACY_CANVAS_STATE_PATH, createDefaultCanvasState()))
+  await writeJson(workspaceCanvasPath, state)
+
+  try {
+    await rename(
+      LEGACY_CANVAS_STATE_PATH,
+      join(APP_DIRECTORY, `canvas-state.migrated-backup-${Date.now()}.json`)
+    )
+  } catch {
+    // If the backup step fails, keep the migrated workspace canvas and continue.
+  }
+}
+
+export async function loadCanvasState(workspacePath?: string | null): Promise<CanvasState> {
+  if (!workspacePath) {
+    return createDefaultCanvasState()
+  }
+
+  const targetPath = workspaceCanvasStatePath(workspacePath)
+  const state = sanitizeCanvasState(await readJson(targetPath, createDefaultCanvasState()))
+  await writeJson(targetPath, state)
   return state
 }
 
-export async function saveCanvasState(state: CanvasState): Promise<CanvasState> {
+export async function saveCanvasState(
+  workspacePath: string | null | undefined,
+  state: CanvasState
+): Promise<CanvasState> {
   const sanitized = sanitizeCanvasState(state)
-  await writeJson(CANVAS_STATE_PATH, sanitized)
+
+  if (!workspacePath) {
+    return sanitized
+  }
+
+  await writeJson(workspaceCanvasStatePath(workspacePath), sanitized)
   return sanitized
 }

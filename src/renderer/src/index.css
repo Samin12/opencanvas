@@ -130,6 +130,51 @@ textarea {
   -webkit-app-region: no-drag;
 }
 
+.app-tooltip {
+  pointer-events: none;
+  position: fixed;
+  z-index: 400;
+  display: flex;
+  max-width: min(20rem, calc(100vw - 24px));
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface-overlay);
+  padding: 0.375rem 0.625rem;
+  color: var(--text);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(8px);
+  white-space: nowrap;
+}
+
+.app-tooltip--top {
+  transform: translateY(calc(-100% - 10px));
+}
+
+.app-tooltip--bottom {
+  transform: translateY(10px);
+}
+
+.app-tooltip__label {
+  line-height: 1;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.app-tooltip__shortcut {
+  flex-shrink: 0;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--accent-soft);
+  padding: 0.125rem 0.375rem;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.08em;
+}
+
 .terminal-pane .xterm {
   height: 100%;
   padding: 2px 2px 0;
@@ -272,7 +317,47 @@ textarea {
 
 .markdown-preview ul,
 .markdown-preview ol {
-  padding-left: 1.4em;
+  padding-left: 1.5em;
+}
+
+.markdown-preview ul {
+  list-style-position: outside;
+  list-style-type: disc;
+}
+
+.markdown-preview ul ul {
+  list-style-type: circle;
+}
+
+.markdown-preview ul ul ul {
+  list-style-type: square;
+}
+
+.markdown-preview ol {
+  list-style-position: outside;
+  list-style-type: decimal;
+}
+
+.markdown-preview ol ol {
+  list-style-type: lower-alpha;
+}
+
+.markdown-preview ol ol ol {
+  list-style-type: lower-roman;
+}
+
+.markdown-preview li:not([data-type='taskItem']) {
+  display: list-item;
+}
+
+.markdown-preview li:not([data-type='taskItem'])::marker {
+  color: var(--text-dim);
+  font-size: 0.92em;
+}
+
+.markdown-preview li > ul,
+.markdown-preview li > ol {
+  margin: 0.35em 0 0.1em;
 }
 
 .markdown-preview ul[data-type='taskList'] {
@@ -329,6 +414,49 @@ textarea {
 .markdown-preview ul[data-type='taskList'] > li[data-checked='true'] > div p {
   text-decoration: line-through;
   text-decoration-color: color-mix(in srgb, var(--text-faint) 70%, transparent);
+}
+
+.markdown-preview li[data-collapsed='true'] > ul,
+.markdown-preview li[data-collapsed='true'] > ol,
+.markdown-preview li[data-type='taskItem'][data-collapsed='true'] > div > ul,
+.markdown-preview li[data-type='taskItem'][data-collapsed='true'] > div > ol {
+  display: none;
+}
+
+.markdown-preview li:has(> ul) > p:first-child,
+.markdown-preview li:has(> ol) > p:first-child,
+.markdown-preview li[data-type='taskItem']:has(> div > ul) > div > p:first-child,
+.markdown-preview li[data-type='taskItem']:has(> div > ol) > div > p:first-child {
+  position: relative;
+}
+
+.markdown-preview li:has(> ul) > p:first-child::before,
+.markdown-preview li:has(> ol) > p:first-child::before,
+.markdown-preview li[data-type='taskItem']:has(> div > ul) > div > p:first-child::before,
+.markdown-preview li[data-type='taskItem']:has(> div > ol) > div > p:first-child::before {
+  content: '▾';
+  position: absolute;
+  left: -1.85em;
+  top: 0.08em;
+  display: grid;
+  width: 1.2rem;
+  height: 1.2rem;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-1) 92%, white 8%);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.markdown-preview li[data-collapsed='true']:has(> ul) > p:first-child::before,
+.markdown-preview li[data-collapsed='true']:has(> ol) > p:first-child::before,
+.markdown-preview li[data-type='taskItem'][data-collapsed='true']:has(> div > ul) > div > p:first-child::before,
+.markdown-preview li[data-type='taskItem'][data-collapsed='true']:has(> div > ol) > div > p:first-child::before {
+  content: '▸';
 }
 
 .markdown-preview li + li {

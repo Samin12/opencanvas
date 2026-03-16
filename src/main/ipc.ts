@@ -4,7 +4,13 @@ import { resolve } from 'node:path'
 
 import type { AppConfig, CanvasState, CreateWorkspaceNoteOptions, WorkspaceImageImport } from '../shared/types'
 
-import { loadCanvasState, loadConfig, saveCanvasState, saveConfig } from './storage'
+import {
+  loadCanvasState,
+  loadConfig,
+  migrateLegacyCanvasStateToWorkspace,
+  saveCanvasState,
+  saveConfig
+} from './storage'
 import {
   createOrAttachTerminalSession,
   readTerminalActivity,
@@ -47,7 +53,12 @@ function disposeFileWatch(key: string): void {
 
 export function registerIpcHandlers(): void {
   ipcMain.handle('bootstrap', async () => {
-    const [config, canvasState] = await Promise.all([loadConfig(), loadCanvasState()])
+    const config = await loadConfig()
+    const activeWorkspacePath = config.workspaces[config.activeWorkspace] ?? null
+
+    await migrateLegacyCanvasStateToWorkspace(activeWorkspacePath)
+
+    const canvasState = await loadCanvasState(activeWorkspacePath)
 
     return {
       config,
@@ -57,7 +68,12 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('config:save', async (_event, config: AppConfig) => saveConfig(config))
-  ipcMain.handle('canvas:save', async (_event, state: CanvasState) => saveCanvasState(state))
+  ipcMain.handle('canvas:read', async (_event, workspacePath: string | null) =>
+    loadCanvasState(workspacePath)
+  )
+  ipcMain.handle('canvas:save', async (_event, workspacePath: string | null, state: CanvasState) =>
+    saveCanvasState(workspacePath, state)
+  )
   ipcMain.handle('system:copy-text', async (_event, text: string) => {
     clipboard.writeText(text)
   })

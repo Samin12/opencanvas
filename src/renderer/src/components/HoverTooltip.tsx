@@ -18,9 +18,10 @@ interface TooltipPosition {
   top: number
 }
 
-const TOOLTIP_EDGE_PADDING = 72
+const TOOLTIP_EDGE_PADDING = 12
 const TOOLTIP_OFFSET = 10
 const TOOLTIP_FLIP_THRESHOLD = 52
+const FALLBACK_TOOLTIP_WIDTH = 220
 
 export function HoverTooltip({
   children,
@@ -29,8 +30,10 @@ export function HoverTooltip({
   shortcut
 }: HoverTooltipProps) {
   const anchorRef = useRef<HTMLSpanElement | null>(null)
+  const tooltipRef = useRef<HTMLDivElement | null>(null)
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState<TooltipPosition | null>(null)
+  const normalizedLabel = label.trim()
 
   useLayoutEffect(() => {
     if (!open || typeof window === 'undefined') {
@@ -47,6 +50,7 @@ export function HoverTooltip({
       const rect = anchor.getBoundingClientRect()
       const topSpace = rect.top
       const bottomSpace = window.innerHeight - rect.bottom
+      const tooltipWidth = tooltipRef.current?.offsetWidth ?? FALLBACK_TOOLTIP_WIDTH
       const resolvedPlacement =
         placement === 'top'
           ? topSpace < TOOLTIP_FLIP_THRESHOLD && bottomSpace > topSpace
@@ -57,8 +61,8 @@ export function HoverTooltip({
             : 'bottom'
       const anchorCenter = rect.left + rect.width / 2
       const left = Math.min(
-        Math.max(anchorCenter, TOOLTIP_EDGE_PADDING),
-        window.innerWidth - TOOLTIP_EDGE_PADDING
+        Math.max(anchorCenter - tooltipWidth / 2, TOOLTIP_EDGE_PADDING),
+        window.innerWidth - tooltipWidth - TOOLTIP_EDGE_PADDING
       )
 
       setPosition({
@@ -72,17 +76,17 @@ export function HoverTooltip({
     }
 
     updatePosition()
+    const rafId = window.requestAnimationFrame(updatePosition)
 
     window.addEventListener('resize', updatePosition)
     window.addEventListener('scroll', updatePosition, true)
 
     return () => {
+      window.cancelAnimationFrame(rafId)
       window.removeEventListener('resize', updatePosition)
       window.removeEventListener('scroll', updatePosition, true)
     }
-  }, [open, placement])
-
-  const normalizedLabel = label.trim()
+  }, [normalizedLabel, open, placement, shortcut])
 
   if (!normalizedLabel) {
     return <>{children}</>
@@ -107,21 +111,20 @@ export function HoverTooltip({
       {open && position && typeof document !== 'undefined'
         ? createPortal(
             <div
+              ref={tooltipRef}
               role="tooltip"
               className={clsx(
-                'pointer-events-none fixed z-[400] flex max-w-[20rem] items-center gap-2 rounded-[6px] border border-[color:var(--line-strong)] bg-[color:var(--surface-overlay)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--text)] shadow-[0_12px_32px_rgba(15,23,42,0.18)] backdrop-blur-sm',
-                position.placement === 'top'
-                  ? '-translate-x-1/2 -translate-y-full'
-                  : '-translate-x-1/2'
+                'app-tooltip',
+                position.placement === 'top' ? 'app-tooltip--top' : 'app-tooltip--bottom'
               )}
               style={{
                 left: position.left,
                 top: position.top
               }}
             >
-              <span className="leading-none text-[var(--text)]">{normalizedLabel}</span>
+              <span className="app-tooltip__label">{normalizedLabel}</span>
               {shortcut ? (
-                <span className="shrink-0 rounded-[4px] border border-[color:var(--accent)] bg-[var(--accent-soft)] px-1.5 py-0.5 font-[var(--font-mono)] text-[10px] leading-none tracking-[0.08em] text-[var(--accent)]">
+                <span className="app-tooltip__shortcut">
                   {shortcut}
                 </span>
               ) : null}

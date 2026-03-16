@@ -1,4 +1,4 @@
-import { memo, useState, type ReactNode } from 'react'
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import clsx from 'clsx'
 import type { AppConfig, FileTreeNode, SidebarSide } from '@shared/types'
@@ -17,9 +17,11 @@ const CREATE_NOTE_SHORTCUT_KEY = `${MODIFIER_KEY}+N`
 const CREATE_TERMINAL_SHORTCUT_KEY = 'Shift+T'
 const ADD_WORKSPACE_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+O`
 const TOGGLE_DARK_MODE_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+D`
+const WORKSPACE_SWITCHER_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+W`
 const SIDEBAR_LEFT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2190' : null
 const SIDEBAR_RIGHT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2192' : null
 const SIDEBAR_TOGGLE_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2193' : null
+const WORKSPACE_SWITCHER_OPEN_EVENT = 'claude-canvas:open-workspace-switcher'
 
 function SearchIcon() {
   return (
@@ -480,6 +482,7 @@ function SidebarComponent({
   workspaceTree
 }: SidebarProps) {
   const activeWorkspacePath = config.workspaces[config.activeWorkspace] ?? null
+  const workspaceSelectRef = useRef<HTMLSelectElement | null>(null)
   const [fileBrowserMode, setFileBrowserMode] = useState<FileBrowserMode>('tree')
   const [fileQuery, setFileQuery] = useState('')
   const [recentAscending, setRecentAscending] = useState(false)
@@ -501,6 +504,41 @@ function SidebarComponent({
       return left.name.localeCompare(right.name)
     })
   const recentGroups = buildRecentGroups(visibleRecentFiles, recentAscending)
+
+  useEffect(() => {
+    function openWorkspaceSwitcher() {
+      const workspaceSelect = workspaceSelectRef.current
+
+      if (!workspaceSelect || workspaceSelect.disabled) {
+        return
+      }
+
+      workspaceSelect.focus()
+
+      window.requestAnimationFrame(() => {
+        const pickerSelect = workspaceSelect as HTMLSelectElement & {
+          showPicker?: () => void
+        }
+
+        try {
+          if (typeof pickerSelect.showPicker === 'function') {
+            pickerSelect.showPicker()
+            return
+          }
+        } catch {
+          // Ignore browsers that reject programmatic picker opening.
+        }
+
+        workspaceSelect.click()
+      })
+    }
+
+    window.addEventListener(WORKSPACE_SWITCHER_OPEN_EVENT, openWorkspaceSwitcher)
+
+    return () => {
+      window.removeEventListener(WORKSPACE_SWITCHER_OPEN_EVENT, openWorkspaceSwitcher)
+    }
+  }, [])
 
   return (
     <aside className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-r border-[color:var(--line)] bg-[var(--surface-1)]">
@@ -549,27 +587,37 @@ function SidebarComponent({
 
         <div className="app-no-drag mt-3 space-y-2">
           <div className="flex items-stretch gap-2">
-            <div className="relative min-w-0 flex-1">
-              <select
-                className="h-10 w-full appearance-none rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 pr-10 text-[13px] font-medium text-[var(--text)] outline-none transition focus:border-[color:var(--accent)]"
-                value={config.activeWorkspace}
-                onChange={(event) => onSelectWorkspace(Number(event.target.value))}
-                disabled={config.workspaces.length === 0}
-              >
-                {config.workspaces.length === 0 ? (
-                  <option value={0}>No workspace selected</option>
-                ) : (
-                  config.workspaces.map((workspace, index) => (
-                    <option key={workspace} value={index}>
-                      {workspaceLabel(workspace)}
-                    </option>
-                  ))
-                )}
-              </select>
-              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[var(--text-faint)]">
-                <ChevronDownIcon />
-              </span>
-            </div>
+            <HoverTooltip
+              label="Switch active workspace"
+              placement="bottom"
+              shortcut={WORKSPACE_SWITCHER_SHORTCUT_KEY}
+            >
+              <div className="relative min-w-0 flex-1">
+                <select
+                  ref={workspaceSelectRef}
+                  aria-label="Switch active workspace"
+                  data-managed-tooltip="custom"
+                  data-shortcut={WORKSPACE_SWITCHER_SHORTCUT_KEY}
+                  className="h-10 w-full appearance-none rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 pr-10 text-[13px] font-medium text-[var(--text)] outline-none transition focus:border-[color:var(--accent)]"
+                  value={config.activeWorkspace}
+                  onChange={(event) => onSelectWorkspace(Number(event.target.value))}
+                  disabled={config.workspaces.length === 0}
+                >
+                  {config.workspaces.length === 0 ? (
+                    <option value={0}>No workspace selected</option>
+                  ) : (
+                    config.workspaces.map((workspace, index) => (
+                      <option key={workspace} value={index}>
+                        {workspaceLabel(workspace)}
+                      </option>
+                    ))
+                  )}
+                </select>
+                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[var(--text-faint)]">
+                  <ChevronDownIcon />
+                </span>
+              </div>
+            </HoverTooltip>
             <HoverTooltip label="Add workspace folder" placement="bottom" shortcut={ADD_WORKSPACE_SHORTCUT_KEY}>
               <button
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
@@ -820,7 +868,7 @@ function SidebarComponent({
       <div className="shrink-0 border-t border-[color:var(--line)] bg-[var(--surface-2)] px-3.5 py-3">
         <div className="grid grid-cols-5 gap-2">
           <ActionIconButton
-            label="Search Files"
+            label="Search Workspace"
             onClick={onOpenSearch}
             shortcut={SEARCH_SHORTCUT_KEY}
           >

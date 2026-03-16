@@ -11,7 +11,11 @@ import type {
 
 import { CanvasSurface, type CanvasSurfaceHandle } from './components/CanvasSurface'
 import { HoverTooltip } from './components/HoverTooltip'
-import { SearchDialog } from './components/SearchDialog'
+import {
+  SearchDialog,
+  type SearchDialogResult,
+  type SearchScope
+} from './components/SearchDialog'
 import { Sidebar } from './components/Sidebar'
 import { ViewerOverlay } from './components/ViewerOverlay'
 import { keyboardShortcutsBlocked } from './utils/keyboard'
@@ -22,6 +26,8 @@ const IS_MAC_PLATFORM =
 const SIDEBAR_LEFT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2190' : null
 const SIDEBAR_RIGHT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2192' : null
 const TOGGLE_DARK_MODE_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+Shift+D' : 'Ctrl+Shift+D'
+const WORKSPACE_SWITCHER_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+Shift+W' : 'Ctrl+Shift+W'
+const WORKSPACE_SWITCHER_OPEN_EVENT = 'claude-canvas:open-workspace-switcher'
 
 function flattenFiles(nodes: FileTreeNode[]): FileTreeNode[] {
   const files: FileTreeNode[] = []
@@ -87,6 +93,19 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
+function emptyCanvasState(): CanvasState {
+  return {
+    version: 1,
+    tiles: [],
+    viewport: {
+      panX: 0,
+      panY: 0,
+      zoom: 1
+    },
+    boardSnapshot: undefined
+  }
+}
+
 async function copyTextWithBrowserFallback(text: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text)
@@ -126,9 +145,12 @@ export default function App() {
   const canvasFrameRef = useRef<number | null>(null)
   const canvasSaveTimerRef = useRef<number | null>(null)
   const canvasStateRef = useRef<CanvasState | null>(null)
+  const canvasWorkspaceRef = useRef<string | null>(null)
+  const canvasLoadRequestRef = useRef(0)
 
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [canvasState, setCanvasState] = useState<CanvasState | null>(null)
+  const [canvasWorkspacePath, setCanvasWorkspacePath] = useState<string | null>(null)
   const [workspaceTree, setWorkspaceTree] = useState<FileTreeNode[]>([])
   const [viewerFile, setViewerFile] = useState<FileTreeNode | null>(null)
   const [selectedTreePath, setSelectedTreePath] = useState<string | null>(null)
@@ -137,13 +159,28 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [sidebarSide, setSidebarSide] = useState<SidebarSide>('left')
   const [searchOpen, setSearchOpen] = useState(false)
+  const [searchScope, setSearchScope] = useState<SearchScope>('workspace')
+  const [globalSearchFiles, setGlobalSearchFiles] = useState<SearchDialogResult[]>([])
+  const [globalSearchLoading, setGlobalSearchLoading] = useState(false)
   const [loadingWorkspace, setLoadingWorkspace] = useState(false)
+  const [pendingSearchResult, setPendingSearchResult] = useState<SearchDialogResult | null>(null)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [bootError, setBootError] = useState<string | null>(null)
   const [terminalDependencies, setTerminalDependencies] = useState<TerminalDependencyState | null>(null)
 
   const activeWorkspace = config ? config.workspaces[config.activeWorkspace] ?? null : null
   const flatFiles = useMemo(() => flattenFiles(workspaceTree), [workspaceTree])
+  const workspaceSearchFiles = useMemo(
+    () =>
+      activeWorkspace
+        ? flatFiles.map((file) => ({
+            file,
+            workspacePath: activeWorkspace
+          }))
+        : [],
+    [activeWorkspace, flatFiles]
+  )
+  const searchFiles = searchScope === 'all-workspaces' ? globalSearchFiles : workspaceSearchFiles
   const selectedTreeNode = useMemo(
     () => (selectedTreePath ? findNodeByPath(workspaceTree, selectedTreePath) : null),
     [selectedTreePath, workspaceTree]
@@ -194,9 +231,14 @@ export default function App() {
           return
         }
 
+        const initialWorkspacePath =
+          payload.config.workspaces[payload.config.activeWorkspace] ?? null
+
+        canvasWorkspaceRef.current = initialWorkspacePath
+        canvasStateRef.current = payload.canvasState
+        setCanvasWorkspacePath(initialWorkspacePath)
         setConfig(payload.config)
         setCanvasState(payload.canvasState)
-        canvasStateRef.current = payload.canvasState
         setSidebarWidth(payload.config.ui.sidebarWidth)
         setDarkMode(payload.config.ui.darkMode)
         setSidebarCollapsed(payload.config.ui.sidebarCollapsed)
@@ -215,6 +257,19 @@ export default function App() {
       cancelled = true
     }
   }, [])
+
+  async function flushPendingCanvasSave() {
+    if (canvasSaveTimerRef.current !== null) {
+      window.clearTimeout(canvasSaveTimerRef.current)
+      canvasSaveTimerRef.current = null
+    }
+
+    if (!canvasStateRef.current) {
+      return
+    }
+
+    await window.collaborator.saveCanvasState(canvasWorkspaceRef.current, canvasStateRef.current)
+  }
 
   useEffect(() => {
     if (!activeWorkspace) {
@@ -256,8 +311,136 @@ export default function App() {
   }, [activeWorkspace])
 
   useEffect(() => {
+    if (!config) {
+      return
+    }
+
+    const workspacePath = activeWorkspace ?? null
+
+    if (canvasWorkspaceRef.current === workspacePath && canvasStateRef.current !== null) {
+      return
+    }
+
+    let cancelled = false
+    const requestId = canvasLoadRequestRef.current + 1
+    canvasLoadRequestRef.current = requestId
+
+    async function loadWorkspaceCanvas() {
+      await flushPendingCanvasSave()
+
+      try {
+        const nextCanvasState = await window.collaborator.readCanvasState(workspacePath)
+
+        if (cancelled || canvasLoadRequestRef.current !== requestId) {
+          return
+        }
+
+        if (canvasFrameRef.current !== null) {
+          window.cancelAnimationFrame(canvasFrameRef.current)
+          canvasFrameRef.current = null
+        }
+
+        canvasWorkspaceRef.current = workspacePath
+        canvasStateRef.current = nextCanvasState
+        setCanvasWorkspacePath(workspacePath)
+        setCanvasState(nextCanvasState)
+      } catch {
+        if (cancelled || canvasLoadRequestRef.current !== requestId) {
+          return
+        }
+
+        const nextCanvasState = emptyCanvasState()
+
+        canvasWorkspaceRef.current = workspacePath
+        canvasStateRef.current = nextCanvasState
+        setCanvasWorkspacePath(workspacePath)
+        setCanvasState(nextCanvasState)
+        setWorkspaceError('The workspace canvas could not be loaded.')
+      }
+    }
+
+    void loadWorkspaceCanvas()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeWorkspace, config])
+
+  useEffect(() => {
     setSelectedTreePath(null)
+    setViewerFile(null)
   }, [activeWorkspace])
+
+  useEffect(() => {
+    if (!searchOpen || searchScope !== 'all-workspaces') {
+      setGlobalSearchLoading(false)
+      return
+    }
+
+    let cancelled = false
+    const workspacePaths = config?.workspaces ?? []
+    const currentWorkspacePath = activeWorkspace
+    const currentWorkspaceTree = workspaceTree
+
+    setGlobalSearchLoading(true)
+
+    void (async () => {
+      const settledResults = await Promise.allSettled(
+        workspacePaths.map(async (workspacePath) => {
+          const tree =
+            workspacePath === currentWorkspacePath
+              ? currentWorkspaceTree
+              : await window.collaborator.readWorkspaceTree(workspacePath)
+
+          return flattenFiles(tree).map((file) => ({
+            file,
+            workspacePath
+          }))
+        })
+      )
+
+      if (cancelled) {
+        return
+      }
+
+      const nextResults: SearchDialogResult[] = []
+      let failureCount = 0
+
+      for (const result of settledResults) {
+        if (result.status === 'fulfilled') {
+          nextResults.push(...result.value)
+        } else {
+          failureCount += 1
+        }
+      }
+
+      setGlobalSearchFiles(nextResults)
+      setGlobalSearchLoading(false)
+
+      if (failureCount > 0) {
+        setWorkspaceError(
+          failureCount === workspacePaths.length
+            ? 'Opened workspaces could not be indexed for search.'
+            : 'Some opened workspaces could not be indexed for search.'
+        )
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeWorkspace, config, searchOpen, searchScope, workspaceTree])
+
+  useEffect(() => {
+    if (!pendingSearchResult || loadingWorkspace || activeWorkspace !== pendingSearchResult.workspacePath) {
+      return
+    }
+
+    const nextNode = findNodeByPath(workspaceTree, pendingSearchResult.file.path)
+
+    previewFile(nextNode?.kind === 'file' ? nextNode : pendingSearchResult.file)
+    setPendingSearchResult(null)
+  }, [activeWorkspace, loadingWorkspace, pendingSearchResult, workspaceTree])
 
   useEffect(() => {
     document.documentElement.classList.toggle('theme-dark', darkMode)
@@ -277,6 +460,10 @@ export default function App() {
 
       if (canvasSaveTimerRef.current !== null) {
         window.clearTimeout(canvasSaveTimerRef.current)
+      }
+
+      if (canvasStateRef.current) {
+        void window.collaborator.saveCanvasState(canvasWorkspaceRef.current, canvasStateRef.current)
       }
     }
   }, [])
@@ -305,6 +492,12 @@ export default function App() {
         return
       }
 
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'w') {
+        event.preventDefault()
+        window.dispatchEvent(new CustomEvent(WORKSPACE_SWITCHER_OPEN_EVENT))
+        return
+      }
+
       if (event.metaKey && !event.ctrlKey && !event.altKey) {
         if (event.key === 'ArrowLeft') {
           event.preventDefault()
@@ -325,11 +518,16 @@ export default function App() {
         }
       }
 
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        (event.key.toLowerCase() === 'k' || event.key.toLowerCase() === 'o')
-      ) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
+        setSearchScope('workspace')
+        setSearchOpen(true)
+        return
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'o') {
+        event.preventDefault()
+        setSearchScope('all-workspaces')
         setSearchOpen(true)
         return
       }
@@ -784,13 +982,15 @@ export default function App() {
   }
 
   function scheduleCanvasSave(nextState: CanvasState, immediate = false) {
+    const workspacePath = canvasWorkspaceRef.current
+
     if (canvasSaveTimerRef.current !== null) {
       window.clearTimeout(canvasSaveTimerRef.current)
       canvasSaveTimerRef.current = null
     }
 
     if (immediate) {
-      void window.collaborator.saveCanvasState(nextState)
+      void window.collaborator.saveCanvasState(workspacePath, nextState)
       return
     }
 
@@ -798,7 +998,7 @@ export default function App() {
       canvasSaveTimerRef.current = null
 
       if (canvasStateRef.current) {
-        void window.collaborator.saveCanvasState(canvasStateRef.current)
+        void window.collaborator.saveCanvasState(workspacePath, canvasStateRef.current)
       }
     }, 500)
   }
@@ -879,7 +1079,10 @@ export default function App() {
               }
               onOpenWorkspacePath={() => void openActiveWorkspacePath()}
               onMoveSidebar={setSidebarPlacement}
-              onOpenSearch={() => setSearchOpen(true)}
+              onOpenSearch={() => {
+                setSearchScope('workspace')
+                setSearchOpen(true)
+              }}
               onPlaceFile={placeFileOnCanvas}
               onRemoveWorkspace={() => void removeActiveWorkspace()}
               onSelectNode={selectWorkspaceNode}
@@ -968,6 +1171,7 @@ export default function App() {
           <CanvasSurface
             activeWorkspacePath={activeWorkspace}
             darkMode={darkMode}
+            key={canvasWorkspacePath ?? 'no-workspace'}
             ref={canvasRef}
             onCreateMarkdownCard={({ baseName, initialContent, targetDirectoryPath }) =>
               createWorkspaceMarkdownNote({ baseName, initialContent, targetDirectoryPath })
@@ -1032,7 +1236,10 @@ export default function App() {
               }
               onOpenWorkspacePath={() => void openActiveWorkspacePath()}
               onMoveSidebar={setSidebarPlacement}
-              onOpenSearch={() => setSearchOpen(true)}
+              onOpenSearch={() => {
+                setSearchScope('workspace')
+                setSearchOpen(true)
+              }}
               onPlaceFile={placeFileOnCanvas}
               onRemoveWorkspace={() => void removeActiveWorkspace()}
               onSelectNode={selectWorkspaceNode}
@@ -1067,13 +1274,32 @@ export default function App() {
       </div>
 
       <SearchDialog
-        files={flatFiles}
+        loading={searchScope === 'all-workspaces' ? globalSearchLoading : false}
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
-        onSelect={(file) => {
-          previewFile(file)
+        onSelect={(result) => {
           setSearchOpen(false)
+
+          if (!config || result.workspacePath === activeWorkspace) {
+            previewFile(result.file)
+            return
+          }
+
+          const nextWorkspaceIndex = config.workspaces.indexOf(result.workspacePath)
+
+          if (nextWorkspaceIndex === -1) {
+            previewFile(result.file)
+            return
+          }
+
+          setPendingSearchResult(result)
+          void persistConfig({
+            ...config,
+            activeWorkspace: nextWorkspaceIndex
+          })
         }}
+        results={searchFiles}
+        scope={searchScope}
       />
     </div>
   )
