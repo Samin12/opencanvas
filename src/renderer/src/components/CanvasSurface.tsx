@@ -149,8 +149,8 @@ const WHEEL_GESTURE_LOCK_MS = 180
 const POINTER_SCROLL_ACTIVATION_WINDOW_MS = 400
 const MIN_TILE_WIDTH = 280
 const MIN_TILE_HEIGHT = 220
-const DEFAULT_TERMINAL_WIDTH = 760
-const DEFAULT_TERMINAL_HEIGHT = 560
+const DEFAULT_TERMINAL_WIDTH = 860
+const DEFAULT_TERMINAL_HEIGHT = 620
 const DEFAULT_TERMINAL_CARD_WIDTH = 460
 const DEFAULT_TERMINAL_CARD_HEIGHT = 520
 const CAMERA_EPSILON = 0.001
@@ -1428,8 +1428,41 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
     }
 
+    function preferredTerminalFrame(preferredX: number, preferredY: number) {
+      const viewportMargin = 24
+      const bounds = visibleWorldBounds()
+      const maxWidth = bounds
+        ? Math.max(MIN_TILE_WIDTH, bounds.right - bounds.left - viewportMargin * 2)
+        : DEFAULT_TERMINAL_WIDTH
+      const maxHeight = bounds
+        ? Math.max(MIN_TILE_HEIGHT, bounds.bottom - bounds.top - viewportMargin * 2)
+        : DEFAULT_TERMINAL_HEIGHT
+      const width = snap(Math.min(DEFAULT_TERMINAL_WIDTH, maxWidth))
+      const height = snap(Math.min(DEFAULT_TERMINAL_HEIGHT, maxHeight))
+      let x = preferredX
+      let y = preferredY
+
+      if (bounds) {
+        const minX = bounds.left + viewportMargin
+        const maxX = Math.max(minX, bounds.right - width - viewportMargin)
+        const minY = bounds.top + viewportMargin
+        const maxY = Math.max(minY, bounds.bottom - height - viewportMargin)
+
+        x = clamp(x, minX, maxX)
+        y = clamp(y, minY, maxY)
+      }
+
+      return {
+        height,
+        width,
+        x: snap(x),
+        y: snap(y)
+      }
+    }
+
     function createTerminalNearCenter() {
       const { x, y } = centerWorldPosition(stateRef.current.tiles.length % 4)
+      const frame = preferredTerminalFrame(x, y)
       const tileId = `tile-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
       appendTile(
@@ -1437,10 +1470,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           id: tileId,
           type: 'term',
           title: titleForTerminal(stateRef.current.tiles),
-          x: snap(x),
-          y: snap(y),
-          width: DEFAULT_TERMINAL_WIDTH,
-          height: DEFAULT_TERMINAL_HEIGHT,
+          x: frame.x,
+          y: frame.y,
+          width: frame.width,
+          height: frame.height,
           zIndex: nextZIndex(stateRef.current.tiles),
           sessionId: sessionId()
         },
@@ -2307,6 +2340,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
     function createTerminalAt(clientX: number, clientY: number) {
       const point = pagePointFromClient(clientX, clientY)
+      const frame = preferredTerminalFrame(
+        point.x - DEFAULT_TERMINAL_WIDTH / 2,
+        point.y - DEFAULT_TERMINAL_HEIGHT / 2
+      )
       const tileId = `tile-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
       appendTile(
@@ -2314,10 +2351,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           id: tileId,
           type: 'term',
           title: titleForTerminal(stateRef.current.tiles),
-          x: snap(point.x),
-          y: snap(point.y),
-          width: DEFAULT_TERMINAL_WIDTH,
-          height: DEFAULT_TERMINAL_HEIGHT,
+          x: frame.x,
+          y: frame.y,
+          width: frame.width,
+          height: frame.height,
           zIndex: nextZIndex(stateRef.current.tiles),
           sessionId: sessionId()
         },
