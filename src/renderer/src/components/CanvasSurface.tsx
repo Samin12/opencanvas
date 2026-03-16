@@ -134,7 +134,7 @@ type InteractionState =
 
 const GRID_SIZE = 20
 const MAJOR_GRID = GRID_SIZE * 4
-const MIN_ZOOM = 0.33
+const MIN_ZOOM = 0.1
 const MAX_ZOOM = 2
 const WHEEL_GESTURE_LOCK_MS = 180
 const MIN_TILE_WIDTH = 280
@@ -1382,7 +1382,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         wheelBehavior: 'pan',
         zoomSpeed: 1,
         panSpeed: 1,
-        zoomSteps: [MIN_ZOOM, 0.5, 0.67, 0.8, 1, 1.25, 1.5, 2]
+        zoomSteps: [MIN_ZOOM, 0.16, 0.25, 0.33, 0.5, 0.67, 0.8, 1, 1.25, 1.5, 2]
       })
       if (stateRef.current.boardSnapshot && typeof stateRef.current.boardSnapshot === 'object') {
         try {
