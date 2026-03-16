@@ -1843,12 +1843,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         if (event.key === 'Escape') {
           if (linkSourceTileId) {
             event.preventDefault()
+            event.stopPropagation()
             setLinkSourceTileId(null)
             return
           }
 
           if (selectedTileId) {
             event.preventDefault()
+            event.stopPropagation()
             setSelectedTileId(null)
           }
 
@@ -1860,12 +1862,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
           if (selectedTileId) {
             event.preventDefault()
+            event.stopPropagation()
             deleteTile(selectedTileId)
             return
           }
 
           if (selectedShapeIds.length > 0 && editorRef.current) {
             event.preventDefault()
+            event.stopPropagation()
             editorRef.current.deleteShapes(selectedShapeIds)
           }
 
@@ -1874,6 +1878,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
         if (lowerKey === 't' && event.shiftKey) {
           event.preventDefault()
+          event.stopPropagation()
           runShortcutAction('terminal')
           return
         }
@@ -1883,6 +1888,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
           if (isContextSourceTile(selectedTile)) {
             event.preventDefault()
+            event.stopPropagation()
             toggleLinkMode(selectedTileId)
             return
           }
@@ -1893,6 +1899,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         }
 
         event.preventDefault()
+        event.stopPropagation()
         runShortcutAction(nextTool)
       }
 
