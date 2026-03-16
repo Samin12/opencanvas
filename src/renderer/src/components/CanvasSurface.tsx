@@ -174,6 +174,8 @@ const DEFAULT_TERMINAL_CARD_WIDTH = 460
 const DEFAULT_TERMINAL_CARD_HEIGHT = 520
 const CAMERA_EPSILON = 0.001
 const FRAME_MOVE_EPSILON = 0.01
+const GROUP_FRAME_HEADER_HEIGHT = 32
+const GROUP_FRAME_INSET = 12
 const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
 const IMAGE_FILE_EXTENSIONS = new Set(['.gif', '.jpg', '.jpeg', '.png', '.svg', '.webp'])
 const VIDEO_FILE_EXTENSIONS = new Set(['.avi', '.m4v', '.mkv', '.mov', '.mp4', '.webm'])
@@ -905,6 +907,89 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       return `Group ${maxGroupNumber + 1}`
     }
 
+    function expandFrameBoundsForTile(bounds: FrameBoundsSnapshot, tile: CanvasTile): FrameBoundsSnapshot {
+      const nextLeft = Math.min(bounds.x, tile.x - GROUP_FRAME_INSET)
+      const nextTop = Math.min(bounds.y, tile.y - GROUP_FRAME_HEADER_HEIGHT - GROUP_FRAME_INSET)
+      const nextRight = Math.max(bounds.x + bounds.width, tile.x + tile.width + GROUP_FRAME_INSET)
+      const nextBottom = Math.max(bounds.y + bounds.height, tile.y + tile.height + GROUP_FRAME_INSET)
+
+      return {
+        x: snap(nextLeft),
+        y: snap(nextTop),
+        width: snap(nextRight - nextLeft),
+        height: snap(nextBottom - nextTop)
+      }
+    }
+
+    function expandGroupsForTileIds(tileIds: string[]) {
+      const editor = editorRef.current
+
+      if (!editor || tileIds.length === 0) {
+        return
+      }
+
+      const currentBounds = frameBoundsSnapshot(editor)
+      const nextBounds = new Map(currentBounds)
+
+      tileIds.forEach((tileId) => {
+        const tile = tileById(tileId)
+
+        if (!tile) {
+          return
+        }
+
+        Array.from(nextBounds.entries()).forEach(([frameId, bounds]) => {
+          if (!tileCenterWithinBounds(tile, bounds)) {
+            return
+          }
+
+          nextBounds.set(frameId, expandFrameBoundsForTile(bounds, tile))
+        })
+      })
+
+      const frameUpdates: FrameShapeUpdate[] = Array.from(nextBounds.entries()).flatMap(([frameId, bounds]) => {
+        const previousBounds = currentBounds.get(frameId)
+
+        if (
+          !previousBounds ||
+          (Math.abs(previousBounds.x - bounds.x) <= FRAME_MOVE_EPSILON &&
+            Math.abs(previousBounds.y - bounds.y) <= FRAME_MOVE_EPSILON &&
+            Math.abs(previousBounds.width - bounds.width) <= FRAME_MOVE_EPSILON &&
+            Math.abs(previousBounds.height - bounds.height) <= FRAME_MOVE_EPSILON)
+        ) {
+          return []
+        }
+
+        return [
+          {
+            id: frameId as TLFrameShape['id'],
+            type: 'frame',
+            x: bounds.x,
+            y: bounds.y,
+            props: {
+              w: bounds.width,
+              h: bounds.height
+            }
+          }
+        ]
+      })
+
+      if (frameUpdates.length === 0) {
+        return
+      }
+
+      frameUpdates.forEach((update) => {
+        frameBoundsRef.current.set(update.id, {
+          x: update.x ?? currentBounds.get(update.id)?.x ?? 0,
+          y: update.y ?? currentBounds.get(update.id)?.y ?? 0,
+          width: update.props?.w ?? currentBounds.get(update.id)?.width ?? 0,
+          height: update.props?.h ?? currentBounds.get(update.id)?.height ?? 0
+        })
+      })
+
+      editor.updateShapes(frameUpdates)
+    }
+
     function frameContextGroupById(groupId: string) {
       return frameContextGroups().find((group) => group.id === groupId) ?? null
     }
@@ -1346,6 +1431,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         },
         options
       )
+      expandGroupsForTileIds([tile.id])
     }
 
     function requestTileRefresh(tileId: string) {
@@ -2016,6 +2102,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               id: record.id,
               type: 'frame',
               props: {
+                color: 'grey',
                 name: (() => {
                   if (nextGeneratedGroupNumber === null) {
                     const match = /(\d+)$/.exec(nextGroupFrameLabel(editor))
@@ -2690,6 +2777,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               immediate: true
             }
           )
+          expandGroupsForTileIds([interaction.tileId])
         }
       }
 
