@@ -29,6 +29,7 @@ import type {
   CanvasTile,
   FileKind,
   FileTreeNode,
+  TerminalProvider,
   TerminalUiMode
 } from '@shared/types'
 
@@ -57,7 +58,7 @@ interface CanvasSurfaceProps {
 }
 
 export interface CanvasSurfaceHandle {
-  createTerminal: () => void
+  createTerminal: (provider?: TerminalProvider) => void
   spawnFileTile: (file: FileTreeNode) => void
   resetZoom: () => void
   zoomIn: () => void
@@ -66,7 +67,7 @@ export interface CanvasSurfaceHandle {
 
 type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 type BoardTool = 'hand' | 'select' | 'box' | 'arrow' | 'text' | 'note' | 'draw' | 'frame' | 'eraser'
-type ShortcutAction = BoardTool | 'markdown' | 'terminal'
+type ShortcutAction = BoardTool | 'markdown' | 'terminal-claude' | 'terminal-codex'
 type DrawShapeUpdate = TLShapePartial<TLDrawShape>
 type GestureLikeEvent = Event & {
   clientX?: number
@@ -167,10 +168,12 @@ const PASTE_IMAGE_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+V' : 'Ctrl+V'
 const ZOOM_IN_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd++' : 'Ctrl++'
 const ZOOM_OUT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+-' : 'Ctrl+-'
 const RESET_ZOOM_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+0' : 'Ctrl+0'
+const CREATE_CODEX_TERMINAL_SHORTCUT_KEY = 'Shift+C'
 const NOTE_SLASH_TOOLTIP_LABEL =
   'Markdown shortcuts: /h1-/h6 headings, /p paragraph, /bullet list, /numbered list, /todo checklist, /quote blockquote, /code code block, /line divider. Also works with #, >, -, 1., [ ] and ---.'
 const SHORTCUT_ITEMS: Array<{ action: ShortcutAction; key: string; label: string }> = [
-  { action: 'terminal', key: 'Shift+T', label: 'New Terminal' },
+  { action: 'terminal-claude', key: 'Shift+T', label: 'New Claude Terminal' },
+  { action: 'terminal-codex', key: CREATE_CODEX_TERMINAL_SHORTCUT_KEY, label: 'New Codex Terminal' },
   { action: 'markdown', key: MARKDOWN_SHORTCUT_KEY, label: 'New Markdown' },
   { action: 'hand', key: 'M', label: 'Move' },
   { action: 'select', key: 'V', label: 'Select' },
@@ -226,7 +229,7 @@ const BOARD_TOOL_SHORTCUTS: Record<string, BoardTool> = {
 }
 
 function isBoardToolAction(action: ShortcutAction): action is BoardTool {
-  return action !== 'terminal' && action !== 'markdown'
+  return action !== 'terminal-claude' && action !== 'terminal-codex' && action !== 'markdown'
 }
 
 function drawColorLabel(
@@ -514,9 +517,18 @@ function nextZIndex(tiles: CanvasTile[]) {
   return Math.max(0, ...tiles.map((tile) => tile.zIndex)) + 1
 }
 
-function titleForTerminal(tiles: CanvasTile[]) {
-  const count = tiles.filter((tile) => tile.type === 'term').length + 1
-  return `Terminal ${count}`
+function terminalProviderForTile(tile: CanvasTile | null | undefined): TerminalProvider {
+  return tile?.terminalProvider === 'codex' ? 'codex' : 'claude'
+}
+
+function terminalProviderLabel(provider: TerminalProvider) {
+  return provider === 'codex' ? 'Codex' : 'Claude Code'
+}
+
+function titleForTerminal(tiles: CanvasTile[], provider: TerminalProvider) {
+  const count =
+    tiles.filter((tile) => tile.type === 'term' && terminalProviderForTile(tile) === provider).length + 1
+  return `${provider === 'codex' ? 'Codex' : 'Claude'} ${count}`
 }
 
 function sessionId() {
@@ -875,7 +887,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       })
     }
 
-    function buildClaudeCodeContextPromptForTileIds(sourceTileIds: string[]) {
+    function buildTerminalContextPromptForTileIds(
+      sourceTileIds: string[],
+      provider: TerminalProvider
+    ) {
       const contextTiles = Array.from(
         new Map(
           sourceTileIds
@@ -892,7 +907,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       const hasImageContext = contextTiles.some((tile) => tile.type === 'image')
 
       return [
-        'Use these workspace files as context for this Claude Code session:',
+        `Use these workspace files as context for this ${terminalProviderLabel(provider)} session:`,
         '',
         ...contextTiles.map((tile) => `- ${tile.filePath}${tile.type === 'image' ? ' (image)' : ''}`),
         '',
@@ -931,7 +946,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         { immediate: true }
       )
 
-      const prompt = buildClaudeCodeContextPromptForTileIds(nextContextTileIds)
+      const prompt = buildTerminalContextPromptForTileIds(
+        nextContextTileIds,
+        terminalProviderForTile(terminalTile)
+      )
 
       if (prompt && terminalTile.sessionId) {
         window.collaborator.writeTerminalInput(terminalTile.sessionId, `${prompt}\r`)
@@ -1460,7 +1478,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
     }
 
-    function createTerminalNearCenter() {
+    function createTerminalNearCenter(provider: TerminalProvider = 'claude') {
       const { x, y } = centerWorldPosition(stateRef.current.tiles.length % 4)
       const frame = preferredTerminalFrame(x, y)
       const tileId = `tile-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -1469,13 +1487,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         {
           id: tileId,
           type: 'term',
-          title: titleForTerminal(stateRef.current.tiles),
+          title: titleForTerminal(stateRef.current.tiles, provider),
           x: frame.x,
           y: frame.y,
           width: frame.width,
           height: frame.height,
           zIndex: nextZIndex(stateRef.current.tiles),
-          sessionId: sessionId()
+          sessionId: sessionId(),
+          terminalProvider: provider
         },
         { immediate: true }
       )
@@ -1560,8 +1579,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
 
     function runShortcutAction(action: ShortcutAction) {
-      if (action === 'terminal') {
-        createTerminalNearCenter()
+      if (action === 'terminal-claude') {
+        createTerminalNearCenter('claude')
+        return
+      }
+
+      if (action === 'terminal-codex') {
+        createTerminalNearCenter('codex')
         return
       }
 
@@ -1742,8 +1766,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
 
     useImperativeHandle(ref, () => ({
-      createTerminal: () => {
-        createTerminalNearCenter()
+      createTerminal: (provider = 'claude') => {
+        createTerminalNearCenter(provider)
       },
       spawnFileTile: (file: FileTreeNode) => {
         spawnFileTile(file)
@@ -2073,7 +2097,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         if (lowerKey === 't' && event.shiftKey) {
           event.preventDefault()
           event.stopPropagation()
-          runShortcutAction('terminal')
+          runShortcutAction('terminal-claude')
+          return
+        }
+
+        if (lowerKey === 'c' && event.shiftKey) {
+          event.preventDefault()
+          event.stopPropagation()
+          runShortcutAction('terminal-codex')
           return
         }
 
@@ -2338,7 +2369,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       )
     }
 
-    function createTerminalAt(clientX: number, clientY: number) {
+    function createTerminalAt(clientX: number, clientY: number, provider: TerminalProvider = 'claude') {
       const point = pagePointFromClient(clientX, clientY)
       const frame = preferredTerminalFrame(
         point.x - DEFAULT_TERMINAL_WIDTH / 2,
@@ -2350,13 +2381,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         {
           id: tileId,
           type: 'term',
-          title: titleForTerminal(stateRef.current.tiles),
+          title: titleForTerminal(stateRef.current.tiles, provider),
           x: frame.x,
           y: frame.y,
           width: frame.width,
           height: frame.height,
           zIndex: nextZIndex(stateRef.current.tiles),
-          sessionId: sessionId()
+          sessionId: sessionId(),
+          terminalProvider: provider
         },
         { immediate: true }
       )
@@ -2648,8 +2680,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   inside the active workspace.
                 </div>
                 <div>
-                  <span className="font-semibold text-[var(--text)]">Send to Claude:</span> drag a
-                  file, image, or frame dot onto a terminal dot.
+                  <span className="font-semibold text-[var(--text)]">Send to a terminal:</span>{' '}
+                  drag a file, image, or frame dot onto a terminal dot.
                 </div>
               </div>
             </div>
@@ -3004,7 +3036,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                           <div className="text-[11px] text-[var(--text-dim)]">
                             {linkSourceTile
                               ? 'Drop the dragged connector on this terminal dot to attach it.'
-                              : 'Drag a file dot or a frame-group dot into this terminal to build Claude Code context.'}
+                              : `Drag a file dot or a frame-group dot into this terminal to build ${terminalProviderLabel(
+                                  terminalProviderForTile(tile)
+                                )} context.`}
                           </div>
                         ) : (
                           contextTiles.map((contextTile) => (
@@ -3042,6 +3076,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                           onFocusModeChange={(mode) => {
                             focusTerminal(tile.id, mode)
                           }}
+                          provider={terminalProviderForTile(tile)}
                           sessionId={tile.sessionId as string}
                         />
                       </div>

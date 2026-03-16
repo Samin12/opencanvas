@@ -10,6 +10,7 @@ import type {
   TerminalActivityItem,
   TerminalActivityState,
   TerminalDependencyState,
+  TerminalProvider,
   TerminalSessionSnapshot
 } from '../shared/types'
 import { APP_DIRECTORY } from './storage'
@@ -24,7 +25,10 @@ const TMUX_HISTORY_LIMIT = '50000'
 const TMUX_SOCKET_NAME = process.env.OPEN_CANVAS_TMUX_SOCKET?.trim() || 'collaborator-clone'
 const TERMINAL_SESSIONS_DIRECTORY = join(APP_DIRECTORY, 'terminal-sessions')
 const TMUX_CONFIG_PATH = join(APP_DIRECTORY, 'tmux.conf')
-const CLAUDE_START_COMMAND = process.env.COLLABORATOR_CLAUDE_COMMAND ?? 'claude'
+const TERMINAL_START_COMMANDS: Record<TerminalProvider, string> = {
+  claude: process.env.COLLABORATOR_CLAUDE_COMMAND ?? 'claude',
+  codex: process.env.COLLABORATOR_CODEX_COMMAND ?? 'codex'
+}
 const TMUX_DEFAULT_TERMINAL_CANDIDATES = ['tmux-256color', 'screen-256color', 'xterm-256color']
 const TMUX_BINARY_CANDIDATES = [
   process.env.COLLABORATOR_TMUX_BIN,
@@ -67,6 +71,7 @@ interface ManagedTerminalSession {
   cwd: string
   parser: TerminalActivityParserState
   pty: nodePty.IPty
+  provider: TerminalProvider
   sessionId: string
   tmuxSessionName: string
 }
@@ -74,6 +79,7 @@ interface ManagedTerminalSession {
 interface PersistedTerminalSessionMeta {
   createdAt: number
   cwd: string
+  provider: TerminalProvider
   sessionId: string
   tmuxSessionName: string
   updatedAt: number
@@ -166,7 +172,19 @@ function capitalize(value: string): string {
   return `${value[0].toUpperCase()}${value.slice(1)}`
 }
 
-function messageTitle(body: string): string {
+function providerLabel(provider: TerminalProvider): string {
+  return provider === 'codex' ? 'Codex' : 'Claude Code'
+}
+
+function providerCommand(provider: TerminalProvider): string {
+  return TERMINAL_START_COMMANDS[provider]
+}
+
+function providerCommandName(provider: TerminalProvider): string {
+  return primaryCommandName(providerCommand(provider))
+}
+
+function messageTitle(body: string, provider: TerminalProvider): string {
   for (const line of body.split('\n')) {
     const trimmed = line.trim().replace(/^[-*#>\d.\s]+/, '').trim()
 
@@ -175,7 +193,7 @@ function messageTitle(body: string): string {
     }
   }
 
-  return 'Claude Response'
+  return provider === 'codex' ? 'Codex Response' : 'Claude Response'
 }
 
 function stripClaudeLeadMarker(value: string): string {
@@ -192,6 +210,7 @@ function isClaudeUiBoundaryLine(trimmed: string): boolean {
     /^[▐▛▜▝▘]+/u.test(trimmed) ||
     /^[─━]{8,}$/u.test(trimmed) ||
     /^claude code v/i.test(trimmed) ||
+    /^codex cli\b/i.test(trimmed) ||
     /^opus\b/i.test(trimmed) ||
     /^esc to interrupt/i.test(trimmed) ||
     /^[/?] for shortcuts/i.test(trimmed)
@@ -212,7 +231,7 @@ function isClaudeMessageStart(line: string): boolean {
   return parseLineActivity(trimmed) === null
 }
 
-function createMessageActivity(body: string) {
+function createMessageActivity(body: string, provider: TerminalProvider) {
   const trimmedBody = body.trim()
 
   if (trimmedBody.length === 0) {
@@ -226,7 +245,7 @@ function createMessageActivity(body: string) {
       kind: 'message' as const,
       rawText: trimmedBody,
       state: 'info' as const,
-      title: messageTitle(trimmedBody)
+      title: messageTitle(trimmedBody, provider)
     },
     key: `message:${trimmedBody}`
   }
@@ -240,7 +259,7 @@ function flushPendingMessage(session: ManagedTerminalSession, shouldBroadcast: b
   const body = session.parser.pendingMessageLines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
   session.parser.pendingMessageLines = null
 
-  const parsed = createMessageActivity(body)
+  const parsed = createMessageActivity(body, session.provider)
 
   if (parsed) {
     pushActivity(session, parsed, shouldBroadcast)
@@ -668,14 +687,21 @@ function readPersistedTerminalSession(
 ): PersistedTerminalSessionMeta | null {
   try {
     const content = readFileSync(terminalSessionFilePath(sessionId), 'utf8')
-    const parsed = JSON.parse(content) as PersistedTerminalSessionMeta
+    const parsed = JSON.parse(content) as Partial<PersistedTerminalSessionMeta>
 
     if (
       typeof parsed.cwd === 'string' &&
       typeof parsed.sessionId === 'string' &&
       typeof parsed.tmuxSessionName === 'string'
     ) {
-      return parsed
+      return {
+        createdAt: typeof parsed.createdAt === 'number' ? parsed.createdAt : Date.now(),
+        cwd: parsed.cwd,
+        provider: parsed.provider === 'codex' ? 'codex' : 'claude',
+        sessionId: parsed.sessionId,
+        tmuxSessionName: parsed.tmuxSessionName,
+        updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : Date.now()
+      }
     }
 
     return null
@@ -789,6 +815,7 @@ function resolveSessionCwd(options: {
 
 function persistTerminalSessionMeta(meta: {
   cwd: string
+  provider: TerminalProvider
   sessionId: string
   tmuxSessionName: string
 }): void {
@@ -798,6 +825,7 @@ function persistTerminalSessionMeta(meta: {
   writePersistedTerminalSession({
     sessionId: meta.sessionId,
     cwd: meta.cwd,
+    provider: meta.provider,
     tmuxSessionName: meta.tmuxSessionName,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now
@@ -835,18 +863,27 @@ function terminalEnvironment(shell: string): NodeJS.ProcessEnv {
 }
 
 export function readTerminalDependencyState(): TerminalDependencyState {
-  const claudeCommand = primaryCommandName(CLAUDE_START_COMMAND)
-
   return {
     tmuxInstalled: resolveTmuxBinary() !== null,
-    claudeCommand,
-    claudeInstalled: resolveCommandBinary(claudeCommand) !== null
+    providers: {
+      claude: {
+        command: providerCommandName('claude'),
+        installed: resolveCommandBinary(providerCommandName('claude')) !== null,
+        label: 'Claude Code'
+      },
+      codex: {
+        command: providerCommandName('codex'),
+        installed: resolveCommandBinary(providerCommandName('codex')) !== null,
+        label: 'Codex'
+      }
+    }
   }
 }
 
 export function createOrAttachTerminalSession(options: {
   cols: number
   cwd?: string
+  provider: TerminalProvider
   rows: number
   sessionId: string
 }): TerminalSessionSnapshot {
@@ -857,7 +894,8 @@ export function createOrAttachTerminalSession(options: {
     return {
       sessionId: existing.sessionId,
       cwd: existing.cwd,
-      buffer: existing.buffer
+      buffer: existing.buffer,
+      provider: existing.provider
     }
   }
 
@@ -872,9 +910,16 @@ export function createOrAttachTerminalSession(options: {
   const defaultTerminal = resolveTmuxDefaultTerminal()
   configureTmuxServer(tmuxBinary, defaultTerminal)
   const persisted = readPersistedTerminalSession(options.sessionId)
+  const provider = persisted?.provider ?? options.provider
+  const commandName = providerCommandName(provider)
+
+  if (resolveCommandBinary(commandName) === null) {
+    throw new Error(`${providerLabel(provider)} requires ${commandName}. Install it and restart the app.`)
+  }
+
   const tmuxSessionName = persisted?.tmuxSessionName ?? tmuxSessionNameFor(options.sessionId)
   const sessionAlreadyExists = tmuxSessionExists(tmuxBinary, tmuxSessionName)
-  const shouldAutoLaunchClaude = !sessionAlreadyExists && Boolean(options.cwd && existsSync(options.cwd))
+  const shouldAutoLaunchProvider = !sessionAlreadyExists && Boolean(options.cwd && existsSync(options.cwd))
   const pty = nodePty.spawn(
     tmuxBinary,
     [...tmuxBaseArgs(defaultTerminal), 'new-session', '-A', '-s', tmuxSessionName, '-c', cwd],
@@ -894,6 +939,7 @@ export function createOrAttachTerminalSession(options: {
     buffer: '',
     parser: makeParserState(),
     pty,
+    provider,
     tmuxSessionName
   }
 
@@ -917,7 +963,7 @@ export function createOrAttachTerminalSession(options: {
 
   sessions.set(options.sessionId, session)
 
-  if (shouldAutoLaunchClaude) {
+  if (shouldAutoLaunchProvider) {
     setTimeout(() => {
       const activeSession = sessions.get(session.sessionId)
 
@@ -925,14 +971,15 @@ export function createOrAttachTerminalSession(options: {
         return
       }
 
-      activeSession.pty.write(`${CLAUDE_START_COMMAND}\r`)
+      activeSession.pty.write(`${providerCommand(activeSession.provider)}\r`)
     }, 180)
   }
 
   return {
     sessionId: session.sessionId,
     cwd: session.cwd,
-    buffer: session.buffer
+    buffer: session.buffer,
+    provider: session.provider
   }
 }
 
@@ -976,6 +1023,7 @@ export function readTerminalActivity(sessionId: string): TerminalActivityItem[] 
     cwd: persisted.cwd,
     parser: makeParserState(),
     pty: null as unknown as nodePty.IPty,
+    provider: persisted.provider,
     sessionId: persisted.sessionId,
     tmuxSessionName: persisted.tmuxSessionName
   }

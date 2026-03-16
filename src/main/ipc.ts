@@ -2,7 +2,13 @@ import * as electron from 'electron'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import type { AppConfig, CanvasState, CreateWorkspaceNoteOptions, WorkspaceImageImport } from '../shared/types'
+import type {
+  AppConfig,
+  CanvasState,
+  CreateWorkspaceNoteOptions,
+  TerminalProvider,
+  WorkspaceImageImport
+} from '../shared/types'
 
 import {
   loadCanvasState,
@@ -152,7 +158,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('file:url', async (_event, filePath: string) => toFileUrl(filePath))
   ipcMain.handle(
     'terminal:create',
-    async (_event, options: { cols: number; cwd?: string; rows: number; sessionId: string }) =>
+    async (
+      _event,
+      options: { cols: number; cwd?: string; provider: TerminalProvider; rows: number; sessionId: string }
+    ) =>
       createOrAttachTerminalSession(options)
   )
   ipcMain.handle('terminal:activity', async (_event, sessionId: string) => readTerminalActivity(sessionId))

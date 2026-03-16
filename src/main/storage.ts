@@ -115,7 +115,13 @@ function sanitizeCanvasState(input: Partial<CanvasState> | undefined): CanvasSta
               ? tile.contextTileIds.filter((value): value is string => typeof value === 'string')
               : undefined,
             filePath: typeof tile.filePath === 'string' ? tile.filePath : undefined,
-            sessionId: typeof tile.sessionId === 'string' ? tile.sessionId : undefined
+            sessionId: typeof tile.sessionId === 'string' ? tile.sessionId : undefined,
+            terminalProvider:
+              tile.type === 'term'
+                ? tile.terminalProvider === 'codex'
+                  ? 'codex'
+                  : 'claude'
+                : undefined
           }))
       : [],
     viewport: {

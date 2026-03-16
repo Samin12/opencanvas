@@ -62,9 +62,10 @@ function cleanTerminalCardText(value: string): string {
       return !(
         /^[▐▛▜▝▘]+/u.test(trimmed) ||
         /^claude code v/i.test(compact) ||
+        /^codex cli\b/i.test(compact) ||
         /^opus\b/i.test(compact) ||
         /^[/?] for shortcuts/i.test(compact) ||
-        /^source:\s*claude session/i.test(compact)
+        /^source:\s*(claude|codex) session/i.test(compact)
       )
     })
 
@@ -278,12 +279,12 @@ export function createActivityCardPayload(activity: TerminalActivityItem): {
   baseName: string
   content: string
 } {
-  const title = firstMeaningfulLine(activity.title) ?? 'Claude Card'
+  const title = firstMeaningfulLine(activity.title) ?? 'Terminal Card'
   const rawBody = activity.body.trim().length > 0 ? activity.body.trim() : activity.rawText.trim()
   const body = markdownBodyFromTerminalText(rawBody, title)
 
   return {
-    baseName: sanitizeBaseName(title, 'Claude Card'),
+    baseName: sanitizeBaseName(title, 'Terminal Card'),
     content: buildCardMarkdown(title, body)
   }
 }
@@ -292,11 +293,11 @@ export function createSelectionCardPayload(selectionText: string): {
   baseName: string
   content: string
 } {
-  const title = firstMeaningfulLine(selectionText) ?? 'Claude Excerpt'
+  const title = firstMeaningfulLine(selectionText) ?? 'Terminal Excerpt'
   const body = markdownBodyFromTerminalText(selectionText.trim(), title)
 
   return {
-    baseName: sanitizeBaseName(title, 'Claude Excerpt'),
+    baseName: sanitizeBaseName(title, 'Terminal Excerpt'),
     content: buildCardMarkdown(title, body)
   }
 }

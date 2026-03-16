@@ -4,7 +4,7 @@ import clsx from 'clsx'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 
-import type { TerminalActivityItem, TerminalUiMode } from '@shared/types'
+import type { TerminalActivityItem, TerminalProvider, TerminalUiMode } from '@shared/types'
 
 import {
   COLLABORATOR_TERMINAL_CARD_MIME,
@@ -23,7 +23,16 @@ interface TerminalPaneProps {
     targetDirectoryPath?: string
   }) => Promise<void>
   onFocusModeChange: (mode: TerminalUiMode) => void
+  provider: TerminalProvider
   sessionId: string
+}
+
+function terminalProviderUiLabel(provider: TerminalProvider) {
+  return provider === 'codex' ? 'Codex' : 'Claude'
+}
+
+function terminalProviderFullLabel(provider: TerminalProvider) {
+  return provider === 'codex' ? 'Codex' : 'Claude Code'
 }
 
 function terminalStatusMeta(status: 'connecting' | 'live' | 'exited' | 'error') {
@@ -151,6 +160,7 @@ function TerminalPaneComponent({
   isSelected,
   onCreateMarkdownCard,
   onFocusModeChange,
+  provider,
   sessionId
 }: TerminalPaneProps) {
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -192,6 +202,8 @@ function TerminalPaneComponent({
     viewportY: 0
   })
   const statusMeta = terminalStatusMeta(status)
+  const providerLabel = terminalProviderUiLabel(provider)
+  const providerFullLabel = terminalProviderFullLabel(provider)
   const shellFocusActive = isSelected && focusMode === 'shell' && !historyOpen
   const terminalWheelActive = isSelected && !historyOpen
   const chatFocusActive = isSelected && focusMode === 'chat'
@@ -331,7 +343,7 @@ function TerminalPaneComponent({
       }
 
       setActivityError(
-        error instanceof Error ? error.message : 'Unable to load Claude activity for this terminal.'
+        error instanceof Error ? error.message : `Unable to load ${providerLabel} activity for this terminal.`
       )
     } finally {
       if (activityRequestIdRef.current === requestId) {
@@ -407,7 +419,7 @@ function TerminalPaneComponent({
 
     event.dataTransfer.effectAllowed = 'copy'
     event.dataTransfer.setData(COLLABORATOR_TERMINAL_CARD_MIME, JSON.stringify(payload))
-    event.dataTransfer.setData('text/plain', payload.baseName ?? 'Claude Card')
+    event.dataTransfer.setData('text/plain', payload.baseName ?? 'Terminal Card')
   }
 
   async function createCardFromSelection() {
@@ -586,6 +598,7 @@ function TerminalPaneComponent({
         const snapshot = await window.collaborator.createTerminalSession({
           sessionId,
           cwd: cwd ?? undefined,
+          provider,
           cols: terminal.cols,
           rows: terminal.rows
         })
@@ -675,7 +688,7 @@ function TerminalPaneComponent({
       fitRef.current = null
       syncScrollMetrics(null)
     }
-  }, [cwd, sessionId])
+  }, [cwd, provider, sessionId])
 
   useEffect(() => {
     terminalWheelEnabledRef.current = terminalWheelActive
@@ -770,7 +783,7 @@ function TerminalPaneComponent({
     >
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[color:var(--line)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]">
         <div className="inline-flex items-center gap-2">
-          <span>Terminal</span>
+          <span>{providerFullLabel}</span>
           <button
             type="button"
             className={clsx(
@@ -983,7 +996,7 @@ function TerminalPaneComponent({
             onPointerDown={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-[color:var(--line)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]">
-              <span>Claude Activity</span>
+              <span>{providerLabel} Activity</span>
               <button
                 type="button"
                 className="rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
@@ -1002,7 +1015,7 @@ function TerminalPaneComponent({
             >
               {activityLoading ? (
                 <div className="rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-3 text-[12px] text-[var(--text-dim)]">
-                  Loading Claude activity...
+                  Loading {providerLabel} activity...
                 </div>
               ) : activityError ? (
                 <div className="rounded-[4px] border border-[color:var(--error-line)] bg-[var(--error-bg)] px-3 py-3 text-[12px] text-[var(--error-text)]">
@@ -1010,7 +1023,7 @@ function TerminalPaneComponent({
                 </div>
               ) : activities.length === 0 ? (
                 <div className="rounded-[4px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-0)] px-3 py-3 text-[12px] text-[var(--text-dim)]">
-                  Claude activity will appear here once the terminal starts emitting structured output.
+                  {providerLabel} activity will appear here once the terminal starts emitting structured output.
                 </div>
               ) : (
                 activities
@@ -1082,15 +1095,15 @@ function TerminalPaneComponent({
         }}
       >
         <div className="mb-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]">
-          <span>{focusMode === 'shell' && isSelected ? 'Shell focused' : 'Claude composer'}</span>
-          <span>{selectedText.trim().length > 0 ? 'Selection ready to save' : 'Enter sends to Claude'}</span>
+          <span>{focusMode === 'shell' && isSelected ? 'Shell focused' : `${providerLabel} composer`}</span>
+          <span>{selectedText.trim().length > 0 ? 'Selection ready to save' : `Enter sends to ${providerLabel}`}</span>
         </div>
         <div className="flex items-end gap-2">
           <textarea
             ref={composerRef}
             value={composerValue}
             rows={2}
-            placeholder="Ask Claude about the linked context, then turn the useful bits into markdown cards."
+            placeholder={`Ask ${providerLabel} about the linked context, then turn the useful bits into markdown cards.`}
             className={clsx(
               'min-h-[3.25rem] flex-1 rounded-[6px] border bg-[var(--surface-0)] px-3 py-2 text-[13px] leading-5 text-[var(--text)] outline-none transition placeholder:text-[var(--text-faint)]',
               chatFocusActive
@@ -1136,6 +1149,7 @@ export const TerminalPane = memo(TerminalPaneComponent, (previous, next) => {
     previous.isSelected === next.isSelected &&
     previous.onCreateMarkdownCard === next.onCreateMarkdownCard &&
     previous.onFocusModeChange === next.onFocusModeChange &&
+    previous.provider === next.provider &&
     previous.sessionId === next.sessionId
   )
 })

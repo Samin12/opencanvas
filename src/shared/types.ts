@@ -1,6 +1,7 @@
 export type TileType = 'term' | 'note' | 'code' | 'image'
 
 export type FileKind = 'note' | 'code' | 'image'
+export type TerminalProvider = 'claude' | 'codex'
 
 export interface CanvasTile {
   id: string
@@ -14,6 +15,7 @@ export interface CanvasTile {
   contextTileIds?: string[]
   filePath?: string
   sessionId?: string
+  terminalProvider?: TerminalProvider
 }
 
 export interface CanvasViewport {
@@ -92,15 +94,21 @@ export interface CreateWorkspaceNoteOptions {
   targetDirectoryPath?: string
 }
 
+export interface TerminalProviderDependencyState {
+  command: string
+  installed: boolean
+  label: string
+}
+
 export interface TerminalDependencyState {
-  claudeCommand: string
-  claudeInstalled: boolean
+  providers: Record<TerminalProvider, TerminalProviderDependencyState>
   tmuxInstalled: boolean
 }
 
 export interface TerminalSessionSnapshot {
   buffer: string
   cwd: string
+  provider: TerminalProvider
   sessionId: string
 }
 
@@ -168,6 +176,7 @@ export interface CollaboratorApi {
   createTerminalSession: (options: {
     cols: number
     cwd?: string
+    provider: TerminalProvider
     rows: number
     sessionId: string
   }) => Promise<TerminalSessionSnapshot>

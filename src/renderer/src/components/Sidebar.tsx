@@ -1,7 +1,13 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import clsx from 'clsx'
-import type { AppConfig, FileTreeNode, SidebarSide } from '@shared/types'
+import type {
+  AppConfig,
+  FileTreeNode,
+  SidebarSide,
+  TerminalDependencyState,
+  TerminalProvider
+} from '@shared/types'
 
 import logoMark from '../assets/claude-canvas-logo.svg'
 import { FileKindIcon, FileTree } from './FileTree'
@@ -15,6 +21,7 @@ const SEARCH_SHORTCUT_KEY = `${MODIFIER_KEY}+K / ${MODIFIER_KEY}+O`
 const SEARCH_SHORTCUT_HINT = `${MODIFIER_KEY}+K/O`
 const CREATE_NOTE_SHORTCUT_KEY = `${MODIFIER_KEY}+N`
 const CREATE_TERMINAL_SHORTCUT_KEY = 'Shift+T'
+const CREATE_CODEX_TERMINAL_SHORTCUT_KEY = 'Shift+C'
 const ADD_WORKSPACE_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+O`
 const TOGGLE_DARK_MODE_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+D`
 const WORKSPACE_SWITCHER_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+W`
@@ -103,12 +110,24 @@ function NewNoteIcon() {
   )
 }
 
-function NewTerminalIcon() {
+function ClaudeTerminalIcon() {
   return (
     <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4.5 w-4.5 fill-none stroke-current stroke-[1.35]">
       <rect x="2" y="2.5" width="12" height="11" rx="2" />
       <path d="M4.5 6L6.75 8L4.5 10" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M8.25 10H11.5" strokeLinecap="round" />
+      <path d="M11.2 3.9L11.55 4.75L12.4 5.1L11.55 5.45L11.2 6.3L10.85 5.45L10 5.1L10.85 4.75Z" />
+    </svg>
+  )
+}
+
+function CodexTerminalIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4.5 w-4.5 fill-none stroke-current stroke-[1.35]">
+      <rect x="2" y="2.5" width="12" height="11" rx="2" />
+      <path d="M5.1 6.2L3.9 8L5.1 9.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M10.9 6.2L12.1 8L10.9 9.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.95 5.95L7.05 10.05" strokeLinecap="round" />
     </svg>
   )
 }
@@ -436,7 +455,7 @@ interface SidebarProps {
   onAddWorkspace: () => void
   onCopyWorkspacePath: () => void
   onCreateNote: () => void
-  onCreateTerminal: () => void
+  onCreateTerminal: (provider: TerminalProvider) => void
   onMoveFile: (sourcePath: string, targetDirectoryPath: string) => void
   onMoveSidebar: (side: SidebarSide) => void
   onOpenSearch: () => void
@@ -445,8 +464,7 @@ interface SidebarProps {
   onRemoveWorkspace: () => void
   onSelectNode: (node: FileTreeNode) => void
   onSelectWorkspace: (index: number) => void
-  terminalDependencyMessage: string | null
-  terminalReady: boolean
+  terminalDependencies: TerminalDependencyState | null
   onToggleSidebar: () => void
   onToggleDarkMode: () => void
   sidebarCollapsed: boolean
@@ -472,8 +490,7 @@ function SidebarComponent({
   onRemoveWorkspace,
   onSelectNode,
   onSelectWorkspace,
-  terminalDependencyMessage,
-  terminalReady,
+  terminalDependencies,
   onToggleSidebar,
   onToggleDarkMode,
   sidebarCollapsed,
@@ -504,6 +521,23 @@ function SidebarComponent({
       return left.name.localeCompare(right.name)
     })
   const recentGroups = buildRecentGroups(visibleRecentFiles, recentAscending)
+  const tmuxReady = terminalDependencies?.tmuxInstalled ?? false
+  const claudeReady = tmuxReady && Boolean(terminalDependencies?.providers.claude.installed)
+  const codexReady = tmuxReady && Boolean(terminalDependencies?.providers.codex.installed)
+  const claudeTerminalLabel = !terminalDependencies
+    ? 'Loading terminal requirements'
+    : !tmuxReady
+      ? 'Install tmux to create terminals'
+      : claudeReady
+        ? 'New Claude Terminal'
+        : `Install ${terminalDependencies.providers.claude.command} to create Claude terminals`
+  const codexTerminalLabel = !terminalDependencies
+    ? 'Loading terminal requirements'
+    : !tmuxReady
+      ? 'Install tmux to create terminals'
+      : codexReady
+        ? 'New Codex Terminal'
+        : `Install ${terminalDependencies.providers.codex.command} to create Codex terminals`
 
   useEffect(() => {
     function openWorkspaceSwitcher() {
@@ -672,9 +706,9 @@ function SidebarComponent({
             </div>
           </div>
 
-          {terminalDependencyMessage ? (
+          {terminalDependencies && !terminalDependencies.tmuxInstalled ? (
             <div className="rounded-[4px] border border-amber-500/20 bg-[rgba(120,53,15,0.12)] px-3 py-2.5 text-[12px] leading-5 text-[var(--text-dim)]">
-              {terminalDependencyMessage}
+              Install tmux and restart the app before creating terminal tiles.
             </div>
           ) : null}
         </div>
@@ -866,7 +900,7 @@ function SidebarComponent({
       </div>
 
       <div className="shrink-0 border-t border-[color:var(--line)] bg-[var(--surface-2)] px-3.5 py-3">
-        <div className="grid grid-cols-5 gap-2">
+        <div className="grid grid-cols-6 gap-2">
           <ActionIconButton
             label="Search Workspace"
             onClick={onOpenSearch}
@@ -890,12 +924,20 @@ function SidebarComponent({
             <NewNoteIcon />
           </ActionIconButton>
           <ActionIconButton
-            disabled={!activeWorkspacePath || !terminalReady}
-            label="New Terminal"
-            onClick={onCreateTerminal}
+            disabled={!activeWorkspacePath || !claudeReady}
+            label={claudeTerminalLabel}
+            onClick={() => onCreateTerminal('claude')}
             shortcut={CREATE_TERMINAL_SHORTCUT_KEY}
           >
-            <NewTerminalIcon />
+            <ClaudeTerminalIcon />
+          </ActionIconButton>
+          <ActionIconButton
+            disabled={!activeWorkspacePath || !codexReady}
+            label={codexTerminalLabel}
+            onClick={() => onCreateTerminal('codex')}
+            shortcut={CREATE_CODEX_TERMINAL_SHORTCUT_KEY}
+          >
+            <CodexTerminalIcon />
           </ActionIconButton>
           <ActionIconButton
             active={darkMode}
