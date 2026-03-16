@@ -13,7 +13,11 @@ interface TerminalPaneProps {
   darkMode: boolean
   focusMode: TerminalUiMode | null
   isSelected: boolean
-  onCreateMarkdownCard: (options: { baseName?: string; content: string }) => Promise<void>
+  onCreateMarkdownCard: (options: {
+    baseName?: string
+    content: string
+    targetDirectoryPath?: string
+  }) => Promise<void>
   onFocusModeChange: (mode: TerminalUiMode) => void
   sessionId: string
 }
@@ -165,6 +169,7 @@ function TerminalPaneComponent({
   const [activityError, setActivityError] = useState<string | null>(null)
   const [activityOpen, setActivityOpen] = useState(true)
   const [composerValue, setComposerValue] = useState('')
+  const [sessionCwd, setSessionCwd] = useState<string | null>(cwd)
   const [selectedText, setSelectedText] = useState('')
   const [creatingCardKey, setCreatingCardKey] = useState<string | null>(null)
   const [status, setStatus] = useState<'connecting' | 'live' | 'exited' | 'error'>('connecting')
@@ -322,7 +327,10 @@ function TerminalPaneComponent({
     setCreatingCardKey(activity.id)
 
     try {
-      await onCreateMarkdownCard(createActivityCardPayload(activity, sessionLabel))
+      await onCreateMarkdownCard({
+        ...createActivityCardPayload(activity, sessionLabel),
+        targetDirectoryPath: sessionCwd ?? undefined
+      })
     } finally {
       setCreatingCardKey((current) => (current === activity.id ? null : current))
     }
@@ -342,7 +350,10 @@ function TerminalPaneComponent({
     setCreatingCardKey('selection')
 
     try {
-      await onCreateMarkdownCard(createSelectionCardPayload(nextSelection, sessionLabel))
+      await onCreateMarkdownCard({
+        ...createSelectionCardPayload(nextSelection, sessionLabel),
+        targetDirectoryPath: sessionCwd ?? undefined
+      })
     } finally {
       setCreatingCardKey((current) => (current === 'selection' ? null : current))
     }
@@ -485,6 +496,8 @@ function TerminalPaneComponent({
           terminal.write(snapshot.buffer)
         }
 
+        setSessionCwd(snapshot.cwd)
+
         await refreshActivities()
 
         setStatus('live')
@@ -588,6 +601,7 @@ function TerminalPaneComponent({
     setActivityError(null)
     setActivities([])
     setSelectedText('')
+    setSessionCwd(cwd)
     pendingSelectionCardTextRef.current = ''
     setComposerValue('')
   }, [sessionId])

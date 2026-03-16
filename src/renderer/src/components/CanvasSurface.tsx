@@ -42,6 +42,7 @@ interface CanvasSurfaceProps {
   onCreateMarkdownCard: (options: {
     baseName?: string
     initialContent: string
+    targetDirectoryPath?: string
   }) => Promise<FileTreeNode | null>
   onCreateMarkdownNote: () => void
   onConvertStickyNoteToMarkdown: (content: string) => Promise<FileTreeNode | null>
@@ -885,7 +886,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
     async function createMarkdownCardForTerminal(
       tileId: string,
-      options: { baseName?: string; content: string }
+      options: { baseName?: string; content: string; targetDirectoryPath?: string }
     ) {
       const sourceTile = tileById(tileId)
 
@@ -895,23 +896,51 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       const createdNode = await onCreateMarkdownCard({
         baseName: options.baseName,
-        initialContent: options.content
+        initialContent: options.content,
+        targetDirectoryPath: options.targetDirectoryPath
       })
 
       if (!createdNode) {
         return
       }
 
-      const createdTile = createTileFromFile(
+      const draftTile = createTileFromFile(
         {
           fileKind: 'note',
           name: createdNode.name,
           path: createdNode.path
         },
-        sourceTile.x + sourceTile.width + 28,
-        sourceTile.y + 28,
+        0,
+        0,
         nextZIndex(stateRef.current.tiles)
       )
+      const viewportMargin = 28
+      const preferredRightX = sourceTile.x + sourceTile.width + viewportMargin
+      const preferredLeftX = sourceTile.x - draftTile.width - viewportMargin
+      const preferredY = sourceTile.y + viewportMargin
+      let nextX = preferredRightX
+      let nextY = preferredY
+      const bounds = visibleWorldBounds()
+
+      if (bounds) {
+        const minX = bounds.left + viewportMargin
+        const maxX = Math.max(minX, bounds.right - draftTile.width - viewportMargin)
+        const minY = bounds.top + viewportMargin
+        const maxY = Math.max(minY, bounds.bottom - draftTile.height - viewportMargin)
+
+        if (preferredRightX > maxX && preferredLeftX >= minX) {
+          nextX = preferredLeftX
+        }
+
+        nextX = clamp(nextX, minX, maxX)
+        nextY = clamp(nextY, minY, maxY)
+      }
+
+      const createdTile = {
+        ...draftTile,
+        x: snap(nextX),
+        y: snap(nextY)
+      }
 
       appendTile(createdTile, { immediate: true })
       setSelectedTileId(createdTile.id)
@@ -976,6 +1005,24 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         ...stateRef.current,
         viewport: resolvedViewport
       })
+    }
+
+    function visibleWorldBounds() {
+      const container = containerRef.current
+
+      if (!container) {
+        return null
+      }
+
+      const rect = container.getBoundingClientRect()
+      const { panX, panY, zoom } = stateRef.current.viewport
+
+      return {
+        left: -panX / zoom,
+        top: -panY / zoom,
+        right: (rect.width - panX) / zoom,
+        bottom: (rect.height - panY) / zoom
+      }
     }
 
     function syncEditorCamera(nextViewport: CanvasState['viewport']) {

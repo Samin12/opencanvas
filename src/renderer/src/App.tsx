@@ -595,16 +595,23 @@ export default function App() {
     initialContent?: string
     targetDirectoryPath?: string
   }): Promise<FileTreeNode | null> {
-    if (!activeWorkspace) {
+    const workspaceRoot = activeWorkspace ?? options?.targetDirectoryPath ?? null
+
+    if (!workspaceRoot) {
       return null
     }
 
     try {
-      const createdNode = await window.collaborator.createWorkspaceNote(activeWorkspace, {
+      const createdNode = await window.collaborator.createWorkspaceNote(workspaceRoot, {
         baseName: options?.baseName,
         initialContent: options?.initialContent,
-        targetDirectoryPath: options?.targetDirectoryPath ?? noteTargetPath ?? activeWorkspace
+        targetDirectoryPath: options?.targetDirectoryPath ?? noteTargetPath ?? workspaceRoot
       })
+
+      if (!activeWorkspace) {
+        setViewerFile(null)
+        return createdNode
+      }
 
       const nextTree = await refreshWorkspaceTree(activeWorkspace)
       const nextNode = findNodeByPath(nextTree, createdNode.path) ?? createdNode
@@ -613,8 +620,12 @@ export default function App() {
       setViewerFile(null)
 
       return nextNode
-    } catch {
-      setWorkspaceError('A new markdown note could not be created in the current folder.')
+    } catch (error) {
+      setWorkspaceError(
+        error instanceof Error && error.message
+          ? `A new markdown note could not be created: ${error.message}`
+          : 'A new markdown note could not be created in the current folder.'
+      )
       return null
     }
   }
@@ -958,8 +969,8 @@ export default function App() {
             activeWorkspacePath={activeWorkspace}
             darkMode={darkMode}
             ref={canvasRef}
-            onCreateMarkdownCard={({ baseName, initialContent }) =>
-              createWorkspaceMarkdownNote({ baseName, initialContent })
+            onCreateMarkdownCard={({ baseName, initialContent, targetDirectoryPath }) =>
+              createWorkspaceMarkdownNote({ baseName, initialContent, targetDirectoryPath })
             }
             onCreateMarkdownNote={() => void createMarkdownNote()}
             onConvertStickyNoteToMarkdown={(content) =>
