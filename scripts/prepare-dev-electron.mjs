@@ -1,9 +1,11 @@
-import { existsSync, renameSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, renameSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const APP_NAME = process.env.OPEN_CANVAS_DOCK_NAME?.trim() || 'Open Canvas'
+const APP_BUNDLE_ID = 'com.saminyasar.opencanvas.dev'
+const APP_ICON_NAME = 'open-canvas'
 
 if (process.platform !== 'darwin') {
   process.exit(0)
@@ -24,8 +26,12 @@ if (!existsSync(renamedElectronApp) && existsSync(stockElectronApp)) {
 const electronApp = existsSync(renamedElectronApp) ? renamedElectronApp : stockElectronApp
 const infoPlist = join(electronApp, 'Contents/Info.plist')
 const executableDir = join(electronApp, 'Contents/MacOS')
+const resourcesDir = join(electronApp, 'Contents/Resources')
 const stockExecutablePath = join(executableDir, 'Electron')
 const renamedExecutablePath = join(executableDir, APP_NAME)
+const macIconScript = resolve(projectRoot, 'scripts/build-mac-icon.mjs')
+const sourceIconPath = resolve(projectRoot, 'build/mac/icon.icns')
+const bundledIconPath = join(resourcesDir, `${APP_ICON_NAME}.icns`)
 
 if (!existsSync(infoPlist)) {
   throw new Error(`Electron dev bundle not found at ${infoPlist}`)
@@ -39,6 +45,18 @@ if (!existsSync(renamedExecutablePath)) {
   throw new Error(`Electron executable not found at ${renamedExecutablePath}`)
 }
 
+if (!existsSync(sourceIconPath)) {
+  execFileSync(process.execPath, [macIconScript], {
+    stdio: 'ignore'
+  })
+}
+
+if (!existsSync(sourceIconPath)) {
+  throw new Error(`Open Canvas icon not found at ${sourceIconPath}`)
+}
+
+copyFileSync(sourceIconPath, bundledIconPath)
+
 function setPlistValue(plistPath, key, value) {
   execFileSync('/usr/libexec/PlistBuddy', ['-c', `Set :${key} ${value}`, plistPath], {
     stdio: 'ignore'
@@ -48,7 +66,9 @@ function setPlistValue(plistPath, key, value) {
 const plistUpdates = [
   ['CFBundleExecutable', APP_NAME],
   ['CFBundleDisplayName', APP_NAME],
-  ['CFBundleName', APP_NAME]
+  ['CFBundleName', APP_NAME],
+  ['CFBundleIdentifier', APP_BUNDLE_ID],
+  ['CFBundleIconFile', APP_ICON_NAME]
 ]
 
 for (const [key, value] of plistUpdates) {

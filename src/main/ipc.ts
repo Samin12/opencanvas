@@ -5,12 +5,17 @@ import { resolve } from 'node:path'
 import type {
   AppConfig,
   CanvasState,
+  CreateWorkspaceDirectoryOptions,
+  CreateWorkspaceFileOptions,
   CreateWorkspaceNoteOptions,
+  RenameWorkspaceNodeOptions,
   TerminalProvider,
   WorkspaceAssetImport,
   WorkspaceImageImport
 } from '../shared/types'
 
+import { createOfficeViewerSession, readOfficeViewerBootstrap } from './onlyOffice'
+import { previewFileUrl } from './previewServer'
 import {
   loadCanvasState,
   loadConfig,
@@ -28,12 +33,17 @@ import {
   writeTerminalInput
 } from './terminals'
 import {
+  createWorkspaceDirectory,
+  createWorkspaceFile,
   createWorkspaceNote,
+  deleteWorkspaceNode,
   importWorkspaceAsset,
   importWorkspaceImage,
   moveWorkspaceNode,
+  readFileMetadata,
   readImageAssetData,
   readTextFileDocument,
+  renameWorkspaceNode,
   readWorkspaceTree,
   subscribeToFileChanges,
   toFileUrl,
@@ -71,6 +81,7 @@ export function registerIpcHandlers(): void {
     return {
       config,
       canvasState,
+      officeViewer: await readOfficeViewerBootstrap(),
       terminalDependencies: readTerminalDependencyState()
     }
   })
@@ -91,6 +102,12 @@ export function registerIpcHandlers(): void {
       text: text ?? html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
     })
   })
+  ipcMain.handle('office:bootstrap', async (_event, force?: boolean) =>
+    readOfficeViewerBootstrap({ force: Boolean(force) })
+  )
+  ipcMain.handle('system:open-external-url', async (_event, url: string) => {
+    await shell.openExternal(url)
+  })
   ipcMain.handle('system:open-path', async (_event, targetPath: string) => {
     const resolvedTargetPath = resolve(targetPath)
 
@@ -109,11 +126,30 @@ export function registerIpcHandlers(): void {
       }
     }
   })
+  ipcMain.handle('system:reveal-path', async (_event, targetPath: string) => {
+    const resolvedTargetPath = resolve(targetPath)
+
+    if (!existsSync(resolvedTargetPath)) {
+      throw new Error('The target path does not exist on disk.')
+    }
+
+    shell.showItemInFolder(resolvedTargetPath)
+  })
   ipcMain.handle('workspace:tree', async (_event, workspacePath: string) => readWorkspaceTree(workspacePath))
   ipcMain.handle(
     'workspace:create-note',
     async (_event, workspacePath: string, options?: CreateWorkspaceNoteOptions) =>
       createWorkspaceNote(workspacePath, options)
+  )
+  ipcMain.handle(
+    'workspace:create-file',
+    async (_event, workspacePath: string, options: CreateWorkspaceFileOptions) =>
+      createWorkspaceFile(workspacePath, options)
+  )
+  ipcMain.handle(
+    'workspace:create-directory',
+    async (_event, workspacePath: string, options: CreateWorkspaceDirectoryOptions) =>
+      createWorkspaceDirectory(workspacePath, options)
   )
   ipcMain.handle(
     'workspace:import-asset',
@@ -130,7 +166,16 @@ export function registerIpcHandlers(): void {
     async (_event, workspacePath: string, sourcePath: string, targetDirectoryPath: string) =>
       moveWorkspaceNode(workspacePath, sourcePath, targetDirectoryPath)
   )
+  ipcMain.handle(
+    'workspace:rename-node',
+    async (_event, workspacePath: string, options: RenameWorkspaceNodeOptions) =>
+      renameWorkspaceNode(workspacePath, options)
+  )
+  ipcMain.handle('workspace:delete-node', async (_event, workspacePath: string, targetPath: string) =>
+    deleteWorkspaceNode(workspacePath, targetPath)
+  )
   ipcMain.handle('file:read', async (_event, filePath: string) => readTextFileDocument(filePath))
+  ipcMain.handle('file:metadata', async (_event, filePath: string) => readFileMetadata(filePath))
   ipcMain.handle('file:image-data', async (_event, filePath: string) => readImageAssetData(filePath))
   ipcMain.handle('file:write', async (_event, filePath: string, content: string) =>
     writeTextFileDocument(filePath, content)
@@ -169,6 +214,8 @@ export function registerIpcHandlers(): void {
     disposeFileWatch(fileWatchKey(event.sender.id, filePath))
   })
   ipcMain.handle('file:url', async (_event, filePath: string) => toFileUrl(filePath))
+  ipcMain.handle('file:preview-url', async (_event, filePath: string) => previewFileUrl(filePath))
+  ipcMain.handle('office:session', async (_event, filePath: string) => createOfficeViewerSession(filePath))
   ipcMain.handle(
     'terminal:create',
     async (

@@ -103,6 +103,48 @@ function figmaEmbedUrl(url: URL) {
   return `https://www.figma.com/embed?embed_host=open_canvas&url=${encodeURIComponent(url.toString())}`
 }
 
+function googleSlidesEmbedUrl(url: URL) {
+  const hostname = url.hostname.replace(/^www\./i, '').toLowerCase()
+
+  if (hostname !== 'docs.google.com') {
+    return null
+  }
+
+  const segments = url.pathname.split('/').filter(Boolean)
+
+  if (segments[0] !== 'presentation') {
+    return null
+  }
+
+  const embedPath = url.pathname
+    .replace(/\/edit(?:\/.*)?$/i, '/embed')
+    .replace(/\/present(?:\/.*)?$/i, '/embed')
+    .replace(/\/pub(?:\/.*)?$/i, '/embed')
+
+  const nextUrl = new URL(url.toString())
+  nextUrl.pathname = embedPath
+
+  if (!/\/embed$/i.test(nextUrl.pathname)) {
+    nextUrl.pathname = `${nextUrl.pathname.replace(/\/+$/g, '')}/embed`
+  }
+
+  return nextUrl.toString()
+}
+
+function powerPointEmbedUrl(url: URL) {
+  const hostname = url.hostname.replace(/^www\./i, '').toLowerCase()
+
+  if (
+    hostname === 'onedrive.live.com' ||
+    hostname === 'view.officeapps.live.com' ||
+    hostname.endsWith('.sharepoint.com')
+  ) {
+    return url.toString()
+  }
+
+  return null
+}
+
 export function embedDescriptorFromUrl(rawValue: string): EmbedDescriptor | null {
   const parsed = normalizeHttpUrl(rawValue)
 
@@ -157,6 +199,30 @@ export function embedDescriptorFromUrl(rawValue: string): EmbedDescriptor | null
       renderKind: 'iframe',
       sourceUrl: figmaUrl,
       title: 'Figma'
+    }
+  }
+
+  const slidesUrl = googleSlidesEmbedUrl(parsed)
+
+  if (slidesUrl) {
+    return {
+      canonicalUrl,
+      hostLabel: 'docs.google.com',
+      renderKind: 'iframe',
+      sourceUrl: slidesUrl,
+      title: 'Google Slides'
+    }
+  }
+
+  const powerPointUrl = powerPointEmbedUrl(parsed)
+
+  if (powerPointUrl) {
+    return {
+      canonicalUrl,
+      hostLabel: sourceHost,
+      renderKind: 'iframe',
+      sourceUrl: powerPointUrl,
+      title: 'PowerPoint'
     }
   }
 

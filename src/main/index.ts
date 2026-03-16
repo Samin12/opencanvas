@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import type { CanvasPinchPayload } from '../shared/types'
 import { registerIpcHandlers } from './ipc'
+import { ensurePreviewServer } from './previewServer'
 import { loadConfig, saveConfig } from './storage'
 
 const { app, BrowserWindow, screen } = electron
@@ -92,6 +93,7 @@ async function createMainWindow(): Promise<void> {
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
+      plugins: true,
       sandbox: false
     }
   })
@@ -143,6 +145,8 @@ async function createMainWindow(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  await ensurePreviewServer()
+
   if (process.platform === 'darwin' && app.dock) {
     const dockIcon = electron.nativeImage.createFromPath(
       bundledResourcePath('resources', 'claude-canvas-icon.png')

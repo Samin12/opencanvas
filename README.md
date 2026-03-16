@@ -11,8 +11,10 @@ Electron + React foundation for Open Canvas, a spatial whiteboard workspace for 
 - Tile creation, dragging, resizing, z-index ordering, and persistence
 - xterm.js terminal tiles with tmux-backed session persistence
 - Double-click canvas to create terminal session placeholders
-- File-backed note, code, and image tiles
+- File-backed note, code, image, video, PDF, spreadsheet, and presentation tiles
 - Viewer overlay and quick file search (`Cmd+K`)
+- Iframe embeds for YouTube, Vimeo, Loom, Figma, remote PDFs, and generic webpages
+- Native CSV/TSV table viewing plus ONLYOFFICE-backed Excel / PowerPoint viewing
 - Local JSON persistence in `~/.collaborator-clone/` (legacy path preserved for compatibility)
 
 ## What is intentionally deferred
@@ -38,6 +40,7 @@ TLDraw still makes sense later for:
 - Node.js and npm
 - `tmux` installed and available on your `PATH`
 - Claude Code installed and available as the `claude` command on your `PATH`
+- Docker Desktop or Docker Engine if you want full-fidelity Excel / PowerPoint viewing
 
 On macOS, install `tmux` with:
 
@@ -46,6 +49,29 @@ brew install tmux
 ```
 
 If you launch Claude with a different command, set `COLLABORATOR_CLAUDE_COMMAND` before starting the app.
+
+## Office viewer
+
+PDFs, local videos, CSVs, and URL embeds work with the normal app runtime.
+
+For `.xls`, `.xlsx`, `.ods`, `.ppt`, `.pptx`, and `.odp`, Open Canvas uses ONLYOFFICE Docs in read-only mode. Start it with:
+
+```bash
+npm run office:up
+```
+
+Useful commands:
+
+```bash
+npm run office:logs
+npm run office:down
+```
+
+Environment overrides:
+
+- `OPEN_CANVAS_ONLYOFFICE_URL` defaults to `http://127.0.0.1:8080`
+- `OPEN_CANVAS_PREVIEW_SERVER_PORT` pins the local preview server port
+- `OPEN_CANVAS_PREVIEW_HOST_ALIAS` overrides the host alias ONLYOFFICE uses to fetch local files
 
 ## Run
 

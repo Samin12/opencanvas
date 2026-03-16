@@ -455,14 +455,20 @@ interface SidebarProps {
   onAddWorkspace: () => void
   onCopyWorkspacePath: () => void
   onCreateNote: () => void
+  onCreateWorkspaceDirectory: (targetDirectoryPath: string, directoryName: string) => void
+  onCreateWorkspaceFile: (targetDirectoryPath: string, fileName: string) => void
   onCreateTerminal: (provider: TerminalProvider) => void
+  onCopyNodePath: (targetPath: string) => void
+  onDeleteNode: (targetPath: string) => void
   onMoveFile: (sourcePath: string, targetDirectoryPath: string) => void
+  onRevealNodeInFinder: (targetPath: string) => void
+  onRenameNode: (targetPath: string, nextName: string) => void
   onMoveSidebar: (side: SidebarSide) => void
   onOpenSearch: () => void
   onOpenWorkspacePath: () => void
   onPlaceFile: (node: FileTreeNode) => void
   onRemoveWorkspace: () => void
-  onSelectNode: (node: FileTreeNode) => void
+  onSelectNode: (node: FileTreeNode, options?: { preview?: boolean }) => void
   onSelectWorkspace: (index: number) => void
   terminalDependencies: TerminalDependencyState | null
   onToggleSidebar: () => void
@@ -470,6 +476,7 @@ interface SidebarProps {
   sidebarCollapsed: boolean
   sidebarSide: SidebarSide
   sidebarWidth: number
+  workspaceRootPath: string | null
   workspaceTree: FileTreeNode[]
 }
 
@@ -481,8 +488,14 @@ function SidebarComponent({
   onAddWorkspace,
   onCopyWorkspacePath,
   onCreateNote,
+  onCreateWorkspaceDirectory,
+  onCreateWorkspaceFile,
   onCreateTerminal,
+  onCopyNodePath,
+  onDeleteNode,
   onMoveFile,
+  onRevealNodeInFinder,
+  onRenameNode,
   onMoveSidebar,
   onOpenSearch,
   onOpenWorkspacePath,
@@ -496,6 +509,7 @@ function SidebarComponent({
   sidebarCollapsed,
   sidebarSide,
   sidebarWidth,
+  workspaceRootPath,
   workspaceTree
 }: SidebarProps) {
   const activeWorkspacePath = config.workspaces[config.activeWorkspace] ?? null
@@ -884,10 +898,17 @@ function SidebarComponent({
                 activePath={activeTreePath}
                 darkMode={darkMode}
                 nodes={workspaceTree}
+                onCreateWorkspaceDirectory={onCreateWorkspaceDirectory}
+                onCreateWorkspaceFile={onCreateWorkspaceFile}
+                onCopyNodePath={onCopyNodePath}
+                onDeleteNode={onDeleteNode}
                 query={fileQuery}
                 onMoveFile={onMoveFile}
                 onPlaceFile={onPlaceFile}
+                onRevealNodeInFinder={onRevealNodeInFinder}
+                onRenameNode={onRenameNode}
                 onSelectNode={onSelectNode}
+                rootDirectoryPath={workspaceRootPath}
               />
             )
           ) : (

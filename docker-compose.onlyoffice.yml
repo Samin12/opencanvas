@@ -1,0 +1,12 @@
+services:
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: open-canvas-onlyoffice
+    ports:
+      - "8080:80"
+    environment:
+      ALLOW_META_IP_ADDRESS: "true"
+      ALLOW_PRIVATE_IP_ADDRESS: "true"
+      JWT_ENABLED: "false"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

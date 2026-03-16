@@ -1,7 +1,18 @@
-export type TileType = 'term' | 'note' | 'code' | 'image' | 'video' | 'pdf' | 'embed'
+export type TileType =
+  | 'term'
+  | 'note'
+  | 'code'
+  | 'image'
+  | 'video'
+  | 'pdf'
+  | 'spreadsheet'
+  | 'presentation'
+  | 'embed'
 
-export type FileKind = 'note' | 'code' | 'image' | 'video' | 'pdf'
+export type FileKind = 'note' | 'code' | 'image' | 'video' | 'pdf' | 'spreadsheet' | 'presentation'
 export type TerminalProvider = 'claude' | 'codex'
+export type OfficeDocumentKind = 'spreadsheet' | 'presentation'
+export type OfficeViewerStatus = 'ready' | 'unreachable' | 'disabled'
 
 export interface CanvasTile {
   id: string
@@ -63,6 +74,7 @@ export interface FileTreeNode {
   path: string
   kind: 'file' | 'directory'
   children?: FileTreeNode[]
+  size?: number
   updatedAt?: number
 }
 
@@ -78,9 +90,32 @@ export interface ImageAssetData {
   mimeType: string
 }
 
+export interface FileMetadata {
+  extension: string
+  size: number
+  updatedAt: number
+}
+
+export interface OfficeViewerBootstrap {
+  baseUrl?: string
+  status: OfficeViewerStatus
+}
+
+export interface OfficeViewerSession {
+  callbackUrl: string
+  documentKey: string
+  documentServerUrl: string
+  documentType: 'cell' | 'slide'
+  documentUrl: string
+  filePath: string
+  kind: OfficeDocumentKind
+  title: string
+}
+
 export interface BootstrapData {
   config: AppConfig
   canvasState: CanvasState
+  officeViewer: OfficeViewerBootstrap
   terminalDependencies: TerminalDependencyState
 }
 
@@ -96,6 +131,22 @@ export interface CreateWorkspaceNoteOptions {
   baseName?: string
   initialContent?: string
   targetDirectoryPath?: string
+}
+
+export interface CreateWorkspaceFileOptions {
+  fileName: string
+  initialContent?: string
+  targetDirectoryPath?: string
+}
+
+export interface CreateWorkspaceDirectoryOptions {
+  directoryName: string
+  targetDirectoryPath?: string
+}
+
+export interface RenameWorkspaceNodeOptions {
+  nextName: string
+  targetPath: string
 }
 
 export interface TerminalProviderDependencyState {
@@ -158,10 +209,19 @@ export interface CollaboratorApi {
   copyTextToClipboard: (text: string) => Promise<void>
   copyHtmlToClipboard: (html: string, text?: string) => Promise<void>
   openPath: (targetPath: string) => Promise<void>
+  revealPath: (targetPath: string) => Promise<void>
   pickWorkspaceDirectory: () => Promise<string | null>
   createWorkspaceNote: (
     workspacePath: string,
     options?: CreateWorkspaceNoteOptions
+  ) => Promise<FileTreeNode>
+  createWorkspaceFile: (
+    workspacePath: string,
+    options: CreateWorkspaceFileOptions
+  ) => Promise<FileTreeNode>
+  createWorkspaceDirectory: (
+    workspacePath: string,
+    options: CreateWorkspaceDirectoryOptions
   ) => Promise<FileTreeNode>
   importWorkspaceAsset: (
     workspacePath: string,
@@ -176,12 +236,19 @@ export interface CollaboratorApi {
     sourcePath: string,
     targetDirectoryPath: string
   ) => Promise<FileTreeNode>
+  renameWorkspaceNode: (
+    workspacePath: string,
+    options: RenameWorkspaceNodeOptions
+  ) => Promise<FileTreeNode>
+  deleteWorkspaceNode: (workspacePath: string, targetPath: string) => Promise<void>
   readImageAsset: (filePath: string) => Promise<ImageAssetData>
+  readFileMetadata: (filePath: string) => Promise<FileMetadata>
   readWorkspaceTree: (workspacePath: string) => Promise<FileTreeNode[]>
   readTextFile: (filePath: string) => Promise<TextFileDocument>
   writeTextFile: (filePath: string, content: string) => Promise<TextFileDocument>
   onFileChanged: (filePath: string, listener: () => void) => () => void
   fileUrl: (filePath: string) => Promise<string>
+  previewFileUrl: (filePath: string) => Promise<string>
   createTerminalSession: (options: {
     cols: number
     cwd?: string
@@ -201,6 +268,9 @@ export interface CollaboratorApi {
     listener: (payload: { exitCode: number; signal?: number }) => void
   ) => () => void
   onCanvasPinch: (listener: (payload: CanvasPinchPayload) => void) => () => void
+  readOfficeViewerBootstrap: (force?: boolean) => Promise<OfficeViewerBootstrap>
+  getOfficeViewerSession: (filePath: string) => Promise<OfficeViewerSession>
+  openExternalUrl: (url: string) => Promise<void>
   releaseTerminalSession: (sessionId: string) => void
   resizeTerminalSession: (sessionId: string, cols: number, rows: number) => void
   writeTerminalInput: (sessionId: string, data: string) => void

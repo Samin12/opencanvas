@@ -193,7 +193,8 @@ textarea {
 }
 
 .terminal-pane .xterm-viewport::-webkit-scrollbar-track {
-  background: transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--line-strong) 18%, transparent);
 }
 
 .terminal-pane .xterm-viewport::-webkit-scrollbar-thumb {
@@ -437,44 +438,48 @@ textarea {
   display: none;
 }
 
-.markdown-preview li:has(> ul) > p:first-child,
-.markdown-preview li:has(> ol) > p:first-child,
+.markdown-preview ul > li:has(> ul),
+.markdown-preview ul > li:has(> ol) {
+  list-style: none;
+}
+
+.markdown-preview ul > li:has(> ul) > p:first-child,
+.markdown-preview ul > li:has(> ol) > p:first-child,
 .markdown-preview li[data-type='taskItem']:has(> div > ul) > div > p:first-child,
 .markdown-preview li[data-type='taskItem']:has(> div > ol) > div > p:first-child {
   position: relative;
-  padding-left: 0.52em;
+  padding-left: 0.3em;
 }
 
-.markdown-preview li:has(> ul) > p:first-child::before,
-.markdown-preview li:has(> ol) > p:first-child::before,
+.markdown-preview ul > li:has(> ul) > p:first-child::before,
+.markdown-preview ul > li:has(> ol) > p:first-child::before,
 .markdown-preview li[data-type='taskItem']:has(> div > ul) > div > p:first-child::before,
 .markdown-preview li[data-type='taskItem']:has(> div > ol) > div > p:first-child::before {
   content: '';
   position: absolute;
-  left: -2.12em;
-  top: 0.54em;
-  width: 0.56rem;
-  height: 0.56rem;
+  left: -1.55em;
+  top: 0.47em;
+  width: 0.72rem;
+  height: 0.72rem;
   border-radius: 999px;
-  background:
-    radial-gradient(
-      circle at 50% 50%,
-      color-mix(in srgb, var(--surface-0) 94%, white 6%) 0 1.6px,
-      color-mix(in srgb, var(--text-dim) 84%, black 4%) 1.65px 100%
-    );
-  box-shadow: 0 0 0 4px var(--surface-0);
+  background: var(--surface-0);
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in srgb, var(--text-dim) 82%, var(--line-strong) 18%),
+    0 0 0 4px var(--surface-0);
+  transition:
+    background 140ms ease,
+    box-shadow 140ms ease,
+    opacity 140ms ease;
 }
 
-.markdown-preview li[data-collapsed='true']:has(> ul) > p:first-child::before,
-.markdown-preview li[data-collapsed='true']:has(> ol) > p:first-child::before,
+.markdown-preview ul > li[data-collapsed='true']:has(> ul) > p:first-child::before,
+.markdown-preview ul > li[data-collapsed='true']:has(> ol) > p:first-child::before,
 .markdown-preview li[data-type='taskItem'][data-collapsed='true']:has(> div > ul) > div > p:first-child::before,
 .markdown-preview li[data-type='taskItem'][data-collapsed='true']:has(> div > ol) > div > p:first-child::before {
-  background:
-    radial-gradient(
-      circle at 50% 50%,
-      color-mix(in srgb, var(--surface-0) 94%, white 6%) 0 1.6px,
-      color-mix(in srgb, var(--text-dim) 84%, black 4%) 1.65px 100%
-    );
+  background: color-mix(in srgb, var(--text-dim) 84%, var(--surface-0) 16%);
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in srgb, var(--text-dim) 88%, var(--line-strong) 12%),
+    0 0 0 4px var(--surface-0);
 }
 
 .markdown-preview li + li {

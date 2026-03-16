@@ -1,6 +1,6 @@
 import { memo, useEffect, useState } from 'react'
 
-import type { FileTreeNode } from '@shared/types'
+import type { FileTreeNode, OfficeViewerBootstrap } from '@shared/types'
 
 import { DocumentPane } from './DocumentPane'
 import { composeTooltipLabel } from '../utils/buttonTooltips'
@@ -9,6 +9,7 @@ interface ViewerOverlayProps {
   file: FileTreeNode | null
   onClose: () => void
   onImportImageFile?: (file: File) => Promise<{ name: string; path: string } | null>
+  officeViewer: OfficeViewerBootstrap | null
   onPlaceOnCanvas: (file: FileTreeNode) => void
 }
 
@@ -54,6 +55,14 @@ function viewerKindLabel(file: FileTreeNode): string {
     return 'PDF'
   }
 
+  if (file.fileKind === 'spreadsheet') {
+    return 'Spreadsheet'
+  }
+
+  if (file.fileKind === 'presentation') {
+    return 'Presentation'
+  }
+
   return 'Code'
 }
 
@@ -61,6 +70,7 @@ function ViewerOverlayComponent({
   file,
   onClose,
   onImportImageFile,
+  officeViewer,
   onPlaceOnCanvas
 }: ViewerOverlayProps) {
   const [refreshToken, setRefreshToken] = useState(0)
@@ -147,6 +157,7 @@ function ViewerOverlayComponent({
           <DocumentPane
             fileKind={file.fileKind ?? 'code'}
             filePath={file.path}
+            officeViewer={officeViewer}
             onImportImageFile={onImportImageFile}
             refreshToken={refreshToken}
             showViewerRefreshButton={false}

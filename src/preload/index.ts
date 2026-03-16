@@ -6,9 +6,15 @@ import type {
   CanvasPinchPayload,
   CanvasState,
   CollaboratorApi,
+  CreateWorkspaceDirectoryOptions,
+  CreateWorkspaceFileOptions,
   CreateWorkspaceNoteOptions,
+  FileMetadata,
   FileTreeNode,
   ImageAssetData,
+  OfficeViewerBootstrap,
+  OfficeViewerSession,
+  RenameWorkspaceNodeOptions,
   TerminalActivityItem,
   TerminalSessionSnapshot,
   TextFileDocument,
@@ -33,6 +39,10 @@ const api: CollaboratorApi = {
   copyTextToClipboard: (text: string) => ipcRenderer.invoke('system:copy-text', text) as Promise<void>,
   copyHtmlToClipboard: (html: string, text?: string) =>
     ipcRenderer.invoke('system:copy-html', html, text) as Promise<void>,
+  readOfficeViewerBootstrap: (force?: boolean) =>
+    ipcRenderer.invoke('office:bootstrap', Boolean(force)) as Promise<OfficeViewerBootstrap>,
+  getOfficeViewerSession: (filePath: string) =>
+    ipcRenderer.invoke('office:session', filePath) as Promise<OfficeViewerSession>,
   createTerminalSession: (options) =>
     ipcRenderer.invoke('terminal:create', options) as Promise<TerminalSessionSnapshot>,
   readTerminalActivity: (sessionId: string) =>
@@ -88,9 +98,17 @@ const api: CollaboratorApi = {
   saveCanvasState: (workspacePath: string | null, state: CanvasState) =>
     ipcRenderer.invoke('canvas:save', workspacePath, state) as Promise<CanvasState>,
   openPath: (targetPath: string) => ipcRenderer.invoke('system:open-path', targetPath) as Promise<void>,
+  revealPath: (targetPath: string) =>
+    ipcRenderer.invoke('system:reveal-path', targetPath) as Promise<void>,
+  openExternalUrl: (url: string) =>
+    ipcRenderer.invoke('system:open-external-url', url) as Promise<void>,
   pickWorkspaceDirectory: () => ipcRenderer.invoke('workspace:pick') as Promise<string | null>,
   createWorkspaceNote: (workspacePath: string, options?: CreateWorkspaceNoteOptions) =>
     ipcRenderer.invoke('workspace:create-note', workspacePath, options) as Promise<FileTreeNode>,
+  createWorkspaceFile: (workspacePath: string, options: CreateWorkspaceFileOptions) =>
+    ipcRenderer.invoke('workspace:create-file', workspacePath, options) as Promise<FileTreeNode>,
+  createWorkspaceDirectory: (workspacePath: string, options: CreateWorkspaceDirectoryOptions) =>
+    ipcRenderer.invoke('workspace:create-directory', workspacePath, options) as Promise<FileTreeNode>,
   importWorkspaceAsset: (workspacePath: string, asset: WorkspaceAssetImport) =>
     ipcRenderer.invoke('workspace:import-asset', workspacePath, asset) as Promise<FileTreeNode>,
   importWorkspaceImage: (workspacePath: string, image: WorkspaceImageImport) =>
@@ -102,8 +120,14 @@ const api: CollaboratorApi = {
       sourcePath,
       targetDirectoryPath
     ) as Promise<FileTreeNode>,
+  renameWorkspaceNode: (workspacePath: string, options: RenameWorkspaceNodeOptions) =>
+    ipcRenderer.invoke('workspace:rename-node', workspacePath, options) as Promise<FileTreeNode>,
+  deleteWorkspaceNode: (workspacePath: string, targetPath: string) =>
+    ipcRenderer.invoke('workspace:delete-node', workspacePath, targetPath) as Promise<void>,
   readImageAsset: (filePath: string) =>
     ipcRenderer.invoke('file:image-data', filePath) as Promise<ImageAssetData>,
+  readFileMetadata: (filePath: string) =>
+    ipcRenderer.invoke('file:metadata', filePath) as Promise<FileMetadata>,
   readWorkspaceTree: (workspacePath: string) =>
     ipcRenderer.invoke('workspace:tree', workspacePath) as Promise<FileTreeNode[]>,
   readTextFile: (filePath: string) =>
@@ -127,6 +151,8 @@ const api: CollaboratorApi = {
     }
   },
   fileUrl: (filePath: string) => ipcRenderer.invoke('file:url', filePath) as Promise<string>,
+  previewFileUrl: (filePath: string) =>
+    ipcRenderer.invoke('file:preview-url', filePath) as Promise<string>,
   releaseTerminalSession: (sessionId: string) => {
     ipcRenderer.send('terminal:release', sessionId)
   },

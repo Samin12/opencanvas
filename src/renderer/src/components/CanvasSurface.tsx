@@ -30,6 +30,7 @@ import type {
   CanvasTile,
   FileKind,
   FileTreeNode,
+  OfficeViewerBootstrap,
   TerminalProvider,
   TerminalUiMode
 } from '@shared/types'
@@ -46,6 +47,7 @@ import { COLLABORATOR_TERMINAL_CARD_MIME, type TerminalCardTransferPayload } fro
 interface CanvasSurfaceProps {
   activeWorkspacePath: string | null
   darkMode: boolean
+  officeViewer: OfficeViewerBootstrap | null
   onCreateMarkdownCard: (options: {
     baseName?: string
     initialContent: string
@@ -103,12 +105,21 @@ type DragConnectionState =
       sourceTileId: string
     }
 
-interface HoveredConnectionState {
-  midpointX: number
-  midpointY: number
-  sourceTileId: string
-  terminalTileId: string
-}
+type HoveredConnectionState =
+  | {
+      midpointX: number
+      midpointY: number
+      sourceGroupId: string
+      sourceKind: 'group'
+      terminalTileId: string
+    }
+  | {
+      midpointX: number
+      midpointY: number
+      sourceKind: 'tile'
+      sourceTileId: string
+      terminalTileId: string
+    }
 
 interface FrameContextGroup {
   containedTiles: CanvasTile[]
@@ -149,6 +160,17 @@ type InteractionState =
       type: 'drag'
     }
   | {
+      frameId: string
+      frameStartHeight: number
+      frameStartWidth: number
+      frameStartX: number
+      frameStartY: number
+      startClientX: number
+      startClientY: number
+      tileStarts: Array<{ id: string; x: number; y: number }>
+      type: 'frame-drag'
+    }
+  | {
       handle: ResizeHandle
       startClientX: number
       startClientY: number
@@ -180,6 +202,19 @@ const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
 const IMAGE_FILE_EXTENSIONS = new Set(['.gif', '.jpg', '.jpeg', '.png', '.svg', '.webp'])
 const VIDEO_FILE_EXTENSIONS = new Set(['.avi', '.m4v', '.mkv', '.mov', '.mp4', '.webm'])
 const PDF_FILE_EXTENSIONS = new Set(['.pdf'])
+const SPREADSHEET_FILE_EXTENSIONS = new Set(['.csv', '.tsv', '.xls', '.xlsx', '.ods'])
+const PRESENTATION_FILE_EXTENSIONS = new Set(['.ppt', '.pptx', '.odp'])
+const IMPORTABLE_ASSET_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.oasis.opendocument.presentation',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/csv',
+  'text/tab-separated-values'
+])
 const DOCUMENT_DROP_TARGET_SELECTOR = '[data-document-drop-target="true"]'
 const SCROLL_LOCK_SELECTOR = '[data-scroll-lock="true"]'
 const NATIVE_WHEEL_SELECTOR = '[data-native-wheel="true"]'
@@ -484,6 +519,17 @@ function canScrollElementForDelta(element: HTMLElement, deltaX: number, deltaY: 
   return false
 }
 
+function isMostlyVerticalWheel(deltaX: number, deltaY: number) {
+  const absX = Math.abs(deltaX)
+  const absY = Math.abs(deltaY)
+
+  if (absY < 0.5) {
+    return false
+  }
+
+  return absY >= absX * 0.72
+}
+
 function hasCollaboratorFilePayload(dataTransfer: DataTransfer | null) {
   return Boolean(dataTransfer && Array.from(dataTransfer.types).includes(COLLABORATOR_FILE_MIME))
 }
@@ -505,7 +551,11 @@ function isImportableImageFile(file: File) {
 }
 
 function isImportableAssetFile(file: File) {
-  if (isImportableImageFile(file) || file.type.startsWith('video/') || file.type === 'application/pdf') {
+  if (
+    isImportableImageFile(file) ||
+    file.type.startsWith('video/') ||
+    IMPORTABLE_ASSET_MIME_TYPES.has(file.type.toLowerCase())
+  ) {
     return true
   }
 
@@ -513,7 +563,9 @@ function isImportableAssetFile(file: File) {
 
   return (
     Array.from(VIDEO_FILE_EXTENSIONS).some((extension) => lowerName.endsWith(extension)) ||
-    Array.from(PDF_FILE_EXTENSIONS).some((extension) => lowerName.endsWith(extension))
+    Array.from(PDF_FILE_EXTENSIONS).some((extension) => lowerName.endsWith(extension)) ||
+    Array.from(SPREADSHEET_FILE_EXTENSIONS).some((extension) => lowerName.endsWith(extension)) ||
+    Array.from(PRESENTATION_FILE_EXTENSIONS).some((extension) => lowerName.endsWith(extension))
   )
 }
 
@@ -581,6 +633,8 @@ function createTileFromFile(
   const isNote = file.fileKind === 'note'
   const isVideo = file.fileKind === 'video'
   const isPdf = file.fileKind === 'pdf'
+  const isSpreadsheet = file.fileKind === 'spreadsheet'
+  const isPresentation = file.fileKind === 'presentation'
 
   return {
     id: `tile-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -588,8 +642,8 @@ function createTileFromFile(
     title: file.name,
     x: snap(x),
     y: snap(y),
-    width: isImage ? 420 : isVideo ? 520 : isPdf ? 540 : isNote ? 360 : 520,
-    height: isImage ? 320 : isVideo ? 340 : isPdf ? 680 : isNote ? 440 : 420,
+    width: isImage ? 420 : isVideo ? 820 : isPdf ? 820 : isSpreadsheet || isPresentation ? 980 : isNote ? 360 : 520,
+    height: isImage ? 320 : isVideo ? 520 : isPdf ? 620 : isSpreadsheet || isPresentation ? 620 : isNote ? 440 : 420,
     zIndex,
     filePath: file.path
   }
@@ -619,6 +673,10 @@ function createEmbedTile(url: string, x: number, y: number, zIndex: number): Can
 }
 
 function contextResourceLabel(tile: CanvasTile) {
+  if (tile.type === 'embed') {
+    return 'link'
+  }
+
   if (tile.type === 'image') {
     return 'image'
   }
@@ -631,7 +689,33 @@ function contextResourceLabel(tile: CanvasTile) {
     return 'pdf'
   }
 
+  if (tile.type === 'spreadsheet') {
+    return 'spreadsheet'
+  }
+
+  if (tile.type === 'presentation') {
+    return 'presentation'
+  }
+
   return 'file'
+}
+
+function contextResourceIdentity(tile: CanvasTile) {
+  return tile.filePath ?? tile.embedUrl ?? tile.id
+}
+
+function contextResourceTarget(tile: CanvasTile) {
+  return tile.filePath ?? tile.embedUrl ?? tile.title
+}
+
+function contextResourcePromptLines(tile: CanvasTile) {
+  const lines = [`- ${contextResourceTarget(tile)} (${contextResourceLabel(tile)})`]
+
+  if (tile.filePath && tile.embedUrl) {
+    lines.push(`  - linked-url: ${tile.embedUrl}`)
+  }
+
+  return lines
 }
 
 function fileKindForTile(tile: CanvasTile): FileKind | null {
@@ -640,7 +724,9 @@ function fileKindForTile(tile: CanvasTile): FileKind | null {
     tile.type === 'code' ||
     tile.type === 'image' ||
     tile.type === 'video' ||
-    tile.type === 'pdf'
+    tile.type === 'pdf' ||
+    tile.type === 'spreadsheet' ||
+    tile.type === 'presentation'
   ) {
     return tile.type
   }
@@ -721,6 +807,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     {
       activeWorkspacePath,
       darkMode,
+      officeViewer,
       onCreateMarkdownCard,
       onCreateMarkdownNote,
       onConvertStickyNoteToMarkdown,
@@ -803,7 +890,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
 
     function isContextSourceTile(tile: CanvasTile | null): tile is CanvasTile {
-      return Boolean(tile && tile.type !== 'term' && tile.filePath)
+      return Boolean(tile && tile.type !== 'term' && (tile.filePath || tile.embedUrl))
     }
 
     function focusTerminal(tileId: string, mode: TerminalUiMode) {
@@ -1054,7 +1141,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         new Map(
           [...contextGroupsForTerminal(tile).flatMap((group) => group.containedTiles), ...contextTilesForTerminal(tile)]
             .filter(isContextSourceTile)
-            .map((contextTile) => [contextTile.filePath, contextTile] as const)
+            .map((contextTile) => [contextResourceIdentity(contextTile), contextTile] as const)
         ).values()
       )
     }
@@ -1093,13 +1180,28 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       return typeof terminalConnectorId === 'string' ? terminalConnectorId : null
     }
 
-    function showHoveredConnection(sourceTile: CanvasTile, terminalTile: CanvasTile) {
+    function showHoveredTileConnection(sourceTile: CanvasTile, terminalTile: CanvasTile) {
       const start = connectorCenterForTile(sourceTile)
       const end = connectorCenterForTile(terminalTile)
       const { midpoint } = connectionCurve(start, end)
 
       setHoveredConnection({
+        sourceKind: 'tile',
         sourceTileId: sourceTile.id,
+        terminalTileId: terminalTile.id,
+        midpointX: midpoint.x,
+        midpointY: midpoint.y
+      })
+    }
+
+    function showHoveredGroupConnection(sourceGroup: FrameContextGroup, terminalTile: CanvasTile) {
+      const start = connectorCenterForGroup(sourceGroup)
+      const end = connectorCenterForTile(terminalTile)
+      const { midpoint } = connectionCurve(start, end)
+
+      setHoveredConnection({
+        sourceGroupId: sourceGroup.id,
+        sourceKind: 'group',
         terminalTileId: terminalTile.id,
         midpointX: midpoint.x,
         midpointY: midpoint.y
@@ -1126,7 +1228,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       setHoveredConnection((current) =>
-        current && terminalConnectionKey(current.sourceTileId, current.terminalTileId) === connectionKey
+        current &&
+        (current.sourceKind === 'group'
+          ? `group:${current.sourceGroupId}:${current.terminalTileId}`
+          : terminalConnectionKey(current.sourceTileId, current.terminalTileId)) === connectionKey
           ? null
           : current
       )
@@ -1184,6 +1289,101 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       })
     }
 
+    function beginFrameBundleDrag(
+      group: FrameBundleVisual,
+      event: ReactPointerEvent<HTMLDivElement>
+    ) {
+      if (event.button !== 0) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      setSelectedTileId(null)
+      setFocusedTerminal(null)
+      setLinkSourceTileId(null)
+
+      interactionRef.current = {
+        type: 'frame-drag',
+        frameId: group.id,
+        frameStartX: group.x,
+        frameStartY: group.y,
+        frameStartWidth: group.width,
+        frameStartHeight: group.height,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        tileStarts: group.movableTiles.map((tile) => ({
+          id: tile.id,
+          x: tile.x,
+          y: tile.y
+        }))
+      }
+    }
+
+    function moveFrameBundle(
+      interaction: Extract<InteractionState, { type: 'frame-drag' }>,
+      deltaX: number,
+      deltaY: number,
+      options?: { immediate?: boolean; snapToGrid?: boolean }
+    ) {
+      const editor = editorRef.current
+      const nextFrameX = options?.snapToGrid ? snap(interaction.frameStartX + deltaX) : interaction.frameStartX + deltaX
+      const nextFrameY = options?.snapToGrid ? snap(interaction.frameStartY + deltaY) : interaction.frameStartY + deltaY
+      const resolvedDeltaX = nextFrameX - interaction.frameStartX
+      const resolvedDeltaY = nextFrameY - interaction.frameStartY
+
+      if (editor) {
+        frameBoundsRef.current.set(interaction.frameId, {
+          x: nextFrameX,
+          y: nextFrameY,
+          width: interaction.frameStartWidth,
+          height: interaction.frameStartHeight
+        })
+        editor.updateShapes([
+          {
+            id: interaction.frameId as TLFrameShape['id'],
+            type: 'frame',
+            x: nextFrameX,
+            y: nextFrameY,
+            props: {
+              w: interaction.frameStartWidth,
+              h: interaction.frameStartHeight
+            }
+          }
+        ])
+      }
+
+      const tileOffsets = new Map(
+        interaction.tileStarts.map((tileStart) => [
+          tileStart.id,
+          {
+            x: tileStart.x + resolvedDeltaX,
+            y: tileStart.y + resolvedDeltaY
+          }
+        ])
+      )
+
+      updateState(
+        {
+          ...stateRef.current,
+          tiles: stateRef.current.tiles.map((tile) => {
+            const nextPosition = tileOffsets.get(tile.id)
+
+            if (!nextPosition) {
+              return tile
+            }
+
+            return {
+              ...tile,
+              x: nextPosition.x,
+              y: nextPosition.y
+            }
+          })
+        },
+        options?.immediate ? { immediate: true } : undefined
+      )
+    }
+
     function buildTerminalContextPrompt(
       terminalTile: CanvasTile,
       provider: TerminalProvider
@@ -1197,7 +1397,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       const hasImageContext = contextTiles.some((tile) => tile.type === 'image')
       const hasPdfContext = contextTiles.some((tile) => tile.type === 'pdf')
+      const hasSpreadsheetContext = contextTiles.some((tile) => tile.type === 'spreadsheet')
+      const hasPresentationContext = contextTiles.some((tile) => tile.type === 'presentation')
       const hasVideoContext = contextTiles.some((tile) => tile.type === 'video')
+      const hasLinkContext = contextTiles.some((tile) => tile.type === 'embed' || Boolean(tile.embedUrl))
       const looseContextTiles = contextTilesForTerminal(terminalTile)
       const lines = [
         `Use these workspace resources as context for this ${terminalProviderLabel(provider)} session:`,
@@ -1209,7 +1412,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         contextGroups.forEach((group) => {
           lines.push(`- ${group.label} (${group.containedTiles.length} items)`)
           group.containedTiles.forEach((groupTile) => {
-            lines.push(`  - ${groupTile.filePath} (${contextResourceLabel(groupTile)})`)
+            contextResourcePromptLines(groupTile).forEach((line) => lines.push(`  ${line}`))
           })
         })
       }
@@ -1221,7 +1424,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
         lines.push('Loose resources:')
         looseContextTiles.forEach((contextTile) => {
-          lines.push(`- ${contextTile.filePath} (${contextResourceLabel(contextTile)})`)
+          contextResourcePromptLines(contextTile).forEach((line) => lines.push(line))
         })
       }
 
@@ -1236,9 +1439,27 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         lines.push('For each path marked (pdf), read that PDF before responding.')
       }
 
+      if (hasSpreadsheetContext) {
+        lines.push(
+          'For each path marked (spreadsheet), inspect the table structure and values before responding.'
+        )
+      }
+
+      if (hasPresentationContext) {
+        lines.push(
+          'For each path marked (presentation), review the deck slides and speaker context before responding. If a linked-url is present, open that slideshow URL and use it as the primary deck reference.'
+        )
+      }
+
       if (hasVideoContext) {
         lines.push(
           'For each path marked (video), inspect the video file or extract the relevant details before responding.'
+        )
+      }
+
+      if (hasLinkContext) {
+        lines.push(
+          'For each path marked (link) or any resource with a linked-url, open that URL and inspect the webpage or embedded resource before responding.'
         )
       }
 
@@ -1276,18 +1497,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         { immediate: true }
       )
 
-      const prompt = buildTerminalContextPrompt(
-        {
-          ...terminalTile,
-          contextTileIds: nextContextTileIds
-        },
-        terminalProviderForTile(terminalTile)
-      )
-
-      if (prompt && terminalTile.sessionId) {
-        window.collaborator.writeTerminalInput(terminalTile.sessionId, `${prompt}\r`)
-      }
-
       setSelectedTileId(terminalTileId)
       setFocusedTerminal(null)
       setLinkSourceTileId(null)
@@ -1321,18 +1530,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         },
         { immediate: true }
       )
-
-      const prompt = buildTerminalContextPrompt(
-        {
-          ...terminalTile,
-          contextGroupIds: nextContextGroupIds
-        },
-        terminalProviderForTile(terminalTile)
-      )
-
-      if (prompt && terminalTile.sessionId) {
-        window.collaborator.writeTerminalInput(terminalTile.sessionId, `${prompt}\r`)
-      }
 
       setSelectedTileId(terminalTileId)
       setFocusedTerminal(null)
@@ -1442,6 +1639,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         },
         { immediate: true }
       )
+
+      clearHoveredConnection(`group:${groupId}:${terminalTileId}`)
     }
 
     function updateState(nextState: CanvasState, options?: { immediate?: boolean }) {
@@ -1458,6 +1657,20 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         options
       )
       expandGroupsForTileIds([tile.id])
+    }
+
+    function updateTile(
+      tileId: string,
+      updater: (tile: CanvasTile) => CanvasTile,
+      options?: { immediate?: boolean }
+    ) {
+      updateState(
+        {
+          ...stateRef.current,
+          tiles: stateRef.current.tiles.map((tile) => (tile.id === tileId ? updater(tile) : tile))
+        },
+        options
+      )
     }
 
     function requestTileRefresh(tileId: string) {
@@ -2384,16 +2597,26 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             : null
         const normalizedDeltaX = normalizeWheelDelta(event.deltaX, event.deltaMode)
         const normalizedDeltaY = normalizeWheelDelta(event.deltaY, event.deltaMode)
+        const mostlyVerticalWheel = isMostlyVerticalWheel(normalizedDeltaX, normalizedDeltaY)
         const activeScrollCaptureElement = currentActiveScrollCaptureElement()
 
         if (!event.ctrlKey && !event.metaKey) {
+          if (nativeWheelElement && mostlyVerticalWheel) {
+            clearWheelGestureOwner()
+            return
+          }
+
           if (
             scrollLockElement &&
             nativeWheelElement &&
             elementsShareCaptureChain(nativeWheelElement, activeScrollCaptureElement)
           ) {
+            if (mostlyVerticalWheel) {
+              clearWheelGestureOwner()
+              return
+            }
+
             clearWheelGestureOwner()
-            return
           }
 
           if (nativeWheelElement) {
@@ -2715,6 +2938,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           return
         }
 
+        if (interaction.type === 'frame-drag') {
+          moveFrameBundle(interaction, deltaX, deltaY)
+          return
+        }
+
         updateState({
           ...stateRef.current,
           tiles: stateRef.current.tiles.map((tile) => {
@@ -2782,6 +3010,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         }
 
         interactionRef.current = null
+
+        if (interaction.type === 'frame-drag') {
+          const deltaX = (event.clientX - interaction.startClientX) / stateRef.current.viewport.zoom
+          const deltaY = (event.clientY - interaction.startClientY) / stateRef.current.viewport.zoom
+
+          moveFrameBundle(interaction, deltaX, deltaY, {
+            immediate: true,
+            snapToGrid: true
+          })
+          return
+        }
 
         if (interaction.type === 'drag' || interaction.type === 'resize') {
           updateState(
@@ -2893,7 +3132,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       })
 
       setHoveredConnection((current) =>
-        current && (current.sourceTileId === tileId || current.terminalTileId === tileId) ? null : current
+        current &&
+        (current.terminalTileId === tileId ||
+          (current.sourceKind === 'tile' && current.sourceTileId === tileId))
+          ? null
+          : current
       )
     }
 
@@ -3118,9 +3361,16 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       ]
     })
     const hoveredConnectionKey = hoveredConnection
-      ? terminalConnectionKey(hoveredConnection.sourceTileId, hoveredConnection.terminalTileId)
+      ? hoveredConnection.sourceKind === 'group'
+        ? `group:${hoveredConnection.sourceGroupId}:${hoveredConnection.terminalTileId}`
+        : terminalConnectionKey(hoveredConnection.sourceTileId, hoveredConnection.terminalTileId)
       : null
-    const hoveredConnectionSourceTile = hoveredConnection ? tileById(hoveredConnection.sourceTileId) : null
+    const hoveredConnectionSourceTile =
+      hoveredConnection?.sourceKind === 'tile' ? tileById(hoveredConnection.sourceTileId) : null
+    const hoveredConnectionSourceGroup =
+      hoveredConnection?.sourceKind === 'group'
+        ? frameGroups.find((group) => group.id === hoveredConnection.sourceGroupId) ?? null
+        : null
     const hoveredConnectionTerminalTile = hoveredConnection ? tileById(hoveredConnection.terminalTileId) : null
 
     return (
@@ -3225,8 +3475,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
                     {PASTE_IMAGE_SHORTCUT_KEY}
                   </span>{' '}
-                  with an image or a supported URL, or drop an image, video, PDF, or URL onto the canvas.
-                  Imported files are saved in{' '}
+                  with an image or a supported URL, or drop an image, video, PDF, spreadsheet,
+                  presentation, or URL onto the canvas. Imported files are saved in{' '}
                   <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
                     .claude-canvas/assets
                   </span>{' '}
@@ -3234,7 +3484,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 </div>
                 <div>
                   <span className="font-semibold text-[var(--text)]">Send to a terminal:</span>{' '}
-                  drag a file, image, video, PDF, or frame bundle dot onto a terminal dot.
+                  drag a file, image, video, PDF, spreadsheet, presentation, or frame bundle dot onto a terminal dot.
                 </div>
                 <div>
                   <span className="font-semibold text-[var(--text)]">Group bundle:</span> press{' '}
@@ -3311,6 +3561,22 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     <path
                       d={path}
                       fill="none"
+                      stroke="transparent"
+                      strokeLinecap="round"
+                      strokeWidth={14}
+                      pointerEvents="stroke"
+                      className="pointer-events-auto"
+                      data-terminal-connection-key={connectionKey}
+                      onPointerEnter={() =>
+                        showHoveredGroupConnection(connection.sourceGroup, connection.terminalTile)
+                      }
+                      onPointerLeave={(event) =>
+                        clearHoveredConnection(connectionKey, event.relatedTarget)
+                      }
+                    />
+                    <path
+                      d={path}
+                      fill="none"
                       stroke="var(--link-line)"
                       strokeDasharray="10 6"
                       strokeLinecap="round"
@@ -3342,14 +3608,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     fill="none"
                     stroke="transparent"
                     strokeLinecap="round"
-                    strokeWidth={14}
-                    pointerEvents="stroke"
-                    className="pointer-events-auto"
-                    data-terminal-connection-key={connectionKey}
-                    onPointerEnter={() => showHoveredConnection(sourceTile, terminalTile)}
-                    onPointerLeave={(event) =>
-                      clearHoveredConnection(connectionKey, event.relatedTarget)
-                    }
+                      strokeWidth={14}
+                      pointerEvents="stroke"
+                      className="pointer-events-auto"
+                      data-terminal-connection-key={connectionKey}
+                      onPointerEnter={() => showHoveredTileConnection(sourceTile, terminalTile)}
+                      onPointerLeave={(event) =>
+                        clearHoveredConnection(connectionKey, event.relatedTarget)
+                      }
                   />
                   <circle cx={startX} cy={startY} fill="var(--link-line)" r={4} />
                   <circle cx={endX} cy={endY} fill="var(--link-line)" r={4} />
@@ -3433,6 +3699,28 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             </div>
           ))}
 
+          {frameBundleShells.map((group) => (
+            <div
+              key={`bundle-drag-handle:${group.id}`}
+              className="pointer-events-auto absolute z-[206] flex h-8 items-center justify-between rounded-t-[12px] px-3 text-[11px] font-semibold text-[var(--text)] cursor-grab active:cursor-grabbing"
+              style={{
+                left: group.x,
+                top: group.y,
+                width: group.width
+              }}
+              title={`Drag ${group.label}`}
+              onPointerDown={(event) => beginFrameBundleDrag(group, event)}
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-[3px] bg-[var(--accent)]" />
+                <span className="truncate">{group.label}</span>
+              </div>
+              <span className="shrink-0 text-[10px] font-medium text-[var(--text-faint)]">
+                {group.movableTiles.length}
+              </span>
+            </div>
+          ))}
+
           {frameGroups.map((group) => {
             const connector = connectorCenterForGroup(group)
             const isDraggingGroup =
@@ -3468,6 +3756,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 const contextTiles = tile.type === 'term' ? contextTilesForTerminal(tile) : []
                 const contextGroups = tile.type === 'term' ? contextGroupsForTerminal(tile) : []
                 const hasLinkedContext = contextGroups.length > 0 || contextTiles.length > 0
+                const terminalContextPrompt =
+                  tile.type === 'term'
+                    ? buildTerminalContextPrompt(tile, terminalProviderForTile(tile))
+                    : ''
                 const tileFileKind = fileKindForTile(tile)
                 const isContextSource = isContextSourceTile(tile)
                 const isPendingLinkSource = linkSourceTileId === tile.id
@@ -3723,12 +4015,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                                 </button>
                               </div>
                             ))}
+                            <div className="text-[10px] text-[var(--text-faint)]">
+                              Linked resources stay attached and get prepended when you send the next
+                              prompt.
+                            </div>
                           </>
                         )}
                       </div>
 
                       <div className="min-h-0 flex-1">
                         <TerminalPane
+                          contextPrompt={terminalContextPrompt}
                           cwd={activeWorkspacePath}
                           darkMode={darkMode}
                           focusMode={
@@ -3752,6 +4049,21 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     <DocumentPane
                       fileKind={tileFileKind}
                       filePath={tile.filePath}
+                      officeViewer={officeViewer}
+                      onSetPresentationEmbedUrl={
+                        tile.type === 'presentation'
+                          ? (url) => {
+                              updateTile(
+                                tile.id,
+                                (currentTile) => ({
+                                  ...currentTile,
+                                  embedUrl: url ?? undefined
+                                }),
+                                { immediate: true }
+                              )
+                            }
+                          : undefined
+                      }
                       onImportImageFile={onImportImageFile}
                       onRegisterNoteCopyActions={
                         tileFileKind === 'note'
@@ -3759,6 +4071,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                           : undefined
                       }
                       onPassthroughScroll={panBy}
+                      presentationEmbedUrl={tile.type === 'presentation' ? tile.embedUrl ?? null : null}
                       refreshToken={tileRefreshToken}
                       showTileRefreshButton={false}
                     />
@@ -3795,8 +4108,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         </div>
 
         {hoveredConnection &&
-        isContextSourceTile(hoveredConnectionSourceTile) &&
-        hoveredConnectionTerminalTile?.type === 'term' ? (
+        hoveredConnectionTerminalTile?.type === 'term' &&
+        (hoveredConnection.sourceKind === 'group'
+          ? Boolean(hoveredConnectionSourceGroup)
+          : isContextSourceTile(hoveredConnectionSourceTile)) ? (
           <div data-canvas-ui="true" className="pointer-events-none absolute inset-0 z-[210]">
             <button
               type="button"
@@ -3806,8 +4121,16 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 left: hoveredConnection.midpointX * state.viewport.zoom + state.viewport.panX,
                 top: hoveredConnection.midpointY * state.viewport.zoom + state.viewport.panY
               }}
-              aria-label={`Remove link from ${hoveredConnectionSourceTile.title} to ${hoveredConnectionTerminalTile.title}`}
-              title={`Remove link from ${hoveredConnectionSourceTile.title} to ${hoveredConnectionTerminalTile.title}`}
+              aria-label={`Remove link from ${
+                hoveredConnection.sourceKind === 'group'
+                  ? hoveredConnectionSourceGroup?.label ?? 'bundle'
+                  : hoveredConnectionSourceTile?.title ?? 'resource'
+              } to ${hoveredConnectionTerminalTile.title}`}
+              title={`Remove link from ${
+                hoveredConnection.sourceKind === 'group'
+                  ? hoveredConnectionSourceGroup?.label ?? 'bundle'
+                  : hoveredConnectionSourceTile?.title ?? 'resource'
+              } to ${hoveredConnectionTerminalTile.title}`}
               onPointerDown={(event) => {
                 event.stopPropagation()
               }}
@@ -3818,7 +4141,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               }}
               onClick={(event) => {
                 event.stopPropagation()
-                detachContextTile(hoveredConnectionTerminalTile.id, hoveredConnectionSourceTile.id)
+                if (hoveredConnection.sourceKind === 'group' && hoveredConnectionSourceGroup) {
+                  detachContextGroup(hoveredConnectionTerminalTile.id, hoveredConnectionSourceGroup.id)
+                  return
+                }
+
+                if (hoveredConnectionSourceTile) {
+                  detachContextTile(hoveredConnectionTerminalTile.id, hoveredConnectionSourceTile.id)
+                }
               }}
             >
               <span className="pointer-events-none block leading-none">×</span>

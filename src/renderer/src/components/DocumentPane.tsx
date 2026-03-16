@@ -16,7 +16,11 @@ import { TaskList } from '@tiptap/extension-list'
 import StarterKit from '@tiptap/starter-kit'
 import clsx from 'clsx'
 
-import type { FileKind, TextFileDocument } from '@shared/types'
+import type { FileKind, OfficeViewerBootstrap, TextFileDocument } from '@shared/types'
+import { PdfPane } from './document-panes/PdfPane'
+import { PresentationPane } from './document-panes/PresentationPane'
+import { SpreadsheetPane } from './document-panes/SpreadsheetPane'
+import { VideoPane } from './document-panes/VideoPane'
 import {
   imageAltTextFromPath,
   imageFileCandidateFromPath,
@@ -35,9 +39,12 @@ const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
 interface DocumentPaneProps {
   fileKind: FileKind
   filePath: string
+  officeViewer?: OfficeViewerBootstrap | null
+  onSetPresentationEmbedUrl?: (url: string | null) => void
   onImportImageFile?: (file: File) => Promise<{ name: string; path: string } | null>
   onRegisterNoteCopyActions?: (actions: MarkdownCopyActions | null) => void
   onPassthroughScroll?: (deltaX: number, deltaY: number) => void
+  presentationEmbedUrl?: string | null
   refreshToken?: number
   showTileRefreshButton?: boolean
   showViewerRefreshButton?: boolean
@@ -393,9 +400,8 @@ export function MarkdownCopyMenu({
         >
           F
         </span>
-        <span className="inline-flex items-center gap-1.5">
+        <span className="inline-flex items-center">
           <CopyTextIcon />
-          Copy Text
         </span>
       </button>
       {open ? (
@@ -1422,9 +1428,12 @@ function PdfDocumentPane({
 function DocumentPaneComponent({
   fileKind,
   filePath,
+  officeViewer = null,
+  onSetPresentationEmbedUrl,
   onImportImageFile,
   onRegisterNoteCopyActions,
   onPassthroughScroll,
+  presentationEmbedUrl = null,
   refreshToken = 0,
   showTileRefreshButton = true,
   showViewerRefreshButton = true,
@@ -1444,7 +1453,7 @@ function DocumentPaneComponent({
 
   if (fileKind === 'video') {
     return (
-      <VideoDocumentPane
+      <VideoPane
         filePath={filePath}
         refreshToken={refreshToken}
         showTileRefreshButton={showTileRefreshButton}
@@ -1456,8 +1465,36 @@ function DocumentPaneComponent({
 
   if (fileKind === 'pdf') {
     return (
-      <PdfDocumentPane
+      <PdfPane
         filePath={filePath}
+        refreshToken={refreshToken}
+        showTileRefreshButton={showTileRefreshButton}
+        showViewerRefreshButton={showViewerRefreshButton}
+        variant={variant}
+      />
+    )
+  }
+
+  if (fileKind === 'spreadsheet') {
+    return (
+      <SpreadsheetPane
+        filePath={filePath}
+        officeViewer={officeViewer}
+        refreshToken={refreshToken}
+        showTileRefreshButton={showTileRefreshButton}
+        showViewerRefreshButton={showViewerRefreshButton}
+        variant={variant}
+      />
+    )
+  }
+
+  if (fileKind === 'presentation') {
+    return (
+      <PresentationPane
+        filePath={filePath}
+        officeViewer={officeViewer}
+        onSetPresentationEmbedUrl={onSetPresentationEmbedUrl}
+        presentationEmbedUrl={presentationEmbedUrl}
         refreshToken={refreshToken}
         showTileRefreshButton={showTileRefreshButton}
         showViewerRefreshButton={showViewerRefreshButton}

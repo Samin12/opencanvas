@@ -5,6 +5,7 @@ import type {
   AppConfig,
   CanvasState,
   FileTreeNode,
+  OfficeViewerBootstrap,
   SidebarSide,
   TerminalDependencyState,
   TerminalProvider
@@ -101,6 +102,45 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
+function normalizeFsPath(targetPath: string) {
+  return targetPath.replace(/\\/g, '/').replace(/\/+$/, '')
+}
+
+function isSameOrDescendantPath(candidatePath: string | null | undefined, targetPath: string) {
+  if (!candidatePath) {
+    return false
+  }
+
+  const normalizedCandidatePath = normalizeFsPath(candidatePath)
+  const normalizedTargetPath = normalizeFsPath(targetPath)
+
+  return (
+    normalizedCandidatePath === normalizedTargetPath ||
+    normalizedCandidatePath.startsWith(`${normalizedTargetPath}/`)
+  )
+}
+
+function replacePathPrefix(candidatePath: string, fromPath: string, toPath: string) {
+  const normalizedCandidatePath = normalizeFsPath(candidatePath)
+  const normalizedFromPath = normalizeFsPath(fromPath)
+  const normalizedToPath = normalizeFsPath(toPath)
+
+  if (normalizedCandidatePath === normalizedFromPath) {
+    return normalizedToPath
+  }
+
+  if (!normalizedCandidatePath.startsWith(`${normalizedFromPath}/`)) {
+    return candidatePath
+  }
+
+  return `${normalizedToPath}${normalizedCandidatePath.slice(normalizedFromPath.length)}`
+}
+
+function fileNameFromPath(targetPath: string) {
+  const parts = targetPath.split(/[\\/]/).filter(Boolean)
+  return parts[parts.length - 1] ?? targetPath
+}
+
 function shortcutHandledByFocusedControl(target: EventTarget | null) {
   if (target instanceof Element) {
     return Boolean(target.closest(INTERACTIVE_SHORTCUT_TARGET_SELECTOR))
@@ -186,6 +226,7 @@ export default function App() {
   const [pendingSearchResult, setPendingSearchResult] = useState<SearchDialogResult | null>(null)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [bootError, setBootError] = useState<string | null>(null)
+  const [officeViewer, setOfficeViewer] = useState<OfficeViewerBootstrap | null>(null)
   const [terminalDependencies, setTerminalDependencies] = useState<TerminalDependencyState | null>(null)
 
   const activeWorkspace = config ? config.workspaces[config.activeWorkspace] ?? null : null
@@ -251,6 +292,7 @@ export default function App() {
         setDarkMode(payload.config.ui.darkMode)
         setSidebarCollapsed(payload.config.ui.sidebarCollapsed)
         setSidebarSide(payload.config.ui.sidebarSide)
+        setOfficeViewer(payload.officeViewer)
         setTerminalDependencies(payload.terminalDependencies)
       } catch {
         if (!cancelled) {
@@ -791,10 +833,10 @@ export default function App() {
     setViewerFile(file)
   }
 
-  function selectWorkspaceNode(node: FileTreeNode) {
+  function selectWorkspaceNode(node: FileTreeNode, options?: { preview?: boolean }) {
     setSelectedTreePath(node.path)
 
-    if (node.kind === 'file') {
+    if (node.kind === 'file' && options?.preview !== false) {
       setViewerFile(node)
     }
   }
@@ -901,6 +943,51 @@ export default function App() {
     }
   }
 
+  async function copyWorkspaceNodePath(targetPath: string) {
+    try {
+      if (typeof window.collaborator.copyTextToClipboard === 'function') {
+        await window.collaborator.copyTextToClipboard(targetPath)
+      } else {
+        await copyTextWithBrowserFallback(targetPath)
+      }
+
+      setWorkspaceError(null)
+    } catch (error) {
+      try {
+        await copyTextWithBrowserFallback(targetPath)
+        setWorkspaceError(null)
+      } catch (fallbackError) {
+        const message =
+          fallbackError instanceof Error && fallbackError.message
+            ? fallbackError.message
+            : error instanceof Error && error.message
+              ? error.message
+              : null
+
+        setWorkspaceError(
+          message ? `That path could not be copied: ${message}` : 'That path could not be copied.'
+        )
+      }
+    }
+  }
+
+  async function revealWorkspaceNodeInFinder(targetPath: string) {
+    try {
+      if (typeof window.collaborator.revealPath !== 'function') {
+        throw new Error('Restart Open Canvas once to enable Finder reveal from the file tree.')
+      }
+
+      await window.collaborator.revealPath(targetPath)
+      setWorkspaceError(null)
+    } catch (error) {
+      setWorkspaceError(
+        error instanceof Error && error.message
+          ? `That item could not be revealed in Finder: ${error.message}`
+          : 'That item could not be revealed in Finder.'
+      )
+    }
+  }
+
   async function importWorkspaceImageFile(file: File): Promise<FileTreeNode | null> {
     if (!activeWorkspace) {
       setWorkspaceError('Add a workspace before pasting or dropping images onto the canvas.')
@@ -925,12 +1012,12 @@ export default function App() {
 
   async function importWorkspaceAssetFile(file: File): Promise<FileTreeNode | null> {
     if (!activeWorkspace) {
-      setWorkspaceError('Add a workspace before dropping media or PDFs onto the canvas.')
+      setWorkspaceError('Add a workspace before dropping media, PDFs, spreadsheets, or presentations onto the canvas.')
       return null
     }
 
     if (typeof window.collaborator.importWorkspaceAsset !== 'function') {
-      setWorkspaceError('Restart Open Canvas once to enable PDF and media imports.')
+      setWorkspaceError('Restart Open Canvas once to enable PDF, office, and media imports.')
       return null
     }
 
@@ -945,7 +1032,7 @@ export default function App() {
 
       return importedNode
     } catch {
-      setWorkspaceError('That media file could not be saved into the active workspace.')
+      setWorkspaceError('That file could not be saved into the active workspace.')
       return null
     }
   }
@@ -962,14 +1049,22 @@ export default function App() {
         targetDirectoryPath
       )
       const nextTree = await refreshWorkspaceTree(activeWorkspace)
-      const nextNode = findNodeByPath(nextTree, movedNode.path) ?? movedNode
+      const rebasedViewerPath =
+        viewerFile && isSameOrDescendantPath(viewerFile.path, sourcePath)
+          ? replacePathPrefix(viewerFile.path, sourcePath, movedNode.path)
+          : null
+      const rebasedSelectedPath = isSameOrDescendantPath(selectedTreePath, sourcePath)
+        ? replacePathPrefix(selectedTreePath ?? '', sourcePath, movedNode.path)
+        : null
 
-      if (viewerFile?.path === sourcePath) {
-        setViewerFile(nextNode)
+      if (rebasedViewerPath) {
+        const nextViewerNode = findNodeByPath(nextTree, rebasedViewerPath)
+        setViewerFile(nextViewerNode?.kind === 'file' ? nextViewerNode : null)
       }
 
-      if (selectedTreePath === sourcePath) {
-        setSelectedTreePath(nextNode.path)
+      if (rebasedSelectedPath) {
+        const nextSelectedNode = findNodeByPath(nextTree, rebasedSelectedPath)
+        setSelectedTreePath(nextSelectedNode?.path ?? null)
       }
 
       const currentCanvasState = canvasStateRef.current
@@ -978,11 +1073,14 @@ export default function App() {
         const nextCanvasState: CanvasState = {
           ...currentCanvasState,
           tiles: currentCanvasState.tiles.map((tile) =>
-            tile.filePath === sourcePath
+            isSameOrDescendantPath(tile.filePath, sourcePath)
               ? {
                   ...tile,
-                  filePath: nextNode.path,
-                  title: nextNode.name
+                  filePath: replacePathPrefix(tile.filePath ?? '', sourcePath, movedNode.path),
+                  title:
+                    tile.filePath === sourcePath
+                      ? movedNode.name
+                      : fileNameFromPath(replacePathPrefix(tile.filePath ?? '', sourcePath, movedNode.path))
                 }
               : tile
           )
@@ -990,8 +1088,178 @@ export default function App() {
 
         handleCanvasStateChange(nextCanvasState, { immediate: true })
       }
+
+      setWorkspaceError(null)
     } catch {
-      setWorkspaceError('That file could not be moved into the selected folder.')
+      setWorkspaceError('That item could not be moved into the selected folder.')
+    }
+  }
+
+  async function renameWorkspaceNode(targetPath: string, nextName: string) {
+    if (!activeWorkspace) {
+      return
+    }
+
+    try {
+      const renamedNode = await window.collaborator.renameWorkspaceNode(activeWorkspace, {
+        nextName,
+        targetPath
+      })
+      const nextTree = await refreshWorkspaceTree(activeWorkspace)
+      const rebasedViewerPath =
+        viewerFile && isSameOrDescendantPath(viewerFile.path, targetPath)
+          ? replacePathPrefix(viewerFile.path, targetPath, renamedNode.path)
+          : null
+      const rebasedSelectedPath = isSameOrDescendantPath(selectedTreePath, targetPath)
+        ? replacePathPrefix(selectedTreePath ?? '', targetPath, renamedNode.path)
+        : null
+
+      if (rebasedViewerPath) {
+        const nextViewerNode = findNodeByPath(nextTree, rebasedViewerPath)
+        setViewerFile(nextViewerNode?.kind === 'file' ? nextViewerNode : null)
+      }
+
+      if (rebasedSelectedPath) {
+        const nextSelectedNode = findNodeByPath(nextTree, rebasedSelectedPath)
+        setSelectedTreePath(nextSelectedNode?.path ?? null)
+      }
+
+      const currentCanvasState = canvasStateRef.current
+
+      if (currentCanvasState) {
+        const nextCanvasState: CanvasState = {
+          ...currentCanvasState,
+          tiles: currentCanvasState.tiles.map((tile) =>
+            isSameOrDescendantPath(tile.filePath, targetPath)
+              ? {
+                  ...tile,
+                  filePath: replacePathPrefix(tile.filePath ?? '', targetPath, renamedNode.path),
+                  title:
+                    tile.filePath === targetPath
+                      ? renamedNode.name
+                      : fileNameFromPath(replacePathPrefix(tile.filePath ?? '', targetPath, renamedNode.path))
+                }
+              : tile
+          )
+        }
+
+        handleCanvasStateChange(nextCanvasState, { immediate: true })
+      }
+
+      setWorkspaceError(null)
+    } catch (error) {
+      setWorkspaceError(
+        error instanceof Error && error.message
+          ? `That item could not be renamed: ${error.message}`
+          : 'That item could not be renamed.'
+      )
+    }
+  }
+
+  async function createWorkspaceFile(targetDirectoryPath: string, fileName: string) {
+    if (!activeWorkspace) {
+      return
+    }
+
+    try {
+      const createdNode = await window.collaborator.createWorkspaceFile(activeWorkspace, {
+        fileName,
+        targetDirectoryPath
+      })
+      const nextTree = await refreshWorkspaceTree(activeWorkspace)
+      const nextNode = findNodeByPath(nextTree, createdNode.path) ?? createdNode
+
+      setSelectedTreePath(nextNode.path)
+      setViewerFile(nextNode.kind === 'file' ? nextNode : null)
+      setWorkspaceError(null)
+    } catch (error) {
+      setWorkspaceError(
+        error instanceof Error && error.message
+          ? `That file could not be created: ${error.message}`
+          : 'That file could not be created.'
+      )
+    }
+  }
+
+  async function createWorkspaceDirectory(targetDirectoryPath: string, directoryName: string) {
+    if (!activeWorkspace) {
+      return
+    }
+
+    try {
+      const createdNode = await window.collaborator.createWorkspaceDirectory(activeWorkspace, {
+        directoryName,
+        targetDirectoryPath
+      })
+      const nextTree = await refreshWorkspaceTree(activeWorkspace)
+      const nextNode = findNodeByPath(nextTree, createdNode.path) ?? createdNode
+
+      setSelectedTreePath(nextNode.path)
+      setViewerFile(null)
+      setWorkspaceError(null)
+    } catch (error) {
+      setWorkspaceError(
+        error instanceof Error && error.message
+          ? `That folder could not be created: ${error.message}`
+          : 'That folder could not be created.'
+      )
+    }
+  }
+
+  async function deleteWorkspaceNode(targetPath: string) {
+    if (!activeWorkspace) {
+      return
+    }
+
+    try {
+      await window.collaborator.deleteWorkspaceNode(activeWorkspace, targetPath)
+      await refreshWorkspaceTree(activeWorkspace)
+
+      if (isSameOrDescendantPath(viewerFile?.path, targetPath)) {
+        setViewerFile(null)
+      }
+
+      if (isSameOrDescendantPath(selectedTreePath, targetPath)) {
+        setSelectedTreePath(null)
+      }
+
+      const currentCanvasState = canvasStateRef.current
+
+      if (currentCanvasState) {
+        const removedTileIds = new Set(
+          currentCanvasState.tiles
+            .filter((tile) => isSameOrDescendantPath(tile.filePath, targetPath))
+            .map((tile) => tile.id)
+        )
+
+        if (removedTileIds.size > 0) {
+          const nextCanvasState: CanvasState = {
+            ...currentCanvasState,
+            tiles: currentCanvasState.tiles
+              .filter((tile) => !removedTileIds.has(tile.id))
+              .map((tile) =>
+                tile.type === 'term'
+                  ? {
+                      ...tile,
+                      contextTileIds: (tile.contextTileIds ?? []).filter(
+                        (contextTileId) => !removedTileIds.has(contextTileId)
+                      )
+                    }
+                  : tile
+              )
+          }
+
+          handleCanvasStateChange(nextCanvasState, { immediate: true })
+        }
+      }
+
+      setWorkspaceError(null)
+    } catch (error) {
+      setWorkspaceError(
+        error instanceof Error && error.message
+          ? `That item could not be deleted: ${error.message}`
+          : 'That item could not be deleted.'
+      )
     }
   }
 
@@ -1139,10 +1407,20 @@ export default function App() {
               onAddWorkspace={() => void addWorkspace()}
               onCopyWorkspacePath={() => void copyActiveWorkspacePath()}
               onCreateNote={() => void createMarkdownNote()}
+              onCreateWorkspaceDirectory={(targetDirectoryPath, directoryName) =>
+                void createWorkspaceDirectory(targetDirectoryPath, directoryName)
+              }
+              onCreateWorkspaceFile={(targetDirectoryPath, fileName) =>
+                void createWorkspaceFile(targetDirectoryPath, fileName)
+              }
               onCreateTerminal={createTerminal}
+              onCopyNodePath={(targetPath) => void copyWorkspaceNodePath(targetPath)}
+              onDeleteNode={(targetPath) => void deleteWorkspaceNode(targetPath)}
               onMoveFile={(sourcePath, targetDirectoryPath) =>
                 void moveFileIntoDirectory(sourcePath, targetDirectoryPath)
               }
+              onRevealNodeInFinder={(targetPath) => void revealWorkspaceNodeInFinder(targetPath)}
+              onRenameNode={(targetPath, nextName) => void renameWorkspaceNode(targetPath, nextName)}
               onOpenWorkspacePath={() => void openActiveWorkspacePath()}
               onMoveSidebar={setSidebarPlacement}
               onOpenSearch={() => {
@@ -1175,6 +1453,7 @@ export default function App() {
               sidebarCollapsed={sidebarCollapsed}
               sidebarSide={sidebarSide}
               sidebarWidth={sidebarWidth}
+              workspaceRootPath={activeWorkspace}
               workspaceTree={workspaceTree}
             />
           </div>
@@ -1237,6 +1516,7 @@ export default function App() {
             activeWorkspacePath={activeWorkspace}
             darkMode={darkMode}
             key={canvasWorkspacePath ?? 'no-workspace'}
+            officeViewer={officeViewer}
             ref={canvasRef}
             onCreateMarkdownCard={({ baseName, initialContent, targetDirectoryPath }) =>
               createWorkspaceMarkdownNote({ baseName, initialContent, targetDirectoryPath })
@@ -1256,6 +1536,7 @@ export default function App() {
             file={viewerFile}
             onClose={() => setViewerFile(null)}
             onImportImageFile={importWorkspaceImageFile}
+            officeViewer={officeViewer}
             onPlaceOnCanvas={placeFileOnCanvas}
           />
           {workspaceError ? (
@@ -1296,10 +1577,20 @@ export default function App() {
               onAddWorkspace={() => void addWorkspace()}
               onCopyWorkspacePath={() => void copyActiveWorkspacePath()}
               onCreateNote={() => void createMarkdownNote()}
+              onCreateWorkspaceDirectory={(targetDirectoryPath, directoryName) =>
+                void createWorkspaceDirectory(targetDirectoryPath, directoryName)
+              }
+              onCreateWorkspaceFile={(targetDirectoryPath, fileName) =>
+                void createWorkspaceFile(targetDirectoryPath, fileName)
+              }
               onCreateTerminal={createTerminal}
+              onCopyNodePath={(targetPath) => void copyWorkspaceNodePath(targetPath)}
+              onDeleteNode={(targetPath) => void deleteWorkspaceNode(targetPath)}
               onMoveFile={(sourcePath, targetDirectoryPath) =>
                 void moveFileIntoDirectory(sourcePath, targetDirectoryPath)
               }
+              onRevealNodeInFinder={(targetPath) => void revealWorkspaceNodeInFinder(targetPath)}
+              onRenameNode={(targetPath, nextName) => void renameWorkspaceNode(targetPath, nextName)}
               onOpenWorkspacePath={() => void openActiveWorkspacePath()}
               onMoveSidebar={setSidebarPlacement}
               onOpenSearch={() => {
@@ -1332,6 +1623,7 @@ export default function App() {
               sidebarCollapsed={sidebarCollapsed}
               sidebarSide={sidebarSide}
               sidebarWidth={sidebarWidth}
+              workspaceRootPath={activeWorkspace}
               workspaceTree={workspaceTree}
             />
           </div>

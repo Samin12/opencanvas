@@ -1,13 +1,16 @@
 import { unwatchFile, watchFile } from 'node:fs'
-import { lstat, mkdir, readdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import type {
+  CreateWorkspaceDirectoryOptions,
+  CreateWorkspaceFileOptions,
   CreateWorkspaceNoteOptions,
   FileKind,
   FileTreeNode,
   ImageAssetData,
+  RenameWorkspaceNodeOptions,
   TextFileDocument,
   WorkspaceAssetImport,
   WorkspaceImageImport
@@ -17,6 +20,8 @@ const NOTE_EXTENSIONS = new Set(['.md', '.mdx', '.markdown', '.txt'])
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'])
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi'])
 const PDF_EXTENSIONS = new Set(['.pdf'])
+const SPREADSHEET_EXTENSIONS = new Set(['.csv', '.tsv', '.xls', '.xlsx', '.ods'])
+const PRESENTATION_EXTENSIONS = new Set(['.ppt', '.pptx', '.odp'])
 const IGNORED_NAMES = new Set(['.DS_Store'])
 const IGNORED_DIRECTORIES = new Set(['.claude-canvas', '.git', 'node_modules', 'dist', 'out'])
 const WORKSPACE_METADATA_DIRECTORY = '.claude-canvas'
@@ -33,7 +38,21 @@ const ASSET_MIME_EXTENSIONS = new Map<string, string>([
   ['video/quicktime', '.mov'],
   ['video/webm', '.webm'],
   ['video/x-m4v', '.m4v'],
-  ['application/pdf', '.pdf']
+  ['application/pdf', '.pdf'],
+  ['text/csv', '.csv'],
+  ['text/tab-separated-values', '.tsv'],
+  ['application/vnd.ms-excel', '.xls'],
+  [
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.xlsx'
+  ],
+  ['application/vnd.oasis.opendocument.spreadsheet', '.ods'],
+  ['application/vnd.ms-powerpoint', '.ppt'],
+  [
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.pptx'
+  ],
+  ['application/vnd.oasis.opendocument.presentation', '.odp']
 ])
 const IMAGE_EXTENSION_MIME_TYPES = new Map<string, string>(
   Array.from(ASSET_MIME_EXTENSIONS.entries())
@@ -56,6 +75,14 @@ export function detectFileKind(filePath: string): FileKind {
     return 'pdf'
   }
 
+  if (SPREADSHEET_EXTENSIONS.has(extension)) {
+    return 'spreadsheet'
+  }
+
+  if (PRESENTATION_EXTENSIONS.has(extension)) {
+    return 'presentation'
+  }
+
   if (NOTE_EXTENSIONS.has(extension)) {
     return 'note'
   }
@@ -69,6 +96,33 @@ function isWithinWorkspace(workspacePath: string, targetPath: string) {
   const relativePath = relative(workspaceRoot, candidatePath)
 
   return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath))
+}
+
+function normalizeNameSegment(input: string, fallback: string) {
+  const normalized = input
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return normalized.length > 0 ? normalized : fallback
+}
+
+function validateWorkspaceNameSegment(input: string, label: string) {
+  const normalized = input.trim()
+
+  if (!normalized) {
+    throw new Error(`${label} is required`)
+  }
+
+  if (normalized === '.' || normalized === '..') {
+    throw new Error(`${label} is invalid`)
+  }
+
+  if (normalized.includes('/') || normalized.includes('\\')) {
+    throw new Error(`${label} must be a single name, not a path`)
+  }
+
+  return normalizeNameSegment(normalized, label)
 }
 
 async function pathExists(targetPath: string) {
@@ -97,7 +151,9 @@ function normalizeAssetExtension(extension: string): string | null {
 
   return IMAGE_EXTENSIONS.has(normalized) ||
     VIDEO_EXTENSIONS.has(normalized) ||
-    PDF_EXTENSIONS.has(normalized)
+    PDF_EXTENSIONS.has(normalized) ||
+    SPREADSHEET_EXTENSIONS.has(normalized) ||
+    PRESENTATION_EXTENSIONS.has(normalized)
     ? normalized
     : null
 }
@@ -141,7 +197,7 @@ function assetImportBytes(bytes: WorkspaceAssetImport['bytes']): Uint8Array {
     return Uint8Array.from(Array.from(bytes as ArrayLike<number>))
   }
 
-  throw new Error('Unsupported image bytes payload')
+  throw new Error('Unsupported asset bytes payload')
 }
 
 async function resolveStats(targetPath: string) {
@@ -219,6 +275,7 @@ async function buildNode(targetPath: string): Promise<FileTreeNode | null> {
       kind: 'file',
       extension,
       fileKind: detectFileKind(path),
+      size: stats.size,
       updatedAt: createdAt
     }
   } catch {
@@ -226,11 +283,11 @@ async function buildNode(targetPath: string): Promise<FileTreeNode | null> {
   }
 }
 
-async function ensureFileNode(targetPath: string) {
+async function ensureNode(targetPath: string) {
   const node = await buildNode(targetPath)
 
-  if (!node || node.kind !== 'file') {
-    throw new Error('Expected a file node')
+  if (!node) {
+    throw new Error('Expected a workspace node')
   }
 
   return node
@@ -273,6 +330,16 @@ export async function readImageAssetData(filePath: string): Promise<ImageAssetDa
   return {
     base64: bytes.toString('base64'),
     mimeType: IMAGE_EXTENSION_MIME_TYPES.get(extension) ?? 'application/octet-stream'
+  }
+}
+
+export async function readFileMetadata(filePath: string) {
+  const currentStats = await stat(filePath)
+
+  return {
+    extension: extname(filePath).toLowerCase(),
+    size: currentStats.size,
+    updatedAt: currentStats.mtimeMs
   }
 }
 
@@ -356,7 +423,65 @@ export async function createWorkspaceNote(
 
   await writeTextFileDocument(targetPath, options.initialContent ?? '')
 
-  return ensureFileNode(targetPath)
+  return ensureNode(targetPath)
+}
+
+export async function createWorkspaceFile(
+  workspacePath: string,
+  options: CreateWorkspaceFileOptions
+): Promise<FileTreeNode> {
+  const resolvedWorkspacePath = resolve(workspacePath)
+  const resolvedTargetDirectoryPath = resolve(options.targetDirectoryPath ?? workspacePath)
+
+  if (!isWithinWorkspace(resolvedWorkspacePath, resolvedTargetDirectoryPath)) {
+    throw new Error('File target is outside the active workspace')
+  }
+
+  const targetDirectoryStats = await stat(resolvedTargetDirectoryPath)
+
+  if (!targetDirectoryStats.isDirectory()) {
+    throw new Error('File target must be a directory')
+  }
+
+  const fileName = validateWorkspaceNameSegment(options.fileName, 'File name')
+  const targetPath = join(resolvedTargetDirectoryPath, fileName)
+
+  if (await pathExists(targetPath)) {
+    throw new Error('A file or folder with that name already exists')
+  }
+
+  await writeTextFileDocument(targetPath, options.initialContent ?? '')
+
+  return ensureNode(targetPath)
+}
+
+export async function createWorkspaceDirectory(
+  workspacePath: string,
+  options: CreateWorkspaceDirectoryOptions
+): Promise<FileTreeNode> {
+  const resolvedWorkspacePath = resolve(workspacePath)
+  const resolvedTargetDirectoryPath = resolve(options.targetDirectoryPath ?? workspacePath)
+
+  if (!isWithinWorkspace(resolvedWorkspacePath, resolvedTargetDirectoryPath)) {
+    throw new Error('Folder target is outside the active workspace')
+  }
+
+  const targetDirectoryStats = await stat(resolvedTargetDirectoryPath)
+
+  if (!targetDirectoryStats.isDirectory()) {
+    throw new Error('Folder target must be a directory')
+  }
+
+  const directoryName = validateWorkspaceNameSegment(options.directoryName, 'Folder name')
+  const targetPath = join(resolvedTargetDirectoryPath, directoryName)
+
+  if (await pathExists(targetPath)) {
+    throw new Error('A file or folder with that name already exists')
+  }
+
+  await mkdir(targetPath, { recursive: false })
+
+  return ensureNode(targetPath)
 }
 
 export async function moveWorkspaceNode(
@@ -382,16 +507,70 @@ export async function moveWorkspaceNode(
   }
 
   if (dirname(resolvedSourcePath) === resolvedTargetDirectoryPath) {
-    return ensureFileNode(resolvedSourcePath)
+    return ensureNode(resolvedSourcePath)
   }
 
-  const extension = extname(resolvedSourcePath)
-  const baseName = basename(resolvedSourcePath, extension)
+  const relativeTargetPath = relative(resolvedSourcePath, resolvedTargetDirectoryPath)
+
+  if (relativeTargetPath === '' || (!relativeTargetPath.startsWith('..') && !isAbsolute(relativeTargetPath))) {
+    throw new Error('A folder cannot be moved into itself')
+  }
+
+  const sourceStats = await stat(resolvedSourcePath)
+  const extension = sourceStats.isDirectory() ? '' : extname(resolvedSourcePath)
+  const baseName = sourceStats.isDirectory()
+    ? basename(resolvedSourcePath)
+    : basename(resolvedSourcePath, extension)
   const targetPath = await createUniquePath(resolvedTargetDirectoryPath, baseName, extension)
 
   await rename(resolvedSourcePath, targetPath)
 
-  return ensureFileNode(targetPath)
+  return ensureNode(targetPath)
+}
+
+export async function renameWorkspaceNode(
+  workspacePath: string,
+  options: RenameWorkspaceNodeOptions
+): Promise<FileTreeNode> {
+  const resolvedWorkspacePath = resolve(workspacePath)
+  const resolvedTargetPath = resolve(options.targetPath)
+
+  if (!isWithinWorkspace(resolvedWorkspacePath, resolvedTargetPath)) {
+    throw new Error('Rename target is outside the active workspace')
+  }
+
+  const nextName = validateWorkspaceNameSegment(options.nextName, 'Name')
+  const nextPath = join(dirname(resolvedTargetPath), nextName)
+
+  if (resolvedTargetPath === nextPath) {
+    return ensureNode(resolvedTargetPath)
+  }
+
+  if (await pathExists(nextPath)) {
+    throw new Error('A file or folder with that name already exists')
+  }
+
+  await rename(resolvedTargetPath, nextPath)
+
+  return ensureNode(nextPath)
+}
+
+export async function deleteWorkspaceNode(workspacePath: string, targetPath: string): Promise<void> {
+  const resolvedWorkspacePath = resolve(workspacePath)
+  const resolvedTargetPath = resolve(targetPath)
+
+  if (!isWithinWorkspace(resolvedWorkspacePath, resolvedTargetPath)) {
+    throw new Error('Delete target is outside the active workspace')
+  }
+
+  if (resolvedTargetPath === resolvedWorkspacePath) {
+    throw new Error('The workspace root cannot be deleted from the file tree')
+  }
+
+  await rm(resolvedTargetPath, {
+    force: false,
+    recursive: true
+  })
 }
 
 export async function importWorkspaceImage(
@@ -422,7 +601,7 @@ export async function importWorkspaceAsset(
 
   await writeFile(targetPath, assetImportBytes(asset.bytes))
 
-  return ensureFileNode(targetPath)
+  return ensureNode(targetPath)
 }
 
 export function toFileUrl(filePath: string): string {

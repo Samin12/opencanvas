@@ -1,4 +1,11 @@
-import { useEffect, useState } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
+  type MouseEvent as ReactMouseEvent
+} from 'react'
+import { createPortal } from 'react-dom'
 
 import clsx from 'clsx'
 
@@ -8,10 +15,17 @@ interface FileTreeProps {
   activePath: string | null
   darkMode: boolean
   nodes: FileTreeNode[]
-  query: string
+  onCreateWorkspaceDirectory: (targetDirectoryPath: string, directoryName: string) => void
+  onCreateWorkspaceFile: (targetDirectoryPath: string, fileName: string) => void
+  onCopyNodePath: (targetPath: string) => void
+  onDeleteNode: (targetPath: string) => void
   onMoveFile: (sourcePath: string, targetDirectoryPath: string) => void
   onPlaceFile: (node: FileTreeNode) => void
-  onSelectNode: (node: FileTreeNode) => void
+  onRevealNodeInFinder: (targetPath: string) => void
+  onRenameNode: (targetPath: string, nextName: string) => void
+  onSelectNode: (node: FileTreeNode, options?: { preview?: boolean }) => void
+  query: string
+  rootDirectoryPath: string | null
 }
 
 const INDENT = 12
@@ -118,7 +132,37 @@ function PdfIcon() {
   )
 }
 
-function iconToneClasses(kind: 'directory' | 'note' | 'code' | 'image' | 'video' | 'pdf', darkMode: boolean) {
+function SpreadsheetIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+    >
+      <rect x="2.5" y="2.5" width="11" height="11" rx="1.6" />
+      <path d="M2.75 6H13.25M6 2.75V13.25M9.75 2.75V13.25M2.75 9.75H13.25" />
+    </svg>
+  )
+}
+
+function PresentationIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+    >
+      <path d="M3.25 3.25H12.75V10.75H3.25Z" />
+      <path d="M8 10.75V13.1M5.75 13.1H10.25" />
+      <path d="M5.1 8.8 6.75 6.6 7.95 7.75 10.2 4.95 11.1 6.05" />
+    </svg>
+  )
+}
+
+function iconToneClasses(
+  kind: 'directory' | 'note' | 'code' | 'image' | 'video' | 'pdf' | 'spreadsheet' | 'presentation',
+  darkMode: boolean
+) {
   if (kind === 'directory') {
     return darkMode ? 'text-[#d8d9d4]' : 'text-[#53584f]'
   }
@@ -139,6 +183,14 @@ function iconToneClasses(kind: 'directory' | 'note' | 'code' | 'image' | 'video'
     return darkMode ? 'text-[#ff9d9d]' : 'text-[#c45151]'
   }
 
+  if (kind === 'spreadsheet') {
+    return darkMode ? 'text-[#9fe08f]' : 'text-[#4b9b3b]'
+  }
+
+  if (kind === 'presentation') {
+    return darkMode ? 'text-[#f5b3ff]' : 'text-[#a650b1]'
+  }
+
   return darkMode ? 'text-[#c1c5bd]' : 'text-[#70756c]'
 }
 
@@ -150,7 +202,12 @@ export function FileKindIcon({
   fileKind: FileTreeNode['fileKind']
 }) {
   const kind =
-    fileKind === 'note' || fileKind === 'image' || fileKind === 'video' || fileKind === 'pdf'
+    fileKind === 'note' ||
+    fileKind === 'image' ||
+    fileKind === 'video' ||
+    fileKind === 'pdf' ||
+    fileKind === 'spreadsheet' ||
+    fileKind === 'presentation'
       ? fileKind
       : 'code'
 
@@ -164,6 +221,10 @@ export function FileKindIcon({
         <VideoIcon />
       ) : kind === 'pdf' ? (
         <PdfIcon />
+      ) : kind === 'spreadsheet' ? (
+        <SpreadsheetIcon />
+      ) : kind === 'presentation' ? (
+        <PresentationIcon />
       ) : (
         <CodeIcon />
       )}
@@ -192,6 +253,52 @@ function matchesQuery(node: FileTreeNode, query: string) {
   return haystack.includes(query)
 }
 
+function normalizeFsPath(targetPath: string) {
+  return targetPath.replace(/\\/g, '/').replace(/\/+$/, '')
+}
+
+function canMoveNodeIntoDirectory(sourcePath: string, targetDirectoryPath: string) {
+  const normalizedSourcePath = normalizeFsPath(sourcePath)
+  const normalizedTargetDirectoryPath = normalizeFsPath(targetDirectoryPath)
+
+  if (normalizedSourcePath === normalizedTargetDirectoryPath) {
+    return false
+  }
+
+  return !normalizedTargetDirectoryPath.startsWith(`${normalizedSourcePath}/`)
+}
+
+function parentDirectoryPath(nodePath: string) {
+  const separatorIndex = Math.max(nodePath.lastIndexOf('/'), nodePath.lastIndexOf('\\'))
+  return separatorIndex <= 0 ? null : nodePath.slice(0, separatorIndex)
+}
+
+function collectDirectoryPaths(nodes: FileTreeNode[]) {
+  const directoryPaths: Record<string, boolean> = {}
+
+  function visit(currentNodes: FileTreeNode[]) {
+    for (const node of currentNodes) {
+      if (node.kind !== 'directory') {
+        continue
+      }
+
+      directoryPaths[node.path] = true
+      visit(node.children ?? [])
+    }
+  }
+
+  visit(nodes)
+
+  return directoryPaths
+}
+
+interface TreeContextMenuState {
+  directoryPath: string
+  node: FileTreeNode | null
+  x: number
+  y: number
+}
+
 function filterNodes(nodes: FileTreeNode[], query: string): FileTreeNode[] {
   return nodes.flatMap((node) => {
     if (node.kind === 'directory') {
@@ -217,33 +324,162 @@ export function FileTree({
   activePath,
   darkMode,
   nodes,
-  query,
+  onCreateWorkspaceDirectory,
+  onCreateWorkspaceFile,
+  onCopyNodePath,
+  onDeleteNode,
   onMoveFile,
   onPlaceFile,
-  onSelectNode
+  onRevealNodeInFinder,
+  onRenameNode,
+  onSelectNode,
+  query,
+  rootDirectoryPath
 }: FileTreeProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [draggedNodePath, setDraggedNodePath] = useState<string | null>(null)
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null)
+  const [contextMenu, setContextMenu] = useState<TreeContextMenuState | null>(null)
+  const draggedNodePathRef = useRef<string | null>(null)
   const trimmedQuery = query.trim().toLowerCase()
   const visibleNodes = trimmedQuery ? filterNodes(nodes, trimmedQuery) : nodes
 
   useEffect(() => {
-    const nextState: Record<string, boolean> = {}
+    setExpanded((current) => ({ ...collectDirectoryPaths(nodes), ...current }))
+  }, [nodes])
 
-    for (const node of nodes) {
-      if (node.kind === 'directory') {
-        nextState[node.path] = true
+  useEffect(() => {
+    if (!contextMenu) {
+      return
+    }
+
+    function dismissMenu() {
+      setContextMenu(null)
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        dismissMenu()
       }
     }
 
-    setExpanded((current) => ({ ...nextState, ...current }))
-  }, [nodes])
+    document.addEventListener('pointerdown', dismissMenu)
+    window.addEventListener('blur', dismissMenu)
+    window.addEventListener('resize', dismissMenu)
+    window.addEventListener('scroll', dismissMenu, true)
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('pointerdown', dismissMenu)
+      window.removeEventListener('blur', dismissMenu)
+      window.removeEventListener('resize', dismissMenu)
+      window.removeEventListener('scroll', dismissMenu, true)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [contextMenu])
 
   function toggleDirectory(path: string) {
     setExpanded((current) => ({
       ...current,
       [path]: !current[path]
     }))
+  }
+
+  function currentDraggedPath(dataTransfer: DataTransfer | null) {
+    return draggedNodePathRef.current ?? draggedNodePath ?? getDraggedFilePayload(dataTransfer)?.path ?? null
+  }
+
+  function openContextMenu(event: ReactMouseEvent, node: FileTreeNode | null, directoryPath: string) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (node) {
+      onSelectNode(node, { preview: false })
+    }
+
+    const menuWidth = 220
+    const menuHeight = node ? 220 : 132
+    const nextX = Math.min(event.clientX, Math.max(8, window.innerWidth - menuWidth - 12))
+    const nextY = Math.min(event.clientY, Math.max(8, window.innerHeight - menuHeight - 12))
+
+    setContextMenu({
+      directoryPath,
+      node,
+      x: nextX,
+      y: nextY
+    })
+  }
+
+  function promptForNewFile(directoryPath: string) {
+    setContextMenu(null)
+    const fileName = window.prompt('New file name', 'untitled.md')
+
+    if (!fileName?.trim()) {
+      return
+    }
+
+    onCreateWorkspaceFile(directoryPath, fileName.trim())
+  }
+
+  function promptForNewFolder(directoryPath: string) {
+    setContextMenu(null)
+    const directoryName = window.prompt('New folder name', 'New Folder')
+
+    if (!directoryName?.trim()) {
+      return
+    }
+
+    onCreateWorkspaceDirectory(directoryPath, directoryName.trim())
+  }
+
+  function confirmDeleteNode(node: FileTreeNode) {
+    setContextMenu(null)
+    const confirmed = window.confirm(
+      node.kind === 'directory'
+        ? `Delete folder “${node.name}” and everything inside it?`
+        : `Delete file “${node.name}”?`
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    onDeleteNode(node.path)
+  }
+
+  function promptToRenameNode(node: FileTreeNode) {
+    setContextMenu(null)
+    const nextName = window.prompt('Rename', node.name)
+
+    if (!nextName?.trim() || nextName.trim() === node.name) {
+      return
+    }
+
+    onRenameNode(node.path, nextName.trim())
+  }
+
+  function copyNodePath(node: FileTreeNode) {
+    setContextMenu(null)
+    onCopyNodePath(node.path)
+  }
+
+  function revealNodeInFinder(node: FileTreeNode) {
+    setContextMenu(null)
+    onRevealNodeInFinder(node.path)
+  }
+
+  function startDraggingNode(event: ReactDragEvent, node: FileTreeNode) {
+    draggedNodePathRef.current = node.path
+    setDraggedNodePath(node.path)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData(
+      COLLABORATOR_FILE_MIME,
+      JSON.stringify({
+        path: node.path,
+        name: node.name,
+        fileKind: node.fileKind
+      })
+    )
   }
 
   function renderNode(node: FileTreeNode, depth: number) {
@@ -253,6 +489,8 @@ export function FileTree({
       return (
         <div key={node.path}>
           <button
+            draggable
+            data-file-tree-node="true"
             className={clsx(
               'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px] font-medium text-[var(--text-dim)] transition',
               'rounded-[4px] border border-transparent hover:bg-[var(--surface-0)]',
@@ -262,15 +500,28 @@ export function FileTree({
                 'border-[color:var(--line)] bg-[var(--surface-selected)] text-[var(--text)]'
             )}
             style={{ paddingLeft: 10 + depth * INDENT }}
+            onMouseDown={(event) => {
+              if (event.button === 2) {
+                event.preventDefault()
+                event.stopPropagation()
+              }
+            }}
             onClick={() => {
               onSelectNode(node)
               toggleDirectory(node.path)
             }}
+            onContextMenu={(event) => openContextMenu(event, node, node.path)}
             title={`Toggle folder: ${node.name}`}
+            onDragStart={(event) => startDraggingNode(event, node)}
+            onDragEnd={() => {
+              draggedNodePathRef.current = null
+              setDraggedNodePath(null)
+              setDropTargetPath(null)
+            }}
             onDragOver={(event) => {
-              const draggedFile = getDraggedFilePayload(event.dataTransfer)
+              const draggedPath = currentDraggedPath(event.dataTransfer)
 
-              if (!draggedFile || draggedFile.path === node.path) {
+              if (!draggedPath || !canMoveNodeIntoDirectory(draggedPath, node.path)) {
                 return
               }
 
@@ -293,17 +544,19 @@ export function FileTree({
               }
             }}
             onDrop={(event) => {
-              const draggedFile = getDraggedFilePayload(event.dataTransfer)
+              const draggedPath = currentDraggedPath(event.dataTransfer)
 
+              draggedNodePathRef.current = null
+              setDraggedNodePath(null)
               setDropTargetPath(null)
 
-              if (!draggedFile) {
+              if (!draggedPath || !canMoveNodeIntoDirectory(draggedPath, node.path)) {
                 return
               }
 
               event.preventDefault()
               event.stopPropagation()
-              onMoveFile(draggedFile.path, node.path)
+              onMoveFile(draggedPath, node.path)
             }}
           >
             <span className="text-[var(--text-faint)]">
@@ -327,18 +580,13 @@ export function FileTree({
       <button
         key={node.path}
         draggable
+        data-file-tree-node="true"
         onDragStart={(event) => {
-          event.dataTransfer.effectAllowed = 'copyMove'
-          event.dataTransfer.setData(
-            COLLABORATOR_FILE_MIME,
-            JSON.stringify({
-              path: node.path,
-              name: node.name,
-              fileKind: node.fileKind
-            })
-          )
+          startDraggingNode(event, node)
         }}
         onDragEnd={() => {
+          draggedNodePathRef.current = null
+          setDraggedNodePath(null)
           setDropTargetPath(null)
         }}
         className={clsx(
@@ -349,7 +597,16 @@ export function FileTree({
             : 'text-[var(--text-dim)] hover:bg-[var(--surface-0)]'
         )}
         style={{ paddingLeft: 10 + depth * INDENT }}
+        onMouseDown={(event) => {
+          if (event.button === 2) {
+            event.preventDefault()
+            event.stopPropagation()
+          }
+        }}
         onClick={() => onSelectNode(node)}
+        onContextMenu={(event) =>
+          openContextMenu(event, node, parentDirectoryPath(node.path) ?? rootDirectoryPath ?? node.path)
+        }
         onDoubleClick={(event) => {
           event.preventDefault()
           onPlaceFile(node)
@@ -372,7 +629,44 @@ export function FileTree({
 
   if (nodes.length === 0) {
     return (
-      <div className="rounded-[4px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-0)] p-4 text-sm text-[var(--text-dim)]">
+      <div
+        className="rounded-[4px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-0)] p-4 text-sm text-[var(--text-dim)]"
+        onDragOver={(event) => {
+          const draggedPath = currentDraggedPath(event.dataTransfer)
+
+          if (!rootDirectoryPath || !draggedPath || !canMoveNodeIntoDirectory(draggedPath, rootDirectoryPath)) {
+            return
+          }
+
+          event.preventDefault()
+          event.dataTransfer.dropEffect = 'move'
+          setDropTargetPath(rootDirectoryPath)
+        }}
+        onDragLeave={() => {
+          if (dropTargetPath === rootDirectoryPath) {
+            setDropTargetPath(null)
+          }
+        }}
+        onDrop={(event) => {
+          const draggedPath = currentDraggedPath(event.dataTransfer)
+
+          draggedNodePathRef.current = null
+          setDraggedNodePath(null)
+          setDropTargetPath(null)
+
+          if (!rootDirectoryPath || !draggedPath || !canMoveNodeIntoDirectory(draggedPath, rootDirectoryPath)) {
+            return
+          }
+
+          event.preventDefault()
+          onMoveFile(draggedPath, rootDirectoryPath)
+        }}
+        onContextMenu={(event) => {
+          if (rootDirectoryPath) {
+            openContextMenu(event, null, rootDirectoryPath)
+          }
+        }}
+      >
         This workspace is empty.
       </div>
     )
@@ -380,11 +674,188 @@ export function FileTree({
 
   if (visibleNodes.length === 0) {
     return (
-      <div className="rounded-[4px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-0)] p-4 text-sm text-[var(--text-dim)]">
+      <div
+        className="rounded-[4px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-0)] p-4 text-sm text-[var(--text-dim)]"
+        onDragOver={(event) => {
+          const draggedPath = currentDraggedPath(event.dataTransfer)
+
+          if (!rootDirectoryPath || !draggedPath || !canMoveNodeIntoDirectory(draggedPath, rootDirectoryPath)) {
+            return
+          }
+
+          event.preventDefault()
+          event.dataTransfer.dropEffect = 'move'
+          setDropTargetPath(rootDirectoryPath)
+        }}
+        onDragLeave={() => {
+          if (dropTargetPath === rootDirectoryPath) {
+            setDropTargetPath(null)
+          }
+        }}
+        onDrop={(event) => {
+          const draggedPath = currentDraggedPath(event.dataTransfer)
+
+          draggedNodePathRef.current = null
+          setDraggedNodePath(null)
+          setDropTargetPath(null)
+
+          if (!rootDirectoryPath || !draggedPath || !canMoveNodeIntoDirectory(draggedPath, rootDirectoryPath)) {
+            return
+          }
+
+          event.preventDefault()
+          onMoveFile(draggedPath, rootDirectoryPath)
+        }}
+        onContextMenu={(event) => {
+          if (rootDirectoryPath) {
+            openContextMenu(event, null, rootDirectoryPath)
+          }
+        }}
+      >
         No files or folders match <span className="text-[var(--text)]">“{query.trim()}”</span>.
       </div>
     )
   }
 
-  return <div className="space-y-0.5">{visibleNodes.map((node) => renderNode(node, 0))}</div>
+  return (
+    <div
+      className="space-y-0.5"
+      onDragOver={(event) => {
+        const target = event.target as HTMLElement | null
+
+        if (target?.closest('[data-file-tree-node="true"]')) {
+          return
+        }
+
+        const draggedPath = currentDraggedPath(event.dataTransfer)
+
+        if (!rootDirectoryPath || !draggedPath || !canMoveNodeIntoDirectory(draggedPath, rootDirectoryPath)) {
+          return
+        }
+
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+
+        if (dropTargetPath !== rootDirectoryPath) {
+          setDropTargetPath(rootDirectoryPath)
+        }
+      }}
+      onDragLeave={(event) => {
+        const relatedTarget = event.relatedTarget as Node | null
+
+        if (relatedTarget && event.currentTarget.contains(relatedTarget)) {
+          return
+        }
+
+        if (dropTargetPath === rootDirectoryPath) {
+          setDropTargetPath(null)
+        }
+      }}
+      onDrop={(event) => {
+        const target = event.target as HTMLElement | null
+
+        if (target?.closest('[data-file-tree-node="true"]')) {
+          return
+        }
+
+        const draggedPath = currentDraggedPath(event.dataTransfer)
+
+        draggedNodePathRef.current = null
+        setDraggedNodePath(null)
+        setDropTargetPath(null)
+
+        if (!rootDirectoryPath || !draggedPath || !canMoveNodeIntoDirectory(draggedPath, rootDirectoryPath)) {
+          return
+        }
+
+        event.preventDefault()
+        onMoveFile(draggedPath, rootDirectoryPath)
+      }}
+      onContextMenu={(event) => {
+        if (!rootDirectoryPath) {
+          return
+        }
+
+        const target = event.target as HTMLElement | null
+
+        if (target?.closest('[data-file-tree-node="true"]')) {
+          return
+        }
+
+        openContextMenu(event, null, rootDirectoryPath)
+      }}
+    >
+      {rootDirectoryPath && draggedNodePath ? (
+        <div
+          className={clsx(
+            'mb-2 rounded-[6px] border border-dashed px-3 py-2 text-[11px] font-medium uppercase tracking-[0.14em] transition',
+            dropTargetPath === rootDirectoryPath
+              ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
+              : 'border-[color:var(--line-strong)] bg-[var(--surface-0)] text-[var(--text-faint)]'
+          )}
+        >
+          Drop Here To Move To Workspace Root
+        </div>
+      ) : null}
+      {visibleNodes.map((node) => renderNode(node, 0))}
+      {contextMenu && typeof document !== 'undefined'
+        ? createPortal(
+        <div
+          className="fixed z-[520] min-w-[220px] rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-2)] p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.18)]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <button
+            className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
+            onClick={() => promptForNewFile(contextMenu.directoryPath)}
+          >
+            <span>New File</span>
+            <span className="text-[var(--text-faint)]">+</span>
+          </button>
+          <button
+            className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
+            onClick={() => promptForNewFolder(contextMenu.directoryPath)}
+          >
+            <span>New Folder</span>
+            <span className="text-[var(--text-faint)]">+</span>
+          </button>
+          {contextMenu.node ? (
+            <>
+              <div className="my-1 h-px bg-[var(--line)]" />
+              <button
+                className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
+                onClick={() => copyNodePath(contextMenu.node!)}
+              >
+                <span>Copy Path</span>
+                <span className="text-[var(--text-faint)]">⌘C</span>
+              </button>
+              <button
+                className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
+                onClick={() => revealNodeInFinder(contextMenu.node!)}
+              >
+                <span>Open In Finder</span>
+                <span className="text-[var(--text-faint)]">↗</span>
+              </button>
+              <button
+                className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
+                onClick={() => promptToRenameNode(contextMenu.node!)}
+              >
+                <span>Rename</span>
+                <span className="text-[var(--text-faint)]">↵</span>
+              </button>
+              <button
+                className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[12px] font-medium text-[var(--danger,#b95151)] transition hover:bg-[var(--surface-0)]"
+                onClick={() => confirmDeleteNode(contextMenu.node!)}
+              >
+                <span>Delete</span>
+                <span className="text-[var(--text-faint)]">⌫</span>
+              </button>
+            </>
+          ) : null}
+        </div>,
+        document.body
+      )
+        : null}
+    </div>
+  )
 }
