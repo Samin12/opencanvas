@@ -17,7 +17,6 @@ Electron + React foundation for a clean-room recreation of the Collaborator desk
 
 ## What is intentionally deferred
 
-- xterm.js + tmux-backed terminal sessions
 - Monaco editor integration
 - BlockNote / TipTap markdown editing
 - File watching, rename/delete tracking, and richer navigator operations
