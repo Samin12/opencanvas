@@ -36,6 +36,7 @@ interface DocumentPaneProps {
   fileKind: FileKind
   filePath: string
   onImportImageFile?: (file: File) => Promise<{ name: string; path: string } | null>
+  onRegisterNoteCopyActions?: (actions: MarkdownCopyActions | null) => void
   onPassthroughScroll?: (deltaX: number, deltaY: number) => void
   refreshToken?: number
   showTileRefreshButton?: boolean
@@ -47,7 +48,8 @@ type DocumentStatus = 'idle' | 'loading' | 'saving' | 'error'
 
 interface SurfaceFrameProps {
   children: ReactNode
-  fileKind: 'note' | 'code'
+  fileKind: 'note' | 'code' | 'pdf'
+  headerActions?: ReactNode
   onRefresh?: () => void
   showTileRefreshButton?: boolean
   showViewerRefreshButton?: boolean
@@ -55,9 +57,15 @@ interface SurfaceFrameProps {
   variant: 'tile' | 'viewer'
 }
 
+export interface MarkdownCopyActions {
+  copyFormatted: () => Promise<void>
+  copyPlainText: () => Promise<void>
+}
+
 function SurfaceFrame({
   children,
   fileKind,
+  headerActions,
   onRefresh,
   showTileRefreshButton = true,
   showViewerRefreshButton = true,
@@ -65,6 +73,8 @@ function SurfaceFrame({
   variant
 }: SurfaceFrameProps) {
   const statusLabel = status === 'saving' ? 'Saving' : 'Synced'
+  const surfaceLabel =
+    fileKind === 'note' ? 'Note Surface' : fileKind === 'pdf' ? 'PDF Surface' : 'Code Surface'
 
   return (
     <div
@@ -78,9 +88,10 @@ function SurfaceFrame({
       {variant === 'viewer' ? (
         <div className="flex items-center justify-between border-b border-[color:var(--line)] bg-[color:var(--surface-1)]/82 px-4 py-3">
           <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]">
-            {fileKind === 'note' ? 'Note Surface' : 'Code Surface'}
+            {surfaceLabel}
           </div>
           <div className="flex items-center gap-2">
+            {headerActions}
             {onRefresh && showViewerRefreshButton ? (
               <button
                 className="rounded-[4px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
@@ -149,11 +160,302 @@ function useFileChangeSignal(filePath: string) {
   return changeCount
 }
 
+function cacheBustedFileUrl(fileUrl: string, version: number) {
+  try {
+    const nextUrl = new URL(fileUrl)
+    nextUrl.searchParams.set('v', String(version))
+    return nextUrl.toString()
+  } catch {
+    return fileUrl
+  }
+}
+
+async function copyPlainTextToClipboard(text: string) {
+  if (typeof window.collaborator.copyTextToClipboard === 'function') {
+    await window.collaborator.copyTextToClipboard(text)
+    return
+  }
+
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  const textArea = document.createElement('textarea')
+  textArea.value = text
+  textArea.setAttribute('readonly', '')
+  textArea.style.position = 'fixed'
+  textArea.style.top = '-9999px'
+  textArea.style.opacity = '0'
+  document.body.appendChild(textArea)
+  textArea.select()
+  textArea.setSelectionRange(0, text.length)
+
+  const copied = document.execCommand('copy')
+  document.body.removeChild(textArea)
+
+  if (!copied) {
+    throw new Error('The clipboard is unavailable.')
+  }
+}
+
+async function copyRichTextToClipboard(html: string, text: string) {
+  if (typeof window.collaborator.copyHtmlToClipboard === 'function') {
+    await window.collaborator.copyHtmlToClipboard(html, text)
+    return
+  }
+
+  if (navigator.clipboard?.write && typeof ClipboardItem !== 'undefined') {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([text], { type: 'text/plain' })
+      })
+    ])
+    return
+  }
+
+  const copyListener = (event: ClipboardEvent) => {
+    event.preventDefault()
+    event.clipboardData?.setData('text/html', html)
+    event.clipboardData?.setData('text/plain', text)
+  }
+
+  document.addEventListener('copy', copyListener)
+  const copied = document.execCommand('copy')
+  document.removeEventListener('copy', copyListener)
+
+  if (!copied) {
+    await copyPlainTextToClipboard(text)
+  }
+}
+
+function CopyTextIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.4]">
+      <rect x="5" y="3.25" width="7.75" height="9" rx="1.8" />
+      <path d="M3.5 11V5.5A1.75 1.75 0 0 1 5.25 3.75" />
+      <path d="M7 1.75h4" />
+    </svg>
+  )
+}
+
+function FormattingIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.3]">
+      <rect x="2.25" y="2.25" width="11.5" height="11.5" rx="2.5" strokeDasharray="1.6 1.8" />
+      <path d="M5.25 6h5.5M5.25 8.5h4.75M5.25 11h3.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function PlainTextIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.3]">
+      <rect x="2.25" y="2.25" width="11.5" height="11.5" rx="2.5" strokeDasharray="2 2.1" />
+      <path d="M4.75 5.75h6.5M4.75 8h4.75M4.75 10.25h5.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+export function MarkdownCopyMenu({
+  copyActions,
+  editor,
+  variant = 'viewer'
+}: {
+  copyActions: MarkdownCopyActions | null
+  editor?: TiptapEditor
+  variant?: 'tile' | 'viewer'
+}) {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const closeTimerRef = useRef<number | null>(null)
+  const isTile = variant === 'tile'
+  const disabled = !copyActions && !editor
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node) || menuRef.current?.contains(event.target)) {
+        return
+      }
+
+      setOpen(false)
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleEscape)
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [open])
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current)
+      }
+    }
+  }, [])
+
+  function openMenu() {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
+
+    if (!disabled) {
+      setOpen(true)
+    }
+  }
+
+  function scheduleClose() {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current)
+    }
+
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null
+      setOpen(false)
+    }, 90)
+  }
+
+  async function handleCopyFormatted() {
+    if (copyActions) {
+      await copyActions.copyFormatted()
+    } else if (editor) {
+      const html = editor.getHTML()
+      const text = editor.getText({ blockSeparator: '\n\n' }).trim()
+
+      await copyRichTextToClipboard(html, text)
+    }
+
+    setOpen(false)
+  }
+
+  async function handleCopyPlainText() {
+    if (copyActions) {
+      await copyActions.copyPlainText()
+    } else if (editor) {
+      const text = editor.getText({ blockSeparator: '\n\n' }).trim()
+
+      await copyPlainTextToClipboard(text)
+    }
+
+    setOpen(false)
+  }
+
+  return (
+    <div
+      ref={menuRef}
+      className="relative"
+      onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+      onPointerEnter={openMenu}
+      onPointerLeave={scheduleClose}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        disabled={disabled}
+        className={clsx(
+          'inline-flex items-center gap-2 rounded-[999px] border border-[color:var(--line-strong)]',
+          'bg-[var(--surface-0)] text-[var(--text-dim)] transition',
+          isTile ? 'h-5 gap-1.5 px-1.5 py-0 text-[10px]' : 'px-2.5 py-1.5 text-[12px]',
+          disabled
+            ? 'cursor-default opacity-55'
+            : 'hover:border-[color:var(--line-strong)] hover:bg-[var(--surface-1)] hover:text-[var(--text)]'
+        )}
+        onClick={() => {
+          if (!disabled) {
+            setOpen((current) => !current)
+          }
+        }}
+        title="Copy note text"
+      >
+        <span
+          className={clsx(
+            'flex min-w-5 items-center justify-center rounded-[6px] bg-[var(--surface-1)] px-1 font-bold uppercase text-[var(--text-faint)]',
+            isTile ? 'h-3.5 min-w-3.5 rounded-[4px] px-0.5 text-[8px]' : 'h-5 text-[10px]'
+          )}
+        >
+          F
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <CopyTextIcon />
+          Copy Text
+        </span>
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          className={clsx(
+            'absolute right-0 top-[calc(100%+10px)] z-30 w-[280px] rounded-[16px] border border-[color:var(--line)]',
+            'bg-[color:var(--surface-overlay)] p-2 shadow-[0_18px_40px_rgba(15,23,42,0.16)] backdrop-blur'
+          )}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            className={clsx(
+              'flex w-full items-start gap-3 rounded-[12px] px-3 py-3 text-left transition',
+              'hover:bg-[var(--surface-1)]'
+            )}
+            onClick={() => void handleCopyFormatted()}
+          >
+            <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-[10px] bg-[var(--surface-1)] text-[var(--text-dim)]">
+              <FormattingIcon />
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="text-[14px] font-semibold text-[var(--text)]">Copy with formatting</span>
+              <span className="mt-0.5 text-[12px] leading-5 text-[var(--text-dim)]">
+                Perfect for pasting into Notion, Google Docs or blogs
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={clsx(
+              'mt-1 flex w-full items-start gap-3 rounded-[12px] px-3 py-3 text-left transition',
+              'hover:bg-[var(--surface-1)]'
+            )}
+            onClick={() => void handleCopyPlainText()}
+          >
+            <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-[10px] bg-[var(--surface-1)] text-[var(--text-dim)]">
+              <PlainTextIcon />
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="text-[14px] font-semibold text-[var(--text)]">Copy as plain text</span>
+              <span className="mt-0.5 text-[12px] leading-5 text-[var(--text-dim)]">
+                Great for tweets, plain editors, or clean sharing
+              </span>
+            </span>
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function RichNoteEditor({
   filePath,
   initialContent,
   onDocumentChange,
   onImportImageFile,
+  onRegisterNoteCopyActions,
   onPassthroughScroll,
   onStatusChange,
   onRefresh,
@@ -166,6 +468,7 @@ function RichNoteEditor({
   initialContent: string
   onDocumentChange: (document: TextFileDocument) => void
   onImportImageFile?: (file: File) => Promise<{ name: string; path: string } | null>
+  onRegisterNoteCopyActions?: (actions: MarkdownCopyActions | null) => void
   onPassthroughScroll?: (deltaX: number, deltaY: number) => void
   onStatusChange: (status: DocumentStatus) => void
   onRefresh: () => void
@@ -557,6 +860,33 @@ function RichNoteEditor({
     }
   }, [editor, variant])
 
+  useEffect(() => {
+    if (!onRegisterNoteCopyActions) {
+      return
+    }
+
+    if (!editor) {
+      onRegisterNoteCopyActions(null)
+      return
+    }
+
+    onRegisterNoteCopyActions({
+      copyFormatted: async () => {
+        const html = editor.getHTML()
+        const text = editor.getText({ blockSeparator: '\n\n' }).trim()
+        await copyRichTextToClipboard(html, text)
+      },
+      copyPlainText: async () => {
+        const text = editor.getText({ blockSeparator: '\n\n' }).trim()
+        await copyPlainTextToClipboard(text)
+      }
+    })
+
+    return () => {
+      onRegisterNoteCopyActions(null)
+    }
+  }, [editor, onRegisterNoteCopyActions])
+
   if (!editor) {
     return <LoadingPane variant={variant} />
   }
@@ -564,6 +894,9 @@ function RichNoteEditor({
   return (
     <SurfaceFrame
       fileKind="note"
+      headerActions={
+        variant === 'viewer' ? <MarkdownCopyMenu copyActions={null} editor={editor} /> : null
+      }
       onRefresh={onRefresh}
       showTileRefreshButton={showTileRefreshButton}
       showViewerRefreshButton={showViewerRefreshButton}
@@ -571,7 +904,7 @@ function RichNoteEditor({
       variant={variant}
     >
       <div
-        className="rich-note-editor min-h-0 flex-1"
+        className="rich-note-editor relative min-h-0 flex-1"
         data-document-drop-target="true"
         data-shortcut-lock="true"
         onDragOverCapture={handleImageDragOver}
@@ -603,6 +936,7 @@ function RichNoteEditor({
 function NoteDocumentPane({
   filePath,
   onImportImageFile,
+  onRegisterNoteCopyActions,
   onPassthroughScroll,
   refreshToken = 0,
   showTileRefreshButton = true,
@@ -664,6 +998,7 @@ function NoteDocumentPane({
       initialContent={document.content}
       onDocumentChange={setDocument}
       onImportImageFile={onImportImageFile}
+      onRegisterNoteCopyActions={onRegisterNoteCopyActions}
       onPassthroughScroll={onPassthroughScroll}
       onRefresh={() => setReloadCount((current) => current + 1)}
       onStatusChange={setStatus}
@@ -933,7 +1268,7 @@ function VideoDocumentPane({
         const nextVideoUrl = await window.collaborator.fileUrl(filePath)
 
         if (!cancelled) {
-          setVideoUrl(nextVideoUrl)
+          setVideoUrl(cacheBustedFileUrl(nextVideoUrl, fileChangeCount + reloadCount + refreshToken))
           setStatus('idle')
         }
       } catch {
@@ -989,6 +1324,7 @@ function VideoDocumentPane({
         src={videoUrl}
         controls
         preload="metadata"
+        playsInline
         draggable
         className="h-full w-full bg-black/10 object-contain"
         onDragStart={(event) => {
@@ -1005,10 +1341,89 @@ function VideoDocumentPane({
   )
 }
 
+function PdfDocumentPane({
+  filePath,
+  refreshToken = 0,
+  showTileRefreshButton = true,
+  showViewerRefreshButton = true,
+  variant = 'tile'
+}: Pick<
+  DocumentPaneProps,
+  'filePath' | 'refreshToken' | 'showTileRefreshButton' | 'showViewerRefreshButton' | 'variant'
+>) {
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [reloadCount, setReloadCount] = useState(0)
+  const [status, setStatus] = useState<DocumentStatus>('loading')
+  const fileChangeCount = useFileChangeSignal(filePath)
+
+  useEffect(() => {
+    setPdfUrl(null)
+    setStatus('loading')
+  }, [filePath])
+
+  useEffect(() => {
+    if (refreshToken > 0) {
+      setReloadCount((current) => current + 1)
+    }
+  }, [refreshToken])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      try {
+        const nextPdfUrl = await window.collaborator.fileUrl(filePath)
+
+        if (!cancelled) {
+          setPdfUrl(cacheBustedFileUrl(nextPdfUrl, fileChangeCount + reloadCount + refreshToken))
+          setStatus('idle')
+        }
+      } catch {
+        if (!cancelled) {
+          setStatus('error')
+        }
+      }
+    }
+
+    void load()
+
+    return () => {
+      cancelled = true
+    }
+  }, [filePath, fileChangeCount, reloadCount, refreshToken])
+
+  if (status === 'error') {
+    return <ErrorPane variant={variant} />
+  }
+
+  if (!pdfUrl || status === 'loading') {
+    return <LoadingPane variant={variant} />
+  }
+
+  return (
+    <SurfaceFrame
+      fileKind="pdf"
+      onRefresh={() => setReloadCount((current) => current + 1)}
+      showTileRefreshButton={showTileRefreshButton}
+      showViewerRefreshButton={showViewerRefreshButton}
+      status={status}
+      variant={variant}
+    >
+      <iframe
+        key={`${pdfUrl}:${reloadCount}`}
+        src={pdfUrl}
+        title={filePath.split(/[\\/]/).pop() ?? 'PDF'}
+        className="h-full w-full border-0 bg-white"
+      />
+    </SurfaceFrame>
+  )
+}
+
 function DocumentPaneComponent({
   fileKind,
   filePath,
   onImportImageFile,
+  onRegisterNoteCopyActions,
   onPassthroughScroll,
   refreshToken = 0,
   showTileRefreshButton = true,
@@ -1039,11 +1454,24 @@ function DocumentPaneComponent({
     )
   }
 
+  if (fileKind === 'pdf') {
+    return (
+      <PdfDocumentPane
+        filePath={filePath}
+        refreshToken={refreshToken}
+        showTileRefreshButton={showTileRefreshButton}
+        showViewerRefreshButton={showViewerRefreshButton}
+        variant={variant}
+      />
+    )
+  }
+
   if (fileKind === 'note') {
     return (
       <NoteDocumentPane
         filePath={filePath}
         onImportImageFile={onImportImageFile}
+        onRegisterNoteCopyActions={onRegisterNoteCopyActions}
         onPassthroughScroll={onPassthroughScroll}
         refreshToken={refreshToken}
         showTileRefreshButton={showTileRefreshButton}

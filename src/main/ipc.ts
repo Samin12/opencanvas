@@ -7,6 +7,7 @@ import type {
   CanvasState,
   CreateWorkspaceNoteOptions,
   TerminalProvider,
+  WorkspaceAssetImport,
   WorkspaceImageImport
 } from '../shared/types'
 
@@ -28,6 +29,7 @@ import {
 } from './terminals'
 import {
   createWorkspaceNote,
+  importWorkspaceAsset,
   importWorkspaceImage,
   moveWorkspaceNode,
   readImageAssetData,
@@ -83,6 +85,12 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('system:copy-text', async (_event, text: string) => {
     clipboard.writeText(text)
   })
+  ipcMain.handle('system:copy-html', async (_event, html: string, text?: string) => {
+    clipboard.write({
+      html,
+      text: text ?? html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+    })
+  })
   ipcMain.handle('system:open-path', async (_event, targetPath: string) => {
     const resolvedTargetPath = resolve(targetPath)
 
@@ -106,6 +114,11 @@ export function registerIpcHandlers(): void {
     'workspace:create-note',
     async (_event, workspacePath: string, options?: CreateWorkspaceNoteOptions) =>
       createWorkspaceNote(workspacePath, options)
+  )
+  ipcMain.handle(
+    'workspace:import-asset',
+    async (_event, workspacePath: string, asset: WorkspaceAssetImport) =>
+      importWorkspaceAsset(workspacePath, asset)
   )
   ipcMain.handle(
     'workspace:import-image',

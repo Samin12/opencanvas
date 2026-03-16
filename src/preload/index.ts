@@ -12,6 +12,7 @@ import type {
   TerminalActivityItem,
   TerminalSessionSnapshot,
   TextFileDocument,
+  WorkspaceAssetImport,
   WorkspaceImageImport
 } from '../shared/types'
 
@@ -30,6 +31,8 @@ const api: CollaboratorApi = {
   readCanvasState: (workspacePath: string | null) =>
     ipcRenderer.invoke('canvas:read', workspacePath) as Promise<CanvasState>,
   copyTextToClipboard: (text: string) => ipcRenderer.invoke('system:copy-text', text) as Promise<void>,
+  copyHtmlToClipboard: (html: string, text?: string) =>
+    ipcRenderer.invoke('system:copy-html', html, text) as Promise<void>,
   createTerminalSession: (options) =>
     ipcRenderer.invoke('terminal:create', options) as Promise<TerminalSessionSnapshot>,
   readTerminalActivity: (sessionId: string) =>
@@ -88,6 +91,8 @@ const api: CollaboratorApi = {
   pickWorkspaceDirectory: () => ipcRenderer.invoke('workspace:pick') as Promise<string | null>,
   createWorkspaceNote: (workspacePath: string, options?: CreateWorkspaceNoteOptions) =>
     ipcRenderer.invoke('workspace:create-note', workspacePath, options) as Promise<FileTreeNode>,
+  importWorkspaceAsset: (workspacePath: string, asset: WorkspaceAssetImport) =>
+    ipcRenderer.invoke('workspace:import-asset', workspacePath, asset) as Promise<FileTreeNode>,
   importWorkspaceImage: (workspacePath: string, image: WorkspaceImageImport) =>
     ipcRenderer.invoke('workspace:import-image', workspacePath, image) as Promise<FileTreeNode>,
   moveWorkspaceNode: (workspacePath: string, sourcePath: string, targetDirectoryPath: string) =>

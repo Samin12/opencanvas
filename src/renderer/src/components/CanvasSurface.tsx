@@ -34,7 +34,7 @@ import type {
   TerminalUiMode
 } from '@shared/types'
 
-import { DocumentPane } from './DocumentPane'
+import { DocumentPane, MarkdownCopyMenu, type MarkdownCopyActions } from './DocumentPane'
 import { EmbedPane } from './EmbedPane'
 import { HoverTooltip } from './HoverTooltip'
 import { TerminalPane } from './TerminalPane'
@@ -193,7 +193,7 @@ const ZOOM_OUT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+-' : 'Ctrl+-'
 const RESET_ZOOM_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+0' : 'Ctrl+0'
 const CREATE_CODEX_TERMINAL_SHORTCUT_KEY = 'Shift+C'
 const NOTE_SLASH_TOOLTIP_LABEL =
-  'Markdown shortcuts: /h1-/h6 headings, /p paragraph, /bullet list, /numbered list, /todo checklist, /quote blockquote, /code code block, /line divider. Also works with #, >, -, 1., [ ] and ---.'
+  'Markdown shortcuts: headings, paragraphs, bullets, numbered lists, todos, quotes, code blocks and dividers. Also works with /, #, >, -, 1., [ ] and ---.'
 const SHORTCUT_ITEMS: Array<{ action: ShortcutAction; key: string; label: string }> = [
   { action: 'terminal-claude', key: 'Shift+T', label: 'New Claude Terminal' },
   { action: 'terminal-codex', key: CREATE_CODEX_TERMINAL_SHORTCUT_KEY, label: 'New Codex Terminal' },
@@ -761,6 +761,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const [selectedTileId, setSelectedTileId] = useState<string | null>(null)
     const [focusedTerminal, setFocusedTerminal] = useState<{ mode: TerminalUiMode; tileId: string } | null>(null)
     const [tileRefreshTokens, setTileRefreshTokens] = useState<Record<string, number>>({})
+    const [noteCopyActionsByTile, setNoteCopyActionsByTile] = useState<Record<string, MarkdownCopyActions | null>>({})
     const [convertingStickyNote, setConvertingStickyNote] = useState(false)
     const [zoomIndicator, setZoomIndicator] = useState<string | null>(null)
 
@@ -774,6 +775,31 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       return stateRef.current.tiles.find((tile) => tile.id === tileId) ?? null
+    }
+
+    function registerNoteCopyActions(tileId: string, actions: MarkdownCopyActions | null) {
+      setNoteCopyActionsByTile((current) => {
+        const existing = current[tileId] ?? null
+
+        if (existing === actions) {
+          return current
+        }
+
+        if (!actions) {
+          if (!(tileId in current)) {
+            return current
+          }
+
+          const next = { ...current }
+          delete next[tileId]
+          return next
+        }
+
+        return {
+          ...current,
+          [tileId]: actions
+        }
+      })
     }
 
     function isContextSourceTile(tile: CanvasTile | null): tile is CanvasTile {
@@ -3576,6 +3602,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                         </button>
                       </HoverTooltip>
                     ) : null}
+                    {tileFileKind === 'note' ? (
+                      <MarkdownCopyMenu
+                        copyActions={noteCopyActionsByTile[tile.id] ?? null}
+                        variant="tile"
+                      />
+                    ) : null}
                     {hasFileDocument ? (
                       <button
                         className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[11px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
@@ -3721,6 +3753,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       fileKind={tileFileKind}
                       filePath={tile.filePath}
                       onImportImageFile={onImportImageFile}
+                      onRegisterNoteCopyActions={
+                        tileFileKind === 'note'
+                          ? (actions) => registerNoteCopyActions(tile.id, actions)
+                          : undefined
+                      }
                       onPassthroughScroll={panBy}
                       refreshToken={tileRefreshToken}
                       showTileRefreshButton={false}

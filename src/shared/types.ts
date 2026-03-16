@@ -156,6 +156,7 @@ export interface CollaboratorApi {
   saveConfig: (config: AppConfig) => Promise<AppConfig>
   saveCanvasState: (workspacePath: string | null, state: CanvasState) => Promise<CanvasState>
   copyTextToClipboard: (text: string) => Promise<void>
+  copyHtmlToClipboard: (html: string, text?: string) => Promise<void>
   openPath: (targetPath: string) => Promise<void>
   pickWorkspaceDirectory: () => Promise<string | null>
   createWorkspaceNote: (

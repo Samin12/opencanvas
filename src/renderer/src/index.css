@@ -136,7 +136,7 @@ textarea {
   z-index: 400;
   display: flex;
   max-width: min(20rem, calc(100vw - 24px));
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
   border: 1px solid var(--line-strong);
   border-radius: 6px;
@@ -145,7 +145,7 @@ textarea {
   color: var(--text);
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
   backdrop-filter: blur(8px);
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .app-tooltip--top {
@@ -157,7 +157,7 @@ textarea {
 }
 
 .app-tooltip__label {
-  line-height: 1;
+  line-height: 1.35;
   font-size: 11px;
   font-weight: 500;
 }
