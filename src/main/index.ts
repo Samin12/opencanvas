@@ -9,6 +9,8 @@ const { app, BrowserWindow, screen } = electron
 type AppWindow = InstanceType<typeof BrowserWindow>
 const APP_NAME = 'Open Canvas'
 
+app.setName(APP_NAME)
+
 let mainWindow: AppWindow | null = null
 
 type NativeInputEvent = Electron.InputEvent & Record<string, unknown>
@@ -135,8 +137,6 @@ async function createMainWindow(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-  app.setName(APP_NAME)
-
   if (process.platform === 'darwin' && app.dock) {
     const dockIcon = electron.nativeImage.createFromPath(
       join(app.getAppPath(), 'resources', 'claude-canvas-icon.png')
