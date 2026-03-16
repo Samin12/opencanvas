@@ -109,19 +109,17 @@ export function HoverTooltip({
             <div
               role="tooltip"
               className={clsx(
-                'pointer-events-none fixed z-[400] flex max-w-[20rem] items-center gap-2 rounded-[6px] border border-[color:var(--line-strong)] bg-[color:var(--surface-overlay)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--text)] shadow-[0_12px_32px_rgba(15,23,42,0.18)] backdrop-blur-sm',
-                position.placement === 'top'
-                  ? '-translate-x-1/2 -translate-y-full'
-                  : '-translate-x-1/2'
+                'app-tooltip',
+                position.placement === 'top' ? 'app-tooltip--top' : 'app-tooltip--bottom'
               )}
               style={{
                 left: position.left,
                 top: position.top
               }}
             >
-              <span className="leading-none text-[var(--text)]">{normalizedLabel}</span>
+              <span className="app-tooltip__label">{normalizedLabel}</span>
               {shortcut ? (
-                <span className="shrink-0 rounded-[4px] border border-[color:var(--accent)] bg-[var(--accent-soft)] px-1.5 py-0.5 font-[var(--font-mono)] text-[10px] leading-none tracking-[0.08em] text-[var(--accent)]">
+                <span className="app-tooltip__shortcut">
                   {shortcut}
                 </span>
               ) : null}
