@@ -603,6 +603,10 @@ function initializeSessionActivities(session: ManagedTerminalSession): void {
   session.parser.replaySuppressionUntil = Date.now() + ACTIVITY_REPLAY_SUPPRESSION_MS
 }
 
+function resyncSessionActivitiesFromHistory(session: ManagedTerminalSession): void {
+  initializeSessionActivities(session)
+}
+
 function defaultShell(): string {
   if (process.env.SHELL && process.env.SHELL.length > 0) {
     return process.env.SHELL
@@ -956,6 +960,7 @@ export function readTerminalActivity(sessionId: string): TerminalActivityItem[] 
   const session = sessions.get(sessionId)
 
   if (session) {
+    resyncSessionActivitiesFromHistory(session)
     return session.activities
   }
 

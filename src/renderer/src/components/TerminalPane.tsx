@@ -160,6 +160,7 @@ function TerminalPaneComponent({
   const historyLoadingRef = useRef(false)
   const historyOpenRef = useRef(false)
   const historyScrollToBottomRef = useRef(false)
+  const activityRefreshTimerRef = useRef<number | null>(null)
   const scrollbarTrackRef = useRef<HTMLDivElement>(null)
   const dragCleanupRef = useRef<(() => void) | null>(null)
   const historyRequestIdRef = useRef(0)
@@ -293,6 +294,21 @@ function TerminalPaneComponent({
     window.requestAnimationFrame(() => {
       composerRef.current?.focus()
     })
+  }
+
+  function stopScheduledActivityRefresh() {
+    if (activityRefreshTimerRef.current !== null) {
+      window.clearTimeout(activityRefreshTimerRef.current)
+      activityRefreshTimerRef.current = null
+    }
+  }
+
+  function scheduleActivityRefresh() {
+    stopScheduledActivityRefresh()
+    activityRefreshTimerRef.current = window.setTimeout(() => {
+      activityRefreshTimerRef.current = null
+      void refreshActivities()
+    }, 260)
   }
 
   async function refreshActivities() {
@@ -554,6 +570,7 @@ function TerminalPaneComponent({
       window.requestAnimationFrame(() => {
         syncScrollMetrics(terminal)
       })
+      scheduleActivityRefresh()
     })
 
     const detachTerminalActivity = window.collaborator.onTerminalActivity(sessionId, (activity) => {
@@ -642,6 +659,7 @@ function TerminalPaneComponent({
         window.clearTimeout(reconnectTimer)
       }
       resizeObserver.disconnect()
+      stopScheduledActivityRefresh()
       stopScrollbarDrag()
       viewport?.removeEventListener('wheel', handleViewportWheel, true)
       detachTerminalActivity()
@@ -703,6 +721,7 @@ function TerminalPaneComponent({
 
   useEffect(() => {
     return () => {
+      stopScheduledActivityRefresh()
       stopScrollbarDrag()
     }
   }, [])
@@ -721,6 +740,7 @@ function TerminalPaneComponent({
     setSessionCwd(cwd)
     terminalWheelRemainderRef.current = 0
     historyScrollToBottomRef.current = false
+    stopScheduledActivityRefresh()
     pendingSelectionCardTextRef.current = ''
     setComposerValue('')
   }, [sessionId])
