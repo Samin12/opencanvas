@@ -26,6 +26,8 @@ const IS_MAC_PLATFORM =
 const SIDEBAR_LEFT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2190' : null
 const SIDEBAR_RIGHT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2192' : null
 const TOGGLE_DARK_MODE_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+Shift+D' : 'Ctrl+Shift+D'
+const WORKSPACE_SWITCHER_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+Shift+W' : 'Ctrl+Shift+W'
+const WORKSPACE_SWITCHER_OPEN_EVENT = 'claude-canvas:open-workspace-switcher'
 
 function flattenFiles(nodes: FileTreeNode[]): FileTreeNode[] {
   const files: FileTreeNode[] = []
@@ -148,6 +150,7 @@ export default function App() {
 
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [canvasState, setCanvasState] = useState<CanvasState | null>(null)
+  const [canvasWorkspacePath, setCanvasWorkspacePath] = useState<string | null>(null)
   const [workspaceTree, setWorkspaceTree] = useState<FileTreeNode[]>([])
   const [viewerFile, setViewerFile] = useState<FileTreeNode | null>(null)
   const [selectedTreePath, setSelectedTreePath] = useState<string | null>(null)
@@ -233,6 +236,7 @@ export default function App() {
 
         canvasWorkspaceRef.current = initialWorkspacePath
         canvasStateRef.current = payload.canvasState
+        setCanvasWorkspacePath(initialWorkspacePath)
         setConfig(payload.config)
         setCanvasState(payload.canvasState)
         setSidebarWidth(payload.config.ui.sidebarWidth)
@@ -338,6 +342,7 @@ export default function App() {
 
         canvasWorkspaceRef.current = workspacePath
         canvasStateRef.current = nextCanvasState
+        setCanvasWorkspacePath(workspacePath)
         setCanvasState(nextCanvasState)
       } catch {
         if (cancelled || canvasLoadRequestRef.current !== requestId) {
@@ -348,6 +353,7 @@ export default function App() {
 
         canvasWorkspaceRef.current = workspacePath
         canvasStateRef.current = nextCanvasState
+        setCanvasWorkspacePath(workspacePath)
         setCanvasState(nextCanvasState)
         setWorkspaceError('The workspace canvas could not be loaded.')
       }
@@ -483,6 +489,12 @@ export default function App() {
         void persistUi({
           darkMode: nextDarkMode
         })
+        return
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'w') {
+        event.preventDefault()
+        window.dispatchEvent(new CustomEvent(WORKSPACE_SWITCHER_OPEN_EVENT))
         return
       }
 
@@ -1144,6 +1156,7 @@ export default function App() {
           <CanvasSurface
             activeWorkspacePath={activeWorkspace}
             darkMode={darkMode}
+            key={canvasWorkspacePath ?? 'no-workspace'}
             ref={canvasRef}
             onCreateMarkdownNote={() => void createMarkdownNote()}
             onConvertStickyNoteToMarkdown={(content) => createWorkspaceMarkdownNote(content)}
