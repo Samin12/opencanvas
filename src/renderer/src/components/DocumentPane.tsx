@@ -1,5 +1,15 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  memo,
+  type ClipboardEvent as ReactClipboardEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
+  type ReactNode
+} from 'react'
 
+import type { Editor as TiptapEditor } from '@tiptap/core'
 import { Markdown } from '@tiptap/markdown'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { TaskList } from '@tiptap/extension-list'
@@ -7,11 +17,21 @@ import StarterKit from '@tiptap/starter-kit'
 import clsx from 'clsx'
 
 import type { FileKind, TextFileDocument } from '@shared/types'
+import {
+  imageAltTextFromPath,
+  imageFileCandidateFromPath,
+  MarkdownImageExtension,
+  normalizeMarkdownImageReferences,
+  relativeImagePath
+} from '../utils/markdownImages'
 import { MarkdownShortcutExtension, MarkdownTaskItem } from '../utils/markdownShortcuts'
+
+const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
 
 interface DocumentPaneProps {
   fileKind: FileKind
   filePath: string
+  onImportImageFile?: (file: File) => Promise<{ name: string; path: string } | null>
   onPassthroughScroll?: (deltaX: number, deltaY: number) => void
   refreshToken?: number
   showTileRefreshButton?: boolean
@@ -129,6 +149,7 @@ function RichNoteEditor({
   filePath,
   initialContent,
   onDocumentChange,
+  onImportImageFile,
   onPassthroughScroll,
   onStatusChange,
   onRefresh,
@@ -140,6 +161,7 @@ function RichNoteEditor({
   filePath: string
   initialContent: string
   onDocumentChange: (document: TextFileDocument) => void
+  onImportImageFile?: (file: File) => Promise<{ name: string; path: string } | null>
   onPassthroughScroll?: (deltaX: number, deltaY: number) => void
   onStatusChange: (status: DocumentStatus) => void
   onRefresh: () => void
@@ -148,8 +170,9 @@ function RichNoteEditor({
   status: DocumentStatus
   variant: 'tile' | 'viewer'
 }) {
-  const latestDraftRef = useRef(initialContent)
-  const latestSavedRef = useRef(initialContent)
+  const normalizedInitialContent = normalizeMarkdownImageReferences(initialContent)
+  const latestDraftRef = useRef(normalizedInitialContent)
+  const latestSavedRef = useRef(normalizedInitialContent)
   const saveRequestIdRef = useRef(0)
   const saveTimerRef = useRef<number | null>(null)
 
@@ -166,6 +189,159 @@ function RichNoteEditor({
     editor.commands.focus()
   }
 
+  function dropInsertionPosition(clientX: number, clientY: number) {
+    if (!editor) {
+      return null
+    }
+
+    return editor.view.posAtCoords({ left: clientX, top: clientY })?.pos ?? null
+  }
+
+  function draggedImageReference(dataTransfer: DataTransfer | null) {
+    const rawPayload = dataTransfer?.getData(COLLABORATOR_FILE_MIME)
+
+    if (!rawPayload) {
+      return null
+    }
+
+    try {
+      const payload = JSON.parse(rawPayload) as {
+        fileKind?: FileKind
+        name?: string
+        path?: string
+      }
+
+      if (typeof payload.path !== 'string') {
+        return null
+      }
+
+      if (payload.fileKind !== 'image' && !imageFileCandidateFromPath(payload.path)) {
+        return null
+      }
+
+      return {
+        altText: imageAltTextFromPath(payload.name ?? payload.path),
+        path: payload.path
+      }
+    } catch {
+      return null
+    }
+  }
+
+  function insertImageReference(
+    imagePath: string,
+    altText: string | null,
+    insertionPosition: number | null = null
+  ) {
+    if (!editor) {
+      return false
+    }
+
+    const relativeSourcePath = relativeImagePath(filePath, imagePath)
+    const chain = editor.chain().focus()
+
+    if (typeof insertionPosition === 'number') {
+      chain.setTextSelection(insertionPosition)
+    }
+
+    return chain
+      .insertContent([
+        {
+          attrs: {
+            alt: altText?.trim() || imageAltTextFromPath(imagePath),
+            src: relativeSourcePath
+          },
+          type: 'image'
+        },
+        {
+          type: 'paragraph'
+        }
+      ])
+      .run()
+  }
+
+  async function importAndInsertImageFiles(files: File[], insertionPosition: number | null = null) {
+    if (!onImportImageFile) {
+      return false
+    }
+
+    let inserted = false
+    let nextInsertionPosition = insertionPosition
+
+    for (const imageFile of files) {
+      const importedNode = await onImportImageFile(imageFile)
+
+      if (!importedNode) {
+        continue
+      }
+
+      if (insertImageReference(importedNode.path, imageAltTextFromPath(importedNode.name), nextInsertionPosition)) {
+        inserted = true
+        nextInsertionPosition = null
+      }
+    }
+
+    return inserted
+  }
+
+  function handleImagePaste(event: ReactClipboardEvent<HTMLDivElement>) {
+    if (!onImportImageFile) {
+      return
+    }
+
+    const imageItem = Array.from(event.clipboardData.items).find((item) =>
+      item.type.startsWith('image/')
+    )
+    const imageFile = imageItem?.getAsFile()
+
+    if (!imageFile) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+    focusEditor()
+    void importAndInsertImageFiles([imageFile], editor?.state.selection.from ?? null)
+  }
+
+  function handleImageDragOver(event: ReactDragEvent<HTMLDivElement>) {
+    const draggedImage = draggedImageReference(event.dataTransfer)
+    const droppedImageFiles = Array.from(event.dataTransfer.files ?? []).filter((file) =>
+      file.type.startsWith('image/')
+    )
+
+    if (!draggedImage && droppedImageFiles.length === 0) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = 'copy'
+  }
+
+  function handleImageDrop(event: ReactDragEvent<HTMLDivElement>) {
+    const draggedImage = draggedImageReference(event.dataTransfer)
+    const droppedImageFiles = Array.from(event.dataTransfer.files ?? []).filter((file) =>
+      file.type.startsWith('image/')
+    )
+
+    if (!draggedImage && droppedImageFiles.length === 0) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    const insertionPosition = dropInsertionPosition(event.clientX, event.clientY)
+
+    if (draggedImage) {
+      insertImageReference(draggedImage.path, draggedImage.altText, insertionPosition)
+      return
+    }
+
+    void importAndInsertImageFiles(droppedImageFiles, insertionPosition)
+  }
+
   useEffect(() => {
     return () => {
       if (saveTimerRef.current !== null) {
@@ -179,7 +355,10 @@ function RichNoteEditor({
     saveRequestIdRef.current = requestId
 
     try {
-      const updated = await window.collaborator.writeTextFile(filePath, markdown)
+      const updated = await window.collaborator.writeTextFile(
+        filePath,
+        normalizeMarkdownImageReferences(markdown)
+      )
 
       if (saveRequestIdRef.current !== requestId) {
         return
@@ -247,6 +426,9 @@ function RichNoteEditor({
             'data-type': 'taskItem'
           }
         }),
+        MarkdownImageExtension.configure({
+          documentPath: filePath
+        }),
         MarkdownShortcutExtension,
         Markdown.configure({
           markedOptions: {
@@ -255,7 +437,7 @@ function RichNoteEditor({
           }
         })
       ],
-      content: initialContent,
+      content: normalizedInitialContent,
       contentType: 'markdown',
       editorProps: {
         attributes: {
@@ -271,30 +453,46 @@ function RichNoteEditor({
             flushSave()
             return false
           },
-          focus: (_, event) => {
+          focus: (_view: unknown, event: FocusEvent) => {
             event.stopPropagation()
             return false
           },
-          keydown: (_, event) => {
+          keydown: (_view: unknown, event: KeyboardEvent) => {
             event.stopPropagation()
             return false
           },
-          keyup: (_, event) => {
+          keyup: (_view: unknown, event: KeyboardEvent) => {
             event.stopPropagation()
             return false
           },
-          keypress: (_, event) => {
+          keypress: (_view: unknown, event: KeyboardEvent) => {
             event.stopPropagation()
             return false
           },
-          mousedown: (_, event) => {
+          mousedown: (_view: unknown, event: MouseEvent) => {
             event.stopPropagation()
             focusEditor()
             return false
+          },
+          paste: (_view: unknown, event: ClipboardEvent) => {
+            const clipboardItems = event.clipboardData ? Array.from(event.clipboardData.items) : []
+            const imageItem = clipboardItems.find((item) =>
+              item.type.startsWith('image/')
+            )
+            const imageFile = imageItem?.getAsFile()
+
+            if (!imageFile || !onImportImageFile) {
+              return false
+            }
+
+            event.preventDefault()
+            event.stopPropagation()
+            void importAndInsertImageFiles([imageFile], editor?.state.selection.from ?? null)
+            return true
           }
         }
       },
-      onUpdate: ({ editor: activeEditor }) => {
+      onUpdate: ({ editor: activeEditor }: { editor: TiptapEditor }) => {
         queueSave(activeEditor.getMarkdown())
       }
     },
@@ -304,27 +502,28 @@ function RichNoteEditor({
   useEffect(() => {
     if (!editor) {
       latestDraftRef.current = initialContent
-      latestSavedRef.current = initialContent
+      latestSavedRef.current = normalizedInitialContent
       return
     }
 
+    const normalizedContent = normalizeMarkdownImageReferences(initialContent)
     const hadLocalChanges = latestDraftRef.current !== latestSavedRef.current
-    latestSavedRef.current = initialContent
+    latestSavedRef.current = normalizedContent
 
-    if (latestDraftRef.current === initialContent) {
+    if (latestDraftRef.current === normalizedContent) {
       onStatusChange('idle')
       return
     }
 
-    if (editor.getMarkdown() === initialContent) {
-      latestDraftRef.current = initialContent
+    if (editor.getMarkdown() === normalizedContent) {
+      latestDraftRef.current = normalizedContent
       onStatusChange('idle')
       return
     }
 
     if (!hadLocalChanges) {
-      latestDraftRef.current = initialContent
-      editor.commands.setContent(initialContent, {
+      latestDraftRef.current = normalizedContent
+      editor.commands.setContent(normalizedContent, {
         contentType: 'markdown',
         emitUpdate: false
       })
@@ -333,7 +532,7 @@ function RichNoteEditor({
     }
 
     onStatusChange('saving')
-  }, [editor, initialContent, onStatusChange])
+  }, [editor, initialContent, normalizedInitialContent, onStatusChange])
 
   useLayoutEffect(() => {
     if (!editor || variant !== 'viewer') {
@@ -366,7 +565,11 @@ function RichNoteEditor({
     >
       <div
         className="rich-note-editor min-h-0 flex-1"
+        data-document-drop-target="true"
         data-shortcut-lock="true"
+        onDragOverCapture={handleImageDragOver}
+        onDropCapture={handleImageDrop}
+        onPasteCapture={handleImagePaste}
         onPointerEnter={() => {
           if (variant === 'viewer') {
             focusEditor()
@@ -392,6 +595,7 @@ function RichNoteEditor({
 
 function NoteDocumentPane({
   filePath,
+  onImportImageFile,
   onPassthroughScroll,
   refreshToken = 0,
   showTileRefreshButton = true,
@@ -452,6 +656,7 @@ function NoteDocumentPane({
       filePath={filePath}
       initialContent={document.content}
       onDocumentChange={setDocument}
+      onImportImageFile={onImportImageFile}
       onPassthroughScroll={onPassthroughScroll}
       onRefresh={() => setReloadCount((current) => current + 1)}
       onStatusChange={setStatus}
@@ -659,7 +864,30 @@ function ImageDocumentPane({
           ↻
         </button>
       ) : null}
-      <img src={imageUrl} alt="" className="h-full w-full object-contain" />
+      <img
+        src={imageUrl}
+        alt=""
+        draggable
+        className="h-full w-full object-contain"
+        onDragStart={(event) => {
+          if (!event.dataTransfer) {
+            return
+          }
+
+          const fileName = filePath.split(/[\\/]/).pop() ?? 'Image'
+
+          event.dataTransfer.effectAllowed = 'copy'
+          event.dataTransfer.setData(
+            COLLABORATOR_FILE_MIME,
+            JSON.stringify({
+              fileKind: 'image',
+              name: fileName,
+              path: filePath
+            })
+          )
+          event.dataTransfer.setData('text/plain', filePath)
+        }}
+      />
     </div>
   )
 }
@@ -667,6 +895,7 @@ function ImageDocumentPane({
 function DocumentPaneComponent({
   fileKind,
   filePath,
+  onImportImageFile,
   onPassthroughScroll,
   refreshToken = 0,
   showTileRefreshButton = true,
@@ -689,6 +918,7 @@ function DocumentPaneComponent({
     return (
       <NoteDocumentPane
         filePath={filePath}
+        onImportImageFile={onImportImageFile}
         onPassthroughScroll={onPassthroughScroll}
         refreshToken={refreshToken}
         showTileRefreshButton={showTileRefreshButton}

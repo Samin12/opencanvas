@@ -142,6 +142,7 @@ const MIN_TILE_HEIGHT = 220
 const CAMERA_EPSILON = 0.001
 const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
 const IMAGE_FILE_EXTENSIONS = new Set(['.gif', '.jpg', '.jpeg', '.png', '.svg', '.webp'])
+const DOCUMENT_DROP_TARGET_SELECTOR = '[data-document-drop-target="true"]'
 const SCROLL_LOCK_SELECTOR = '[data-scroll-lock="true"]'
 const NATIVE_WHEEL_SELECTOR = '[data-native-wheel="true"]'
 const IS_MAC_PLATFORM =
@@ -917,9 +918,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
 
     function setViewport(nextViewport: CanvasState['viewport']) {
+      const resolvedViewport = syncEditorCamera(nextViewport)
+
       updateState({
         ...stateRef.current,
-        viewport: nextViewport
+        viewport: resolvedViewport
       })
     }
 
@@ -927,7 +930,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       const editor = editorRef.current
 
       if (!editor) {
-        return
+        return nextViewport
       }
 
       const currentCamera = editor.getCamera()
@@ -938,10 +941,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         Math.abs(currentCamera.y - targetCamera.y) <= CAMERA_EPSILON &&
         Math.abs(currentCamera.z - targetCamera.z) <= CAMERA_EPSILON
       ) {
-        return
+        return cameraToViewport(currentCamera)
       }
 
       editor.setCamera(targetCamera)
+
+      return cameraToViewport(editor.getCamera())
     }
 
     function pagePointFromClient(clientX: number, clientY: number) {
@@ -2002,6 +2007,18 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
 
     function handleDragOverCapture(event: ReactDragEvent<HTMLDivElement>) {
+      const targetDocumentDropZone =
+        containerRef.current &&
+        elementMatchingSelectorFromTarget(
+          event.target,
+          containerRef.current,
+          DOCUMENT_DROP_TARGET_SELECTOR
+        )
+
+      if (targetDocumentDropZone) {
+        return
+      }
+
       if (hasCollaboratorFilePayload(event.dataTransfer)) {
         event.preventDefault()
         event.dataTransfer.dropEffect = 'move'
@@ -2017,6 +2034,18 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
 
     function handleDropCapture(event: ReactDragEvent<HTMLDivElement>) {
+      const targetDocumentDropZone =
+        containerRef.current &&
+        elementMatchingSelectorFromTarget(
+          event.target,
+          containerRef.current,
+          DOCUMENT_DROP_TARGET_SELECTOR
+        )
+
+      if (targetDocumentDropZone) {
+        return
+      }
+
       if (hasCollaboratorFilePayload(event.dataTransfer)) {
         event.preventDefault()
         event.stopPropagation()
@@ -2588,6 +2617,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     <DocumentPane
                       fileKind={tile.type as FileKind}
                       filePath={tile.filePath as string}
+                      onImportImageFile={onImportImageFile}
                       onPassthroughScroll={panBy}
                       refreshToken={tileRefreshToken}
                       showTileRefreshButton={false}

@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.renderer.json"
   },
   "dependencies": {
+    "@tiptap/core": "^3.20.2",
     "@tiptap/markdown": "^3.20.2",
+    "@tiptap/pm": "^3.20.2",
     "@tiptap/react": "^3.20.2",
     "@tiptap/starter-kit": "^3.20.2",
     "@xterm/addon-fit": "^0.11.0",

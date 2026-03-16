@@ -243,6 +243,25 @@ textarea {
   margin: 0 0 1em;
 }
 
+.markdown-preview .markdown-image-node {
+  margin: 0 0 1em;
+}
+
+.markdown-preview .markdown-image-node__image {
+  display: block;
+  max-width: min(100%, 42rem);
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  cursor: grab;
+}
+
+.markdown-preview .markdown-image-node__image:active {
+  cursor: grabbing;
+}
+
 .markdown-preview ul,
 .markdown-preview ol {
   padding-left: 1.4em;
