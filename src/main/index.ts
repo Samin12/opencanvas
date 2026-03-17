@@ -145,8 +145,6 @@ async function createMainWindow(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-  await ensurePreviewServer()
-
   if (process.platform === 'darwin' && app.dock) {
     const dockIcon = electron.nativeImage.createFromPath(
       bundledResourcePath('resources', 'claude-canvas-icon.png')
@@ -156,6 +154,8 @@ app.whenReady().then(async () => {
       app.dock.setIcon(dockIcon)
     }
   }
+
+  await ensurePreviewServer()
 
   registerIpcHandlers()
   await createMainWindow()

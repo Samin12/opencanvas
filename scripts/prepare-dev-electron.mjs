@@ -32,6 +32,7 @@ const renamedExecutablePath = join(executableDir, APP_NAME)
 const macIconScript = resolve(projectRoot, 'scripts/build-mac-icon.mjs')
 const sourceIconPath = resolve(projectRoot, 'build/mac/icon.icns')
 const bundledIconPath = join(resourcesDir, `${APP_ICON_NAME}.icns`)
+const stockIconPath = join(resourcesDir, 'electron.icns')
 
 if (!existsSync(infoPlist)) {
   throw new Error(`Electron dev bundle not found at ${infoPlist}`)
@@ -45,17 +46,18 @@ if (!existsSync(renamedExecutablePath)) {
   throw new Error(`Electron executable not found at ${renamedExecutablePath}`)
 }
 
-if (!existsSync(sourceIconPath)) {
-  execFileSync(process.execPath, [macIconScript], {
-    stdio: 'ignore'
-  })
-}
+execFileSync(process.execPath, [macIconScript], {
+  stdio: 'ignore'
+})
 
 if (!existsSync(sourceIconPath)) {
   throw new Error(`Open Canvas icon not found at ${sourceIconPath}`)
 }
 
 copyFileSync(sourceIconPath, bundledIconPath)
+// Some Dock and Finder flows still fall back to Electron's stock icon name.
+// Keep that file in sync so the app never presents as generic Electron.
+copyFileSync(sourceIconPath, stockIconPath)
 
 function setPlistValue(plistPath, key, value) {
   execFileSync('/usr/libexec/PlistBuddy', ['-c', `Set :${key} ${value}`, plistPath], {
@@ -78,6 +80,15 @@ for (const [key, value] of plistUpdates) {
     // Electron's dev bundle already includes these keys; if one update fails,
     // don't block the local dev launcher from starting.
   }
+}
+
+try {
+  execFileSync('/usr/bin/touch', [bundledIconPath, stockIconPath, infoPlist, electronApp], {
+    stdio: 'ignore'
+  })
+} catch {
+  // If touch fails, the bundle is still usable; icon updates may just rely on
+  // the next clean launch instead of forcing Finder / Dock metadata refresh.
 }
 
 writeFileSync(electronPathFile, `${renamedBundleName}/Contents/MacOS/${APP_NAME}`)

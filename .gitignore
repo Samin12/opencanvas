@@ -3,7 +3,10 @@ out
 output
 .playwright-cli
 .electron-dev
-build
+build/*
+!build/mac/
+build/mac/*
+!build/mac/icon.icns
 release
 .DS_Store
 npm-debug.log*
