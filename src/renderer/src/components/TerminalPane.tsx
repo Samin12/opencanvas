@@ -28,6 +28,10 @@ interface TerminalPaneProps {
   sessionId: string
 }
 
+const DEFAULT_TERMINAL_FONT_SIZE = 12.5
+const MIN_TERMINAL_FONT_SIZE = 10
+const MAX_TERMINAL_FONT_SIZE = 19
+
 function terminalProviderUiLabel(provider: TerminalProvider) {
   return provider === 'codex' ? 'Codex' : 'Claude'
 }
@@ -68,7 +72,7 @@ function terminalTheme(darkMode: boolean) {
   if (darkMode) {
     return {
       background: '#0d1014',
-      foreground: '#d3d8e3',
+      foreground: '#e7edf8',
       cursor: '#f4f5f7',
       cursorAccent: '#0d1014',
       selectionBackground: 'rgba(120, 136, 160, 0.22)',
@@ -87,7 +91,7 @@ function terminalTheme(darkMode: boolean) {
       brightBlue: '#bfdbfe',
       brightMagenta: '#e9d5ff',
       brightCyan: '#a5f3fc',
-      brightWhite: '#f8fafc'
+      brightWhite: '#ffffff'
     }
   }
 
@@ -115,17 +119,6 @@ function terminalTheme(darkMode: boolean) {
     brightCyan: '#14b8a6',
     brightWhite: '#f8fafc'
   }
-}
-
-function isMostlyVerticalWheel(deltaX: number, deltaY: number) {
-  const absX = Math.abs(deltaX)
-  const absY = Math.abs(deltaY)
-
-  if (absY < 0.5) {
-    return false
-  }
-
-  return absY >= absX * 0.72
 }
 
 function activityAccent(activity: TerminalActivityItem) {
@@ -179,9 +172,14 @@ function TerminalPaneComponent({
   const bodyRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
+  const historyBodyRef = useRef<HTMLDivElement>(null)
+  const historyLoadingRef = useRef(false)
+  const historyOpenRef = useRef(false)
+  const historyScrollToBottomRef = useRef(false)
   const scrollbarTrackRef = useRef<HTMLDivElement>(null)
   const dragCleanupRef = useRef<(() => void) | null>(null)
   const activityRefreshTimerRef = useRef<number | null>(null)
+  const historyRequestIdRef = useRef(0)
   const activityRequestIdRef = useRef(0)
   const pendingSelectionCardTextRef = useRef('')
   const terminalWheelEnabledRef = useRef(false)
@@ -189,6 +187,10 @@ function TerminalPaneComponent({
   const terminalRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const [layout, setLayout] = useState<'split' | 'stack'>('split')
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyText, setHistoryText] = useState('')
+  const [historyError, setHistoryError] = useState<string | null>(null)
   const [activities, setActivities] = useState<TerminalActivityItem[]>([])
   const [activityLoading, setActivityLoading] = useState(false)
   const [activityError, setActivityError] = useState<string | null>(null)
@@ -197,6 +199,7 @@ function TerminalPaneComponent({
   const [sessionCwd, setSessionCwd] = useState<string | null>(cwd)
   const [selectedText, setSelectedText] = useState('')
   const [creatingCardKey, setCreatingCardKey] = useState<string | null>(null)
+  const [terminalFontSize, setTerminalFontSize] = useState(DEFAULT_TERMINAL_FONT_SIZE)
   const [status, setStatus] = useState<'connecting' | 'live' | 'exited' | 'error'>('connecting')
   const [scrollMetrics, setScrollMetrics] = useState({
     bufferType: 'normal' as 'normal' | 'alternate',
@@ -208,9 +211,10 @@ function TerminalPaneComponent({
   const statusMeta = terminalStatusMeta(status)
   const providerLabel = terminalProviderUiLabel(provider)
   const providerFullLabel = terminalProviderFullLabel(provider)
-  const shellFocusActive = isSelected && focusMode === 'shell'
-  const terminalWheelActive = isSelected
-  const chatFocusActive = isSelected && focusMode === 'chat'
+  const shellFocusActive = isSelected && focusMode === 'shell' && !historyOpen
+  const terminalWheelActive = isSelected && !historyOpen
+  const chatFocusActive = isSelected && focusMode === 'chat' && !historyOpen
+  const historyFocusActive = isSelected && historyOpen
   const hasLinkedContextPrompt = Boolean(contextPrompt?.trim())
 
   function canScrollTerminal(activeTerminal: Terminal) {
@@ -311,6 +315,30 @@ function TerminalPaneComponent({
     syncScrollMetrics(activeTerminal)
   }
 
+  function maybeOpenHistoryFromWheel(deltaX: number, deltaY: number) {
+    const terminal = terminalRef.current
+
+    if (
+      !terminalWheelEnabledRef.current ||
+      !terminal ||
+      historyOpenRef.current ||
+      historyLoadingRef.current
+    ) {
+      return false
+    }
+
+    if (Math.abs(deltaY) < 0.5 || Math.abs(deltaY) < Math.abs(deltaX) || deltaY >= 0) {
+      return false
+    }
+
+    if (canScrollTerminal(terminal)) {
+      return false
+    }
+
+    void loadHistory({ scrollToBottom: true })
+    return true
+  }
+
   function stopScrollbarDrag() {
     dragCleanupRef.current?.()
     dragCleanupRef.current = null
@@ -354,6 +382,16 @@ function TerminalPaneComponent({
     })
   }
 
+  function adjustTerminalFontSize(delta: number) {
+    setTerminalFontSize((current) =>
+      Math.min(MAX_TERMINAL_FONT_SIZE, Math.max(MIN_TERMINAL_FONT_SIZE, current + delta))
+    )
+  }
+
+  function resetTerminalFontSize() {
+    setTerminalFontSize(DEFAULT_TERMINAL_FONT_SIZE)
+  }
+
   function stopScheduledActivityRefresh() {
     if (activityRefreshTimerRef.current !== null) {
       window.clearTimeout(activityRefreshTimerRef.current)
@@ -394,6 +432,49 @@ function TerminalPaneComponent({
     } finally {
       if (activityRequestIdRef.current === requestId) {
         setActivityLoading(false)
+      }
+    }
+  }
+
+  function closeHistory() {
+    setHistoryOpen(false)
+    window.requestAnimationFrame(() => {
+      if (focusMode === 'chat') {
+        composerRef.current?.focus()
+      } else {
+        terminalRef.current?.focus()
+      }
+    })
+  }
+
+  async function loadHistory(options?: { scrollToBottom?: boolean }) {
+    const requestId = historyRequestIdRef.current + 1
+    historyRequestIdRef.current = requestId
+    historyScrollToBottomRef.current = options?.scrollToBottom ?? true
+    setHistoryOpen(true)
+    setHistoryLoading(true)
+    setHistoryError(null)
+    onFocusModeChange('chat')
+
+    try {
+      const nextHistory = await window.collaborator.readTerminalHistory(sessionId, 50_000)
+
+      if (historyRequestIdRef.current !== requestId) {
+        return
+      }
+
+      setHistoryText(nextHistory)
+    } catch (error) {
+      if (historyRequestIdRef.current !== requestId) {
+        return
+      }
+
+      setHistoryError(
+        error instanceof Error ? error.message : 'Unable to read tmux history for this terminal.'
+      )
+    } finally {
+      if (historyRequestIdRef.current === requestId) {
+        setHistoryLoading(false)
       }
     }
   }
@@ -489,8 +570,8 @@ function TerminalPaneComponent({
       convertEol: false,
       drawBoldTextInBrightColors: false,
       fontFamily: '"SFMono-Regular", "IBM Plex Mono", Menlo, monospace',
-      fontSize: 11.5,
-      lineHeight: 1.35,
+      fontSize: terminalFontSize,
+      lineHeight: 1.45,
       macOptionIsMeta: true,
       scrollOnEraseInDisplay: true,
       scrollOnUserInput: false,
@@ -508,16 +589,22 @@ function TerminalPaneComponent({
     fitRef.current = fitAddon
     syncTerminalWheelAttributes(host, terminalWheelActive)
 
-    const handleHostWheel = (event: WheelEvent) => {
+    const viewport = host.querySelector<HTMLElement>('.xterm-viewport')
+    const handleViewportWheel = (event: WheelEvent) => {
       if (!terminalWheelEnabledRef.current) {
         return
       }
 
-      if (!isMostlyVerticalWheel(event.deltaX, event.deltaY)) {
+      if (Math.abs(event.deltaY) < 0.5 || Math.abs(event.deltaY) < Math.abs(event.deltaX)) {
         return
       }
 
       if (!canScrollTerminal(terminal)) {
+        if (maybeOpenHistoryFromWheel(event.deltaX, event.deltaY)) {
+          event.preventDefault()
+          event.stopPropagation()
+          event.stopImmediatePropagation?.()
+        }
         return
       }
 
@@ -527,7 +614,7 @@ function TerminalPaneComponent({
       scrollTerminalByWheelDelta(terminal, event.deltaY, event.deltaMode)
     }
 
-    host.addEventListener('wheel', handleHostWheel, { passive: false, capture: true })
+    viewport?.addEventListener('wheel', handleViewportWheel, { passive: false, capture: true })
 
     const disposeData = terminal.onData((data) => {
       window.collaborator.writeTerminalInput(sessionId, data)
@@ -646,7 +733,7 @@ function TerminalPaneComponent({
       resizeObserver.disconnect()
       stopScheduledActivityRefresh()
       stopScrollbarDrag()
-      host.removeEventListener('wheel', handleHostWheel, true)
+      viewport?.removeEventListener('wheel', handleViewportWheel, true)
       detachTerminalActivity()
       detachTerminalData()
       detachTerminalExit()
@@ -672,12 +759,37 @@ function TerminalPaneComponent({
   }, [shellFocusActive, terminalWheelActive])
 
   useEffect(() => {
-    if (!chatFocusActive) {
+    if (!chatFocusActive || historyOpen) {
       return
     }
 
     composerRef.current?.focus()
-  }, [chatFocusActive])
+  }, [chatFocusActive, historyOpen])
+
+  useEffect(() => {
+    historyOpenRef.current = historyOpen
+  }, [historyOpen])
+
+  useEffect(() => {
+    historyLoadingRef.current = historyLoading
+  }, [historyLoading])
+
+  useEffect(() => {
+    if (!historyOpen || historyLoading || !historyScrollToBottomRef.current) {
+      return
+    }
+
+    const historyBody = historyBodyRef.current
+
+    if (!historyBody) {
+      return
+    }
+
+    window.requestAnimationFrame(() => {
+      historyBody.scrollTop = historyBody.scrollHeight
+      historyScrollToBottomRef.current = false
+    })
+  }, [historyLoading, historyOpen, historyText])
 
   useEffect(() => {
     return () => {
@@ -687,7 +799,12 @@ function TerminalPaneComponent({
   }, [])
 
   useEffect(() => {
+    historyRequestIdRef.current += 1
     activityRequestIdRef.current += 1
+    setHistoryOpen(false)
+    setHistoryLoading(false)
+    setHistoryText('')
+    setHistoryError(null)
     setActivityLoading(false)
     setActivityError(null)
     setActivities([])
@@ -696,6 +813,7 @@ function TerminalPaneComponent({
     terminalWheelRemainderRef.current = 0
     stopScheduledActivityRefresh()
     stopScrollbarDrag()
+    historyScrollToBottomRef.current = false
     pendingSelectionCardTextRef.current = ''
     setComposerValue('')
   }, [sessionId])
@@ -708,7 +826,22 @@ function TerminalPaneComponent({
     terminalRef.current.options.theme = terminalTheme(darkMode)
   }, [darkMode])
 
+  useEffect(() => {
+    const terminal = terminalRef.current
+    const fitAddon = fitRef.current
+
+    if (!terminal || !fitAddon) {
+      return
+    }
+
+    terminal.options.fontSize = terminalFontSize
+    fitAddon.fit()
+    window.collaborator.resizeTerminalSession(sessionId, terminal.cols, terminal.rows)
+    syncScrollMetrics(terminal)
+  }, [sessionId, terminalFontSize])
+
   const hasVisibleTerminalScrollback = scrollMetrics.maxViewportY > 0
+  const canOpenHistoryRail = isSelected && !historyOpen && !hasVisibleTerminalScrollback
   const thumbHeightPercent =
     scrollMetrics.maxViewportY > 0
       ? Math.max(8, (scrollMetrics.rows / (scrollMetrics.rows + scrollMetrics.maxViewportY)) * 100)
@@ -727,6 +860,43 @@ function TerminalPaneComponent({
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[color:var(--line)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]">
         <div className="inline-flex items-center gap-2">
           <span>{providerFullLabel}</span>
+          <div className="inline-flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-1 py-1">
+            <button
+              type="button"
+              className="rounded-[4px] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)] disabled:opacity-40"
+              disabled={terminalFontSize <= MIN_TERMINAL_FONT_SIZE}
+              title="Decrease terminal text size"
+              onClick={() => {
+                adjustTerminalFontSize(-1)
+              }}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              A-
+            </button>
+            <button
+              type="button"
+              className="rounded-[4px] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+              title="Reset terminal text size"
+              onClick={() => {
+                resetTerminalFontSize()
+              }}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              {Math.round(terminalFontSize)}
+            </button>
+            <button
+              type="button"
+              className="rounded-[4px] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)] disabled:opacity-40"
+              disabled={terminalFontSize >= MAX_TERMINAL_FONT_SIZE}
+              title="Increase terminal text size"
+              onClick={() => {
+                adjustTerminalFontSize(1)
+              }}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              A+
+            </button>
+          </div>
           <button
             type="button"
             className={clsx(
@@ -752,6 +922,16 @@ function TerminalPaneComponent({
             onMouseDown={(event) => event.stopPropagation()}
           >
             Shell
+          </button>
+          <button
+            type="button"
+            className="rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]"
+            onClick={() => {
+              void loadHistory()
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            History
           </button>
           <button
             type="button"
@@ -796,6 +976,20 @@ function TerminalPaneComponent({
           'min-h-0 flex flex-1',
           activityOpen ? (layout === 'split' ? 'flex-row' : 'flex-col') : 'flex-col'
         )}
+        onMouseDown={(event) => {
+          if (event.button !== 0) {
+            return
+          }
+
+          event.stopPropagation()
+          focusShell()
+        }}
+        onWheelCapture={(event) => {
+          if (maybeOpenHistoryFromWheel(event.deltaX, event.deltaY)) {
+            event.preventDefault()
+            event.stopPropagation()
+          }
+        }}
       >
         <div
           className={clsx(
@@ -805,25 +999,6 @@ function TerminalPaneComponent({
           )}
           data-native-wheel={terminalWheelActive ? 'true' : undefined}
           data-scroll-lock={terminalWheelActive ? 'true' : undefined}
-          onWheelCapture={(event) => {
-            const terminal = terminalRef.current
-
-            if (!terminalWheelEnabledRef.current || !terminal) {
-              return
-            }
-
-            if (!isMostlyVerticalWheel(event.deltaX, event.deltaY)) {
-              return
-            }
-
-            if (!canScrollTerminal(terminal)) {
-              return
-            }
-
-            event.preventDefault()
-            event.stopPropagation()
-            scrollTerminalByWheelDelta(terminal, event.deltaY, event.deltaMode)
-          }}
         >
           <div
             ref={hostRef}
@@ -834,7 +1009,63 @@ function TerminalPaneComponent({
             }}
           />
 
-          {isSelected ? (
+          {historyOpen ? (
+            <div
+              className="absolute inset-0 z-30 flex flex-col bg-[color:var(--surface-overlay)] backdrop-blur-sm"
+              data-native-wheel={historyFocusActive ? 'true' : undefined}
+              data-scroll-lock={historyFocusActive ? 'true' : undefined}
+              data-shortcut-lock="true"
+              onMouseDown={(event) => {
+                event.stopPropagation()
+                onFocusModeChange('chat')
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-[color:var(--line)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]">
+                <span>Tmux History</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
+                    disabled={historyLoading}
+                    onClick={() => {
+                      void loadHistory()
+                    }}
+                  >
+                    Refresh
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]"
+                    onClick={closeHistory}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+              <div
+                ref={historyBodyRef}
+                className="min-h-0 flex-1 overflow-x-hidden overflow-y-scroll px-3 py-3"
+                data-native-wheel={historyFocusActive ? 'true' : undefined}
+                data-scroll-lock={historyFocusActive ? 'true' : undefined}
+                style={{ scrollbarGutter: 'stable' }}
+              >
+                {historyLoading ? (
+                  <div className="text-[12px] text-[var(--text-dim)]">Loading tmux history...</div>
+                ) : historyError ? (
+                  <div className="text-[12px] text-[var(--error-text)]">{historyError}</div>
+                ) : (
+                  <pre className="m-0 whitespace-pre-wrap break-words font-[var(--font-mono)] text-[12px] leading-6 text-[var(--text)]">
+                    {historyText.length > 0
+                      ? historyText
+                      : 'No tmux history is available for this terminal yet.'}
+                  </pre>
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          {isSelected && !historyOpen && hasVisibleTerminalScrollback ? (
             <div
               ref={scrollbarTrackRef}
               className="absolute bottom-2 right-1.5 top-2 z-20 w-3 rounded-full bg-[rgba(15,23,42,0.08)]"
@@ -860,6 +1091,24 @@ function TerminalPaneComponent({
                 }}
               />
             </div>
+          ) : null}
+
+          {canOpenHistoryRail ? (
+            <button
+              type="button"
+              className="absolute bottom-2 right-1.5 top-2 z-20 flex w-5 items-center justify-center rounded-full border border-[color:var(--line)] bg-[rgba(255,253,250,0.92)] px-0 text-[8px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)] shadow-[0_10px_24px_rgba(15,23,42,0.08)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] dark:bg-[rgba(13,16,20,0.92)]"
+              style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+              title="Open tmux scrollback"
+              onClick={() => {
+                void loadHistory({ scrollToBottom: true })
+              }}
+              onMouseDown={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+            >
+              History
+            </button>
           ) : null}
         </div>
 
