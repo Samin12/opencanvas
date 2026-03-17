@@ -40,6 +40,7 @@ TLDraw still makes sense later for:
 - Node.js and npm
 - `tmux` installed and available on your `PATH`
 - Claude Code installed and available as the `claude` command on your `PATH`
+- Codex installed and available as the `codex` command on your `PATH` if you want Codex terminals
 - Docker Desktop or Docker Engine if you want full-fidelity Excel / PowerPoint viewing
 
 On macOS, install `tmux` with:
@@ -48,7 +49,17 @@ On macOS, install `tmux` with:
 brew install tmux
 ```
 
-If you launch Claude with a different command, set `COLLABORATOR_CLAUDE_COMMAND` before starting the app.
+By default, Open Canvas launches:
+
+- `claude --dangerously-skip-permissions`
+- `codex --dangerously-bypass-approvals-and-sandbox`
+
+If you want different launch commands, override them before starting the app:
+
+```bash
+export COLLABORATOR_CLAUDE_COMMAND="claude"
+export COLLABORATOR_CODEX_COMMAND="codex"
+```
 
 ## Office viewer
 

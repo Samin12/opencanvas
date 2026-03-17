@@ -26,8 +26,9 @@ const TMUX_SOCKET_NAME = process.env.OPEN_CANVAS_TMUX_SOCKET?.trim() || 'collabo
 const TERMINAL_SESSIONS_DIRECTORY = join(APP_DIRECTORY, 'terminal-sessions')
 const TMUX_CONFIG_PATH = join(APP_DIRECTORY, 'tmux.conf')
 const TERMINAL_START_COMMANDS: Record<TerminalProvider, string> = {
-  claude: process.env.COLLABORATOR_CLAUDE_COMMAND ?? 'claude',
-  codex: process.env.COLLABORATOR_CODEX_COMMAND ?? 'codex'
+  claude: process.env.COLLABORATOR_CLAUDE_COMMAND ?? 'claude --dangerously-skip-permissions',
+  codex:
+    process.env.COLLABORATOR_CODEX_COMMAND ?? 'codex --dangerously-bypass-approvals-and-sandbox'
 }
 const TMUX_DEFAULT_TERMINAL_CANDIDATES = ['tmux-256color', 'screen-256color', 'xterm-256color']
 const TMUX_BINARY_CANDIDATES = [
