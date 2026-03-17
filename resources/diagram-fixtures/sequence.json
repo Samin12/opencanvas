@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "skill": "open-canvas-diagrams",
+  "requestId": "req_sequence_fixture",
+  "createdAt": "2026-03-16T22:03:00.000Z",
+  "promptSummary": "Fixture sequence",
+  "diagrams": [
+    {
+      "id": "signup-sequence",
+      "title": "Signup Sequence",
+      "kind": "sequence",
+      "nodes": [
+        { "id": "user", "label": "User enters email", "kind": "actor", "lane": "User", "order": 1 },
+        { "id": "frontend", "label": "Submit form", "kind": "process", "lane": "Frontend", "order": 2 },
+        { "id": "api", "label": "Create account", "kind": "service", "lane": "API", "order": 3 },
+        { "id": "mailer", "label": "Send welcome email", "kind": "service", "lane": "Email", "order": 4 }
+      ],
+      "edges": [
+        { "id": "s1", "from": "user", "to": "frontend" },
+        { "id": "s2", "from": "frontend", "to": "api" },
+        { "id": "s3", "from": "api", "to": "mailer" }
+      ]
+    }
+  ]
+}

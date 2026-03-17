@@ -149,6 +149,94 @@ export interface RenameWorkspaceNodeOptions {
   targetPath: string
 }
 
+export type CanvasDiagramKind =
+  | 'flowchart'
+  | 'system-architecture'
+  | 'mind-map'
+  | 'sequence'
+  | 'org-chart'
+  | 'timeline'
+
+export type CanvasDiagramNodeKind =
+  | 'process'
+  | 'decision'
+  | 'data'
+  | 'actor'
+  | 'service'
+  | 'database'
+  | 'document'
+  | 'container'
+  | 'note'
+  | 'event'
+
+export type CanvasDiagramLayoutKind = 'grid' | 'flow' | 'radial' | 'sequence' | 'tree' | 'timeline'
+
+export interface CanvasDiagramNode {
+  cluster?: string
+  emphasis?: 'normal' | 'high'
+  id: string
+  kind: CanvasDiagramNodeKind
+  label: string
+  lane?: string
+  order?: number
+  parentId?: string
+}
+
+export interface CanvasDiagramEdge {
+  direction?: 'one-way' | 'two-way'
+  from: string
+  id: string
+  label?: string
+  style?: 'solid' | 'dashed'
+  to: string
+}
+
+export interface CanvasDiagramSpec {
+  id: string
+  kind: CanvasDiagramKind
+  layout?: CanvasDiagramLayoutKind
+  nodes: CanvasDiagramNode[]
+  edges: CanvasDiagramEdge[]
+  summary?: string
+  title: string
+}
+
+export interface CanvasDiagramEnvelope {
+  createdAt: string
+  diagrams: CanvasDiagramSpec[]
+  promptSummary: string
+  requestId: string
+  skill: 'open-canvas-diagrams'
+  version: 1
+}
+
+export interface CanvasDiagramQueueIndexEntry {
+  createdAt: string
+  file: string
+  promptSummary: string
+  requestId: string
+}
+
+export interface CanvasDiagramQueueFailureEntry {
+  error: string
+  failedAt: string
+  file: string
+  requestId: string
+}
+
+export interface CanvasDiagramQueueIndex {
+  failed: CanvasDiagramQueueFailureEntry[]
+  pending: CanvasDiagramQueueIndexEntry[]
+  processed: string[]
+  version: 1
+}
+
+export interface EnsureWorkspaceDiagramToolsResult {
+  claudePath: string
+  commandPath: string
+  queueIndexPath: string
+}
+
 export interface TerminalProviderDependencyState {
   command: string
   installed: boolean
@@ -246,6 +334,7 @@ export interface CollaboratorApi {
   readWorkspaceTree: (workspacePath: string) => Promise<FileTreeNode[]>
   readTextFile: (filePath: string) => Promise<TextFileDocument>
   writeTextFile: (filePath: string, content: string) => Promise<TextFileDocument>
+  ensureWorkspaceDiagramTools: (workspacePath: string) => Promise<EnsureWorkspaceDiagramToolsResult>
   onFileChanged: (filePath: string, listener: () => void) => () => void
   fileUrl: (filePath: string) => Promise<string>
   previewFileUrl: (filePath: string) => Promise<string>

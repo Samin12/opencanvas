@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "skill": "open-canvas-diagrams",
+  "requestId": "req_architecture_fixture",
+  "createdAt": "2026-03-16T22:01:00.000Z",
+  "promptSummary": "Fixture architecture",
+  "diagrams": [
+    {
+      "id": "platform-overview",
+      "title": "Platform Overview",
+      "kind": "system-architecture",
+      "nodes": [
+        { "id": "user", "label": "User", "kind": "actor", "cluster": "Clients" },
+        { "id": "web", "label": "Web App", "kind": "service", "cluster": "Clients" },
+        { "id": "api", "label": "API", "kind": "service", "cluster": "Runtime", "emphasis": "high" },
+        { "id": "queue", "label": "Job Queue", "kind": "container", "cluster": "Runtime" },
+        { "id": "db", "label": "Primary DB", "kind": "database", "cluster": "Data" }
+      ],
+      "edges": [
+        { "id": "a1", "from": "user", "to": "web" },
+        { "id": "a2", "from": "web", "to": "api" },
+        { "id": "a3", "from": "api", "to": "queue" },
+        { "id": "a4", "from": "api", "to": "db", "label": "reads / writes" }
+      ]
+    }
+  ]
+}

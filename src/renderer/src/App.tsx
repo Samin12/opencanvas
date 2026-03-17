@@ -3,7 +3,9 @@ import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import type {
   AppConfig,
+  CanvasDiagramQueueIndex,
   CanvasState,
+  EnsureWorkspaceDiagramToolsResult,
   FileTreeNode,
   OfficeViewerBootstrap,
   SidebarSide,
@@ -20,6 +22,12 @@ import {
 } from './components/SearchDialog'
 import { Sidebar } from './components/Sidebar'
 import { ViewerOverlay } from './components/ViewerOverlay'
+import {
+  parseCanvasDiagramEnvelopeJson,
+  parseExcalidrawPayloadJson,
+  parseCanvasDiagramQueueIndex,
+  resolveWorkspaceRelativePath
+} from './utils/canvasDiagramValidation'
 import { extractPastedUrl } from './utils/embedTiles'
 import { keyboardShortcutsBlocked } from './utils/keyboard'
 import { installButtonTooltipSync } from './utils/buttonTooltips'
@@ -166,6 +174,56 @@ function emptyCanvasState(): CanvasState {
   }
 }
 
+function diagramQueueArchivePath(workspacePath: string, requestId: string) {
+  return resolveWorkspaceRelativePath(
+    workspacePath,
+    `.claude-canvas/diagram-inbox/archive/${requestId}.oc-diagrams.json`
+  )
+}
+
+function diagramQueueFailedPath(workspacePath: string, requestId: string) {
+  return resolveWorkspaceRelativePath(
+    workspacePath,
+    `.claude-canvas/diagram-inbox/failed/${requestId}.oc-diagrams.json`
+  )
+}
+
+function toWorkspaceRelativeDiagramPath(targetPath: string) {
+  const normalizedTargetPath = targetPath.replace(/\\/g, '/')
+  const marker = '/.claude-canvas/'
+  const markerIndex = normalizedTargetPath.indexOf(marker)
+
+  return (markerIndex >= 0 ? normalizedTargetPath.slice(markerIndex + 1) : normalizedTargetPath).replace(
+    /^\.\//,
+    ''
+  )
+}
+
+function errorMessageFromUnknown(error: unknown) {
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+    return error.message
+  }
+
+  if (typeof error === 'string') {
+    return error
+  }
+
+  return ''
+}
+
+function isMissingPathError(error: unknown) {
+  const message = errorMessageFromUnknown(error)
+  return /ENOENT|no such file or directory/i.test(message)
+}
+
+function writeDiagramQueueIndex(indexPath: string, index: CanvasDiagramQueueIndex) {
+  return window.collaborator.writeTextFile(indexPath, `${JSON.stringify(index, null, 2)}\n`)
+}
+
 async function copyTextWithBrowserFallback(text: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text)
@@ -207,6 +265,11 @@ export default function App() {
   const canvasStateRef = useRef<CanvasState | null>(null)
   const canvasWorkspaceRef = useRef<string | null>(null)
   const canvasLoadRequestRef = useRef(0)
+  const diagramToolsRef = useRef<EnsureWorkspaceDiagramToolsResult | null>(null)
+  const diagramQueueStopRef = useRef<(() => void) | null>(null)
+  const diagramQueueWorkspaceRef = useRef<string | null>(null)
+  const diagramQueueProcessingRef = useRef(false)
+  const diagramQueuePendingRef = useRef(false)
 
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [canvasState, setCanvasState] = useState<CanvasState | null>(null)
@@ -228,6 +291,8 @@ export default function App() {
   const [bootError, setBootError] = useState<string | null>(null)
   const [officeViewer, setOfficeViewer] = useState<OfficeViewerBootstrap | null>(null)
   const [terminalDependencies, setTerminalDependencies] = useState<TerminalDependencyState | null>(null)
+  const [diagramTools, setDiagramTools] = useState<EnsureWorkspaceDiagramToolsResult | null>(null)
+  const [boardReadyVersion, setBoardReadyVersion] = useState(0)
 
   const activeWorkspace = config ? config.workspaces[config.activeWorkspace] ?? null : null
   const flatFiles = useMemo(() => flattenFiles(workspaceTree), [workspaceTree])
@@ -319,6 +384,149 @@ export default function App() {
     }
 
     await window.collaborator.saveCanvasState(canvasWorkspaceRef.current, canvasStateRef.current)
+  }
+
+  async function processDiagramQueue(workspacePath: string, queueIndexPath: string) {
+    if (diagramQueueProcessingRef.current) {
+      diagramQueuePendingRef.current = true
+      return
+    }
+
+    if (!canvasRef.current) {
+      diagramQueuePendingRef.current = true
+      return
+    }
+
+    diagramQueueProcessingRef.current = true
+
+    try {
+      while (diagramQueueWorkspaceRef.current === workspacePath) {
+        const queueDocument = await window.collaborator.readTextFile(queueIndexPath)
+        const queueIndex = parseCanvasDiagramQueueIndex(queueDocument.content)
+        const nextPending = queueIndex.pending.find(
+          (entry) => !queueIndex.processed.includes(entry.requestId)
+        )
+
+        if (!nextPending) {
+          break
+        }
+
+        const requestPath = resolveWorkspaceRelativePath(workspacePath, nextPending.file)
+        let requestContent = ''
+
+        try {
+          const requestDocument = await window.collaborator.readTextFile(requestPath)
+          requestContent = requestDocument.content
+
+          const parsedEnvelope = parseCanvasDiagramEnvelopeJson(requestDocument.content)
+          const parsedExcalidraw = !parsedEnvelope.value
+            ? parseExcalidrawPayloadJson(requestDocument.content)
+            : null
+
+          if (parsedEnvelope.value) {
+            canvasRef.current.importDiagramSet(parsedEnvelope.value)
+          } else if (parsedExcalidraw?.value) {
+            await canvasRef.current.importExcalidrawContent(
+              parsedExcalidraw.value,
+              nextPending.promptSummary
+            )
+          } else {
+            throw new Error(
+              parsedEnvelope.error ??
+                parsedExcalidraw?.error ??
+                'The diagram request is invalid.'
+            )
+          }
+
+          const archiveRequestId = parsedEnvelope.value?.requestId ?? nextPending.requestId
+          const archivePath = diagramQueueArchivePath(workspacePath, archiveRequestId)
+          await window.collaborator.writeTextFile(archivePath, requestDocument.content)
+
+          try {
+            await window.collaborator.deleteWorkspaceNode(workspacePath, requestPath)
+          } catch (error) {
+            if (!(error instanceof Error) || !/ENOENT/i.test(error.message)) {
+              throw error
+            }
+          }
+
+          await writeDiagramQueueIndex(queueIndexPath, {
+            version: 1,
+            pending: queueIndex.pending.filter((entry) => entry.requestId !== nextPending.requestId),
+            processed: Array.from(new Set([...queueIndex.processed, archiveRequestId])),
+            failed: queueIndex.failed.filter((entry) => entry.requestId !== archiveRequestId)
+          })
+        } catch (error) {
+          const failureMessage =
+            errorMessageFromUnknown(error) || 'The diagram request could not be imported.'
+          const archivePath = diagramQueueArchivePath(workspacePath, nextPending.requestId)
+
+          if (!requestContent.length && isMissingPathError(error)) {
+            try {
+              await window.collaborator.readTextFile(archivePath)
+
+              await writeDiagramQueueIndex(queueIndexPath, {
+                version: 1,
+                pending: queueIndex.pending.filter((entry) => entry.requestId !== nextPending.requestId),
+                processed: Array.from(new Set([...queueIndex.processed, nextPending.requestId])),
+                failed: queueIndex.failed.filter((entry) => entry.requestId !== nextPending.requestId)
+              })
+              continue
+            } catch {
+              // Fall through to the regular failure path when the archive is missing too.
+            }
+          }
+
+          const failedAt = new Date().toISOString()
+          const failedPath = diagramQueueFailedPath(workspacePath, nextPending.requestId)
+
+          if (requestContent.length > 0) {
+            await window.collaborator.writeTextFile(failedPath, requestContent)
+
+            try {
+              await window.collaborator.deleteWorkspaceNode(workspacePath, requestPath)
+            } catch {
+              // Keep the original request if cleanup fails so the payload is not lost.
+            }
+          }
+
+          await writeDiagramQueueIndex(queueIndexPath, {
+            version: 1,
+            pending: queueIndex.pending.filter((entry) => entry.requestId !== nextPending.requestId),
+            processed: queueIndex.processed,
+            failed: [
+              ...queueIndex.failed.filter((entry) => entry.requestId !== nextPending.requestId),
+              {
+                requestId: nextPending.requestId,
+                file:
+                  requestContent.length > 0
+                    ? toWorkspaceRelativeDiagramPath(failedPath)
+                    : nextPending.file,
+                error: failureMessage,
+                failedAt
+              }
+            ]
+          })
+
+          setWorkspaceError(
+            `A canvas diagram request could not be imported: ${failureMessage}`
+          )
+        }
+      }
+    } catch (error) {
+      setWorkspaceError(
+        error instanceof Error && error.message
+          ? `Canvas diagram queue processing failed: ${error.message}`
+          : 'Canvas diagram queue processing failed.'
+      )
+    } finally {
+      diagramQueueProcessingRef.current = false
+
+      if (diagramQueuePendingRef.current && diagramQueueWorkspaceRef.current === workspacePath) {
+        diagramQueuePendingRef.current = false
+        void processDiagramQueue(workspacePath, queueIndexPath)
+      }
+    }
   }
 
   useEffect(() => {
@@ -417,6 +625,67 @@ export default function App() {
   }, [activeWorkspace, config])
 
   useEffect(() => {
+    diagramQueueStopRef.current?.()
+    diagramQueueStopRef.current = null
+    diagramToolsRef.current = null
+    setDiagramTools(null)
+    setBoardReadyVersion(0)
+    diagramQueueWorkspaceRef.current = activeWorkspace
+    diagramQueuePendingRef.current = false
+
+    if (!activeWorkspace) {
+      return
+    }
+
+    let cancelled = false
+
+    void (async () => {
+      try {
+        const tools = await window.collaborator.ensureWorkspaceDiagramTools(activeWorkspace)
+
+        if (cancelled) {
+          return
+        }
+
+        diagramToolsRef.current = tools
+        setDiagramTools(tools)
+
+        const processQueue = () => {
+          void processDiagramQueue(activeWorkspace, tools.queueIndexPath)
+        }
+
+        diagramQueueStopRef.current = window.collaborator.onFileChanged(
+          tools.queueIndexPath,
+          processQueue
+        )
+        processQueue()
+      } catch (error) {
+        if (!cancelled) {
+          setWorkspaceError(
+            error instanceof Error && error.message
+              ? `Canvas diagram tools could not be installed: ${error.message}`
+              : 'Canvas diagram tools could not be installed.'
+          )
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      diagramQueueStopRef.current?.()
+      diagramQueueStopRef.current = null
+    }
+  }, [activeWorkspace])
+
+  useEffect(() => {
+    if (!activeWorkspace || !canvasState || !diagramTools || !canvasRef.current || boardReadyVersion === 0) {
+      return
+    }
+
+    void processDiagramQueue(activeWorkspace, diagramTools.queueIndexPath)
+  }, [activeWorkspace, boardReadyVersion, canvasState, diagramTools])
+
+  useEffect(() => {
     setSelectedTreePath(null)
     setViewerFile(null)
   }, [activeWorkspace])
@@ -504,6 +773,8 @@ export default function App() {
 
   useEffect(() => {
     return () => {
+      diagramQueueStopRef.current?.()
+
       if (canvasFrameRef.current !== null) {
         window.cancelAnimationFrame(canvasFrameRef.current)
       }
@@ -1517,6 +1788,9 @@ export default function App() {
             darkMode={darkMode}
             key={canvasWorkspacePath ?? 'no-workspace'}
             officeViewer={officeViewer}
+            onBoardReady={() => {
+              setBoardReadyVersion((currentVersion) => currentVersion + 1)
+            }}
             ref={canvasRef}
             onCreateMarkdownCard={({ baseName, initialContent, targetDirectoryPath }) =>
               createWorkspaceMarkdownNote({ baseName, initialContent, targetDirectoryPath })

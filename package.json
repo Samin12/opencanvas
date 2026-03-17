@@ -4,10 +4,16 @@
   "version": "0.1.0",
   "description": "Spatial whiteboard workspace for Open Canvas development",
   "main": "./out/main/index.cjs",
+  "bin": {
+    "open-canvas-cli": "./scripts/open-canvas-cli.mjs"
+  },
   "type": "module",
   "scripts": {
+    "cli": "node scripts/open-canvas-cli.mjs",
+    "control:server": "node scripts/open-canvas-control-server.mjs",
     "dev": "node scripts/prepare-dev-electron.mjs && env -u ELECTRON_RUN_AS_NODE electron-vite dev",
     "build": "electron-vite build",
+    "check:diagram-fixtures": "node scripts/check-diagram-fixtures.mjs",
     "dist:mac": "node scripts/build-mac-icon.mjs && npm run build && electron-builder --mac dmg",
     "office:up": "docker compose -f docker-compose.onlyoffice.yml up -d",
     "office:down": "docker compose -f docker-compose.onlyoffice.yml down",
@@ -61,7 +67,8 @@
       "package.json"
     ],
     "extraResources": [
-      "resources/**"
+      "resources/**",
+      ".codex/skills/open-canvas-diagrams/**"
     ],
     "mac": {
       "category": "public.app-category.productivity",

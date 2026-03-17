@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "skill": "open-canvas-diagrams",
+  "requestId": "req_flowchart_fixture",
+  "createdAt": "2026-03-16T22:00:00.000Z",
+  "promptSummary": "Fixture flowchart",
+  "diagrams": [
+    {
+      "id": "launch-flow",
+      "title": "Launch Flow",
+      "kind": "flowchart",
+      "nodes": [
+        { "id": "start", "label": "Start", "kind": "event", "order": 1 },
+        { "id": "draft", "label": "Draft plan", "kind": "process", "order": 2 },
+        { "id": "review", "label": "Review ready?", "kind": "decision", "order": 3, "emphasis": "high" },
+        { "id": "publish", "label": "Publish", "kind": "process", "order": 4 }
+      ],
+      "edges": [
+        { "id": "e1", "from": "start", "to": "draft" },
+        { "id": "e2", "from": "draft", "to": "review" },
+        { "id": "e3", "from": "review", "to": "publish", "label": "yes" }
+      ]
+    }
+  ]
+}

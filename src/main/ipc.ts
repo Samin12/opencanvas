@@ -16,6 +16,7 @@ import type {
 
 import { createOfficeViewerSession, readOfficeViewerBootstrap } from './onlyOffice'
 import { previewFileUrl } from './previewServer'
+import { ensureWorkspaceDiagramTools } from './diagramTools'
 import {
   loadCanvasState,
   loadConfig,
@@ -136,6 +137,9 @@ export function registerIpcHandlers(): void {
     shell.showItemInFolder(resolvedTargetPath)
   })
   ipcMain.handle('workspace:tree', async (_event, workspacePath: string) => readWorkspaceTree(workspacePath))
+  ipcMain.handle('workspace:ensure-diagram-tools', async (_event, workspacePath: string) =>
+    ensureWorkspaceDiagramTools(workspacePath)
+  )
   ipcMain.handle(
     'workspace:create-note',
     async (_event, workspacePath: string, options?: CreateWorkspaceNoteOptions) =>

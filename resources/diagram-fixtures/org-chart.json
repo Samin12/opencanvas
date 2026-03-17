@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "skill": "open-canvas-diagrams",
+  "requestId": "req_org_fixture",
+  "createdAt": "2026-03-16T22:04:00.000Z",
+  "promptSummary": "Fixture org chart",
+  "diagrams": [
+    {
+      "id": "delivery-team",
+      "title": "Delivery Team",
+      "kind": "org-chart",
+      "nodes": [
+        { "id": "lead", "label": "Delivery Lead", "kind": "actor", "order": 1, "emphasis": "high" },
+        { "id": "pm", "label": "Project Manager", "kind": "actor", "order": 2 },
+        { "id": "design", "label": "Designer", "kind": "actor", "order": 3 },
+        { "id": "eng", "label": "Engineer", "kind": "actor", "order": 4 }
+      ],
+      "edges": [
+        { "id": "o1", "from": "lead", "to": "pm" },
+        { "id": "o2", "from": "lead", "to": "design" },
+        { "id": "o3", "from": "lead", "to": "eng" }
+      ]
+    }
+  ]
+}

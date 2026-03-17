@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "skill": "open-canvas-diagrams",
+  "requestId": "req_timeline_fixture",
+  "createdAt": "2026-03-16T22:05:00.000Z",
+  "promptSummary": "Fixture timeline",
+  "diagrams": [
+    {
+      "id": "launch-timeline",
+      "title": "Launch Timeline",
+      "kind": "timeline",
+      "nodes": [
+        { "id": "research", "label": "Research", "kind": "event", "order": 1 },
+        { "id": "prototype", "label": "Prototype", "kind": "process", "order": 2 },
+        { "id": "beta", "label": "Beta", "kind": "event", "order": 3, "emphasis": "high" },
+        { "id": "launch", "label": "Launch", "kind": "event", "order": 4 }
+      ],
+      "edges": [
+        { "id": "t1", "from": "research", "to": "prototype" },
+        { "id": "t2", "from": "prototype", "to": "beta" },
+        { "id": "t3", "from": "beta", "to": "launch" }
+      ]
+    }
+  ]
+}

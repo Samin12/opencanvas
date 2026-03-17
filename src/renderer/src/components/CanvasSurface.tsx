@@ -10,7 +10,7 @@ import {
 } from 'react'
 
 import clsx from 'clsx'
-import { Editor, Tldraw, type TLRecord } from 'tldraw'
+import { Editor, Tldraw, putExcalidrawContent, type TLRecord } from 'tldraw'
 import {
   DefaultColorStyle,
   DefaultColorThemePalette,
@@ -26,6 +26,7 @@ import {
 
 import type {
   CanvasPinchPayload,
+  CanvasDiagramEnvelope,
   CanvasState,
   CanvasTile,
   FileKind,
@@ -42,12 +43,14 @@ import { TerminalPane } from './TerminalPane'
 import { embedDescriptorFromUrl, extractDroppedUrl } from '../utils/embedTiles'
 import { keyboardShortcutsBlocked } from '../utils/keyboard'
 import { composeTooltipLabel } from '../utils/buttonTooltips'
+import { renderCanvasDiagramSet } from '../utils/canvasDiagramRenderer'
 import { COLLABORATOR_TERMINAL_CARD_MIME, type TerminalCardTransferPayload } from '../utils/terminalCards'
 
 interface CanvasSurfaceProps {
   activeWorkspacePath: string | null
   darkMode: boolean
   officeViewer: OfficeViewerBootstrap | null
+  onBoardReady?: () => void
   onCreateMarkdownCard: (options: {
     baseName?: string
     initialContent: string
@@ -65,6 +68,8 @@ interface CanvasSurfaceProps {
 
 export interface CanvasSurfaceHandle {
   createTerminal: (provider?: TerminalProvider) => void
+  importDiagramSet: (envelope: CanvasDiagramEnvelope) => void
+  importExcalidrawContent: (content: unknown, title?: string) => Promise<void>
   spawnEmbedTile: (url: string) => void
   spawnFileTile: (file: FileTreeNode) => void
   resetZoom: () => void
@@ -519,17 +524,6 @@ function canScrollElementForDelta(element: HTMLElement, deltaX: number, deltaY: 
   return false
 }
 
-function isMostlyVerticalWheel(deltaX: number, deltaY: number) {
-  const absX = Math.abs(deltaX)
-  const absY = Math.abs(deltaY)
-
-  if (absY < 0.5) {
-    return false
-  }
-
-  return absY >= absX * 0.72
-}
-
 function hasCollaboratorFilePayload(dataTransfer: DataTransfer | null) {
   return Boolean(dataTransfer && Array.from(dataTransfer.types).includes(COLLABORATOR_FILE_MIME))
 }
@@ -808,6 +802,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       activeWorkspacePath,
       darkMode,
       officeViewer,
+      onBoardReady,
       onCreateMarkdownCard,
       onCreateMarkdownNote,
       onConvertStickyNoteToMarkdown,
@@ -927,8 +922,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         return []
       }
 
-      return editor
-        .getCurrentPageShapes()
+      const currentPageShapes = editor.getCurrentPageShapes()
+
+      return currentPageShapes
         .filter((shape) => shape.type === 'frame')
         .flatMap((shape) => {
           const bounds = editor.getShapePageBounds(shape.id)
@@ -936,6 +932,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           if (!bounds) {
             return []
           }
+
+          const hasFrameChildren = currentPageShapes.some(
+            (candidate) => candidate.parentId === shape.id && candidate.type !== 'frame'
+          )
 
           const boundsSnapshot = {
             x: bounds.x,
@@ -947,6 +947,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             tileCenterWithinBounds(tile, boundsSnapshot)
           )
           const containedTiles = movableTiles.filter(isContextSourceTile)
+
+          if (movableTiles.length === 0 && hasFrameChildren) {
+            return []
+          }
 
           return [
             {
@@ -2097,6 +2101,93 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       setFocusedTerminal(null)
     }
 
+    function importDiagramSet(envelope: CanvasDiagramEnvelope) {
+      const editor = editorRef.current
+
+      if (!editor) {
+        return
+      }
+
+      const { x, y } = centerWorldPosition(0)
+
+      renderCanvasDiagramSet(editor, envelope, {
+        centerX: x,
+        centerY: y
+      })
+    }
+
+    async function importExcalidrawContent(content: unknown, title = 'Imported Diagram') {
+      const editor = editorRef.current
+
+      if (!editor) {
+        return
+      }
+
+      const existingShapeIds = new Set(editor.getCurrentPageShapeIds())
+      const { x, y } = centerWorldPosition(0)
+      await putExcalidrawContent(editor, content, { x, y })
+
+      const importedShapeIds = Array.from(editor.getCurrentPageShapeIds()).filter(
+        (shapeId) => !existingShapeIds.has(shapeId)
+      )
+
+      if (importedShapeIds.length === 0) {
+        return
+      }
+
+      const importedBounds = importedShapeIds.reduce<{
+        bottom: number
+        left: number
+        right: number
+        top: number
+      } | null>((bounds, shapeId) => {
+        const shapeBounds = editor.getShapePageBounds(shapeId)
+
+        if (!shapeBounds) {
+          return bounds
+        }
+
+        if (!bounds) {
+          return {
+            left: shapeBounds.x,
+            top: shapeBounds.y,
+            right: shapeBounds.x + shapeBounds.w,
+            bottom: shapeBounds.y + shapeBounds.h
+          }
+        }
+
+        return {
+          left: Math.min(bounds.left, shapeBounds.x),
+          top: Math.min(bounds.top, shapeBounds.y),
+          right: Math.max(bounds.right, shapeBounds.x + shapeBounds.w),
+          bottom: Math.max(bounds.bottom, shapeBounds.y + shapeBounds.h)
+        }
+      }, null)
+
+      if (!importedBounds) {
+        return
+      }
+
+      const frameId = `shape:${Date.now()}-${Math.random().toString(36).slice(2, 8)}` as TLFrameShape['id']
+      const frameInset = 40
+
+      editor.createShapes([
+        {
+          id: frameId,
+          type: 'frame',
+          x: importedBounds.left - frameInset,
+          y: importedBounds.top - frameInset - 24,
+          props: {
+            w: importedBounds.right - importedBounds.left + frameInset * 2,
+            h: importedBounds.bottom - importedBounds.top + frameInset * 2 + 24,
+            color: 'grey',
+            name: title.trim() || 'Imported Diagram'
+          }
+        }
+      ])
+      editor.reparentShapes(importedShapeIds, frameId)
+    }
+
     function spawnFileTile(file: FileTreeNode) {
       const fileKind = file.fileKind ?? 'code'
       const { x, y } = centerWorldPosition(stateRef.current.tiles.length % 5)
@@ -2295,6 +2386,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       applyBoardTool('hand')
       frameBoundsRef.current = frameBoundsSnapshot(editor)
       setSelectedCanvasNoteId(selectedStickyNoteFromEditor(editor)?.shape.id ?? null)
+      onBoardReady?.()
 
       const handleCreatedShapes = (records: TLRecord[]) => {
         const nextColor = drawColorRef.current
@@ -2506,6 +2598,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       createTerminal: (provider = 'claude') => {
         createTerminalNearCenter(provider)
       },
+      importDiagramSet: (envelope: CanvasDiagramEnvelope) => {
+        importDiagramSet(envelope)
+      },
+      importExcalidrawContent: async (content: unknown, title?: string) => {
+        await importExcalidrawContent(content, title)
+      },
       spawnEmbedTile: (url: string) => {
         spawnEmbedTile(url)
       },
@@ -2588,8 +2686,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         const container = containerRef.current
         const targetInsideCanvas =
           event.target instanceof Node && (container?.contains(event.target) ?? false)
-        const scrollLockElement =
-          container && targetInsideCanvas ? scrollLockElementFromTarget(event.target, container) : null
         const activeWheelOwner = currentWheelGestureOwner()
         const nativeWheelElement =
           container && targetInsideCanvas
@@ -2597,28 +2693,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             : null
         const normalizedDeltaX = normalizeWheelDelta(event.deltaX, event.deltaMode)
         const normalizedDeltaY = normalizeWheelDelta(event.deltaY, event.deltaMode)
-        const mostlyVerticalWheel = isMostlyVerticalWheel(normalizedDeltaX, normalizedDeltaY)
-        const activeScrollCaptureElement = currentActiveScrollCaptureElement()
 
         if (!event.ctrlKey && !event.metaKey) {
-          if (nativeWheelElement && mostlyVerticalWheel) {
-            clearWheelGestureOwner()
-            return
-          }
-
-          if (
-            scrollLockElement &&
-            nativeWheelElement &&
-            elementsShareCaptureChain(nativeWheelElement, activeScrollCaptureElement)
-          ) {
-            if (mostlyVerticalWheel) {
-              clearWheelGestureOwner()
-              return
-            }
-
-            clearWheelGestureOwner()
-          }
-
           if (nativeWheelElement) {
             const nativeScrollableElement = container
               ? scrollableElementFromTarget(event.target, container)

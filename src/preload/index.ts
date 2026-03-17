@@ -9,6 +9,7 @@ import type {
   CreateWorkspaceDirectoryOptions,
   CreateWorkspaceFileOptions,
   CreateWorkspaceNoteOptions,
+  EnsureWorkspaceDiagramToolsResult,
   FileMetadata,
   FileTreeNode,
   ImageAssetData,
@@ -134,6 +135,11 @@ const api: CollaboratorApi = {
     ipcRenderer.invoke('file:read', filePath) as Promise<TextFileDocument>,
   writeTextFile: (filePath: string, content: string) =>
     ipcRenderer.invoke('file:write', filePath, content) as Promise<TextFileDocument>,
+  ensureWorkspaceDiagramTools: (workspacePath: string) =>
+    ipcRenderer.invoke(
+      'workspace:ensure-diagram-tools',
+      workspacePath
+    ) as Promise<EnsureWorkspaceDiagramToolsResult>,
   onFileChanged: (filePath, listener) => {
     const channel = 'file:changed'
     const handler = (_event: Electron.IpcRendererEvent, changedFilePath: string) => {

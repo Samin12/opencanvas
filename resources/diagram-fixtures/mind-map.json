@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "skill": "open-canvas-diagrams",
+  "requestId": "req_mindmap_fixture",
+  "createdAt": "2026-03-16T22:02:00.000Z",
+  "promptSummary": "Fixture mind map",
+  "diagrams": [
+    {
+      "id": "growth-ideas",
+      "title": "Growth Ideas",
+      "kind": "mind-map",
+      "nodes": [
+        { "id": "center", "label": "Growth", "kind": "container", "order": 1, "emphasis": "high" },
+        { "id": "seo", "label": "SEO", "kind": "process", "order": 2 },
+        { "id": "ads", "label": "Paid Ads", "kind": "process", "order": 3 },
+        { "id": "referrals", "label": "Referrals", "kind": "process", "order": 4 },
+        { "id": "notes", "label": "Test local loops first", "kind": "note", "order": 5 }
+      ],
+      "edges": [
+        { "id": "m1", "from": "center", "to": "seo" },
+        { "id": "m2", "from": "center", "to": "ads" },
+        { "id": "m3", "from": "center", "to": "referrals" },
+        { "id": "m4", "from": "center", "to": "notes" }
+      ]
+    }
+  ]
+}

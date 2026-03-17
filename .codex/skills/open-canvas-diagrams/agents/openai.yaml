@@ -1,0 +1,3 @@
+interface:
+  display_name: "Open Canvas Diagrams"
+  short_description: "Generate editable canvas diagrams from outlines"
