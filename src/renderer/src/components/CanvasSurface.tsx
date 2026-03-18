@@ -10,7 +10,13 @@ import {
 } from 'react'
 
 import clsx from 'clsx'
-import { Editor, Tldraw, putExcalidrawContent, type TLRecord } from 'tldraw'
+import {
+  Editor,
+  Tldraw,
+  putExcalidrawContent,
+  startEditingShapeWithRichText,
+  type TLRecord
+} from 'tldraw'
 import {
   DefaultColorStyle,
   DefaultColorThemePalette,
@@ -21,7 +27,9 @@ import {
   type TLDrawShape,
   type TLFrameShape,
   type TLNoteShape,
-  type TLShapePartial
+  type TLShapePartial,
+  type TLTextShape,
+  toRichText
 } from '@tldraw/tlschema'
 
 import type {
@@ -1011,6 +1019,36 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         shape: noteShape,
         text: (editor.getShapeUtil('note').getText(noteShape) ?? '').trim()
       }
+    }
+
+    function selectedEditableRichTextShapeFromEditor(editor: Editor) {
+      const selectedShape = editor.getOnlySelectedShape()
+
+      if (!selectedShape || (selectedShape.type !== 'note' && selectedShape.type !== 'text')) {
+        return null
+      }
+
+      return selectedShape as TLNoteShape | TLTextShape
+    }
+
+    function startEditingSelectedRichTextShape(options?: { selectAll?: boolean }) {
+      const editor = editorRef.current
+
+      if (!editor) {
+        return false
+      }
+
+      const selectedShape = selectedEditableRichTextShapeFromEditor(editor)
+
+      if (!selectedShape) {
+        return false
+      }
+
+      editor.setCurrentTool('select')
+      startEditingShapeWithRichText(editor, selectedShape.id, {
+        selectAll: options?.selectAll ?? false
+      })
+      return true
     }
 
     function frameBundleVisuals(): FrameBundleVisual[] {
@@ -2143,6 +2181,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
     }
 
+    function viewportCenterWorldPosition() {
+      const bounds = visibleWorldBounds()
+
+      if (!bounds) {
+        return centerWorldPosition()
+      }
+
+      return {
+        x: (bounds.left + bounds.right) / 2,
+        y: (bounds.top + bounds.bottom) / 2
+      }
+    }
+
     function preferredTerminalFrame(preferredX: number, preferredY: number) {
       const viewportMargin = 24
       const bounds = visibleWorldBounds()
@@ -2398,6 +2449,42 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       editorRef.current?.setStyleForNextShapes(DefaultSizeStyle, nextSize)
     }
 
+    function createEditableTextAtViewportCenter() {
+      const editor = editorRef.current
+
+      if (!editor) {
+        setActiveBoardTool('text')
+        return
+      }
+
+      const { x, y } = viewportCenterWorldPosition()
+      const textShapeId = `shape:${Date.now()}-${Math.random().toString(36).slice(2, 8)}` as TLTextShape['id']
+      const textColor: TLDefaultColorStyle = darkMode ? 'white' : 'black'
+
+      editor.createShapes([
+        {
+          id: textShapeId,
+          type: 'text',
+          x,
+          y,
+          props: {
+            autoSize: true,
+            color: textColor,
+            font: 'draw',
+            richText: toRichText(''),
+            scale: 1,
+            size: 'm',
+            textAlign: 'start',
+            w: 8
+          }
+        }
+      ])
+      editor.select(textShapeId)
+      editor.setCurrentTool('select')
+      startEditingShapeWithRichText(editor, textShapeId, { selectAll: true })
+      setActiveBoardTool('text')
+    }
+
     function runShortcutAction(action: ShortcutAction) {
       if (action === 'terminal-claude') {
         createTerminalNearCenter('claude')
@@ -2411,6 +2498,16 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       if (action === 'markdown') {
         onCreateMarkdownNote()
+        return
+      }
+
+      if (action === 'text') {
+        setSelectedTileId(null)
+        setFocusedTerminal(null)
+
+        if (!startEditingSelectedRichTextShape({ selectAll: true })) {
+          createEditableTextAtViewportCenter()
+        }
         return
       }
 
@@ -3018,6 +3115,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           return
         }
 
+        if (event.key === 'Enter' && !event.shiftKey) {
+          if (startEditingSelectedRichTextShape()) {
+            event.preventDefault()
+            event.stopPropagation()
+          }
+          return
+        }
+
         if (lowerKey === 't' && event.shiftKey) {
           event.preventDefault()
           event.stopPropagation()
@@ -3566,11 +3671,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         onDoubleClick={(event: ReactMouseEvent<HTMLDivElement>) => {
           const target = event.target as HTMLElement
 
-          if (activeBoardTool !== 'hand') {
+          if (target.closest('[data-tile-root="true"]') || target.closest('[data-canvas-ui="true"]')) {
             return
           }
 
-          if (target.closest('[data-tile-root="true"]') || target.closest('[data-canvas-ui="true"]')) {
+          if (startEditingSelectedRichTextShape({ selectAll: true })) {
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+
+          if (activeBoardTool !== 'hand') {
             return
           }
 
