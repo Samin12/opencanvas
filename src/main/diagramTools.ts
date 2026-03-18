@@ -13,10 +13,17 @@ const DIAGRAM_ARCHIVE_DIRECTORY = 'archive'
 const DIAGRAM_FAILED_DIRECTORY = 'failed'
 const DIAGRAM_TOOLS_DIRECTORY = 'tools'
 const DIAGRAM_COMMAND_PATH = join('.claude', 'commands', 'canvas-diagrams.md')
+const NOTE_COMMAND_PATH = join('.claude', 'commands', 'canvas-note.md')
 const CLAUDE_FILE_PATH = 'CLAUDE.md'
-const CLAUDE_MARKER_START = '<!-- OPEN_CANVAS_DIAGRAMS:START -->'
-const CLAUDE_MARKER_END = '<!-- OPEN_CANVAS_DIAGRAMS:END -->'
-const SKILL_ROOT_SEGMENTS = ['.codex', 'skills', 'open-canvas-diagrams']
+const AGENTS_FILE_PATH = 'AGENTS.md'
+const DIAGRAM_CLAUDE_MARKER_START = '<!-- OPEN_CANVAS_DIAGRAMS:START -->'
+const DIAGRAM_CLAUDE_MARKER_END = '<!-- OPEN_CANVAS_DIAGRAMS:END -->'
+const NOTE_CLAUDE_MARKER_START = '<!-- OPEN_CANVAS_NOTES:START -->'
+const NOTE_CLAUDE_MARKER_END = '<!-- OPEN_CANVAS_NOTES:END -->'
+const NOTE_AGENTS_MARKER_START = '<!-- OPEN_CANVAS_NOTES_FOR_CODEX:START -->'
+const NOTE_AGENTS_MARKER_END = '<!-- OPEN_CANVAS_NOTES_FOR_CODEX:END -->'
+const DIAGRAM_SKILL_ROOT_SEGMENTS = ['.codex', 'skills', 'open-canvas-diagrams']
+const NOTE_SKILL_ROOT_SEGMENTS = ['.codex', 'skills', 'open-canvas-workspace']
 const DEFAULT_QUEUE_INDEX: CanvasDiagramQueueIndex = {
   version: 1,
   pending: [],
@@ -33,23 +40,23 @@ async function pathExists(targetPath: string) {
   }
 }
 
-function skillRootCandidates() {
+function skillRootCandidates(skillRootSegments: string[]) {
   const candidates = [
-    join(process.resourcesPath, ...SKILL_ROOT_SEGMENTS),
-    join(app.getAppPath(), ...SKILL_ROOT_SEGMENTS),
-    join(process.cwd(), ...SKILL_ROOT_SEGMENTS)
+    join(process.resourcesPath, ...skillRootSegments),
+    join(app.getAppPath(), ...skillRootSegments),
+    join(process.cwd(), ...skillRootSegments)
   ]
 
   if (process.env.ELECTRON_RENDERER_URL) {
-    candidates.unshift(join(process.cwd(), ...SKILL_ROOT_SEGMENTS))
-    candidates.unshift(join(app.getAppPath(), ...SKILL_ROOT_SEGMENTS))
+    candidates.unshift(join(process.cwd(), ...skillRootSegments))
+    candidates.unshift(join(app.getAppPath(), ...skillRootSegments))
   }
 
   return Array.from(new Set(candidates))
 }
 
-async function readBundledSkillFile(...segments: string[]) {
-  for (const rootPath of skillRootCandidates()) {
+async function readBundledSkillFile(skillRootSegments: string[], ...segments: string[]) {
+  for (const rootPath of skillRootCandidates(skillRootSegments)) {
     const targetPath = join(rootPath, ...segments)
 
     if (!(await pathExists(targetPath))) {
@@ -59,7 +66,7 @@ async function readBundledSkillFile(...segments: string[]) {
     return readFile(targetPath, 'utf8')
   }
 
-  throw new Error('Open Canvas diagram skill assets could not be located.')
+  throw new Error(`Open Canvas skill assets could not be located: ${skillRootSegments.join('/')}`)
 }
 
 function normalizeQueueIndex(input: unknown): CanvasDiagramQueueIndex {
@@ -112,19 +119,24 @@ async function ensureFile(targetPath: string, content: string): Promise<void> {
   await writeFile(targetPath, content, 'utf8')
 }
 
-function mergeManagedClaudeSection(existingContent: string, managedSection: string) {
-  const wrappedSection = `${CLAUDE_MARKER_START}\n${managedSection.trim()}\n${CLAUDE_MARKER_END}`
+function mergeManagedSection(
+  existingContent: string,
+  managedSection: string,
+  markerStart: string,
+  markerEnd: string
+) {
+  const wrappedSection = `${markerStart}\n${managedSection.trim()}\n${markerEnd}`
 
   if (!existingContent.trim()) {
     return `${wrappedSection}\n`
   }
 
-  const startIndex = existingContent.indexOf(CLAUDE_MARKER_START)
-  const endIndex = existingContent.indexOf(CLAUDE_MARKER_END)
+  const startIndex = existingContent.indexOf(markerStart)
+  const endIndex = existingContent.indexOf(markerEnd)
 
   if (startIndex >= 0 && endIndex > startIndex) {
     const before = existingContent.slice(0, startIndex).trimEnd()
-    const after = existingContent.slice(endIndex + CLAUDE_MARKER_END.length).trimStart()
+    const after = existingContent.slice(endIndex + markerEnd.length).trimStart()
 
     return [before, wrappedSection, after].filter(Boolean).join('\n\n').trimEnd() + '\n'
   }
@@ -159,40 +171,94 @@ export async function ensureWorkspaceDiagramTools(
   const toolsDirectoryPath = join(metadataDirectoryPath, DIAGRAM_TOOLS_DIRECTORY)
   const queueIndexPath = join(inboxDirectoryPath, 'index.json')
   const commandPath = join(resolvedWorkspacePath, DIAGRAM_COMMAND_PATH)
+  const noteCommandPath = join(resolvedWorkspacePath, NOTE_COMMAND_PATH)
   const claudePath = join(resolvedWorkspacePath, CLAUDE_FILE_PATH)
+  const agentsPath = join(resolvedWorkspacePath, AGENTS_FILE_PATH)
   const emitterScriptPath = join(toolsDirectoryPath, 'emit_diagram_request.py')
   const schemaPath = join(toolsDirectoryPath, 'diagram-schema.md')
+  const workspaceSkillDirectoryPath = join(
+    resolvedWorkspacePath,
+    '.codex',
+    'skills',
+    'open-canvas-workspace'
+  )
+  const workspaceSkillAgentsDirectoryPath = join(workspaceSkillDirectoryPath, 'agents')
+  const workspaceSkillPath = join(workspaceSkillDirectoryPath, 'SKILL.md')
+  const workspaceSkillOpenAiPath = join(workspaceSkillAgentsDirectoryPath, 'openai.yaml')
 
   await Promise.all([
     ensureDirectory(join(resolvedWorkspacePath, '.claude', 'commands')),
     ensureDirectory(requestsDirectoryPath),
     ensureDirectory(archiveDirectoryPath),
     ensureDirectory(failedDirectoryPath),
-    ensureDirectory(toolsDirectoryPath)
+    ensureDirectory(toolsDirectoryPath),
+    ensureDirectory(workspaceSkillAgentsDirectoryPath)
   ])
 
-  const [commandTemplate, claudeTemplate, emitterScript, diagramSchema] = await Promise.all([
-    readBundledSkillFile('workspace-templates', 'canvas-diagrams-command.md'),
-    readBundledSkillFile('workspace-templates', 'claude-md-section.md'),
-    readBundledSkillFile('scripts', 'emit_diagram_request.py'),
-    readBundledSkillFile('references', 'diagram-schema.md')
+  const [
+    commandTemplate,
+    claudeTemplate,
+    emitterScript,
+    diagramSchema,
+    noteCommandTemplate,
+    noteClaudeTemplate,
+    noteAgentsTemplate,
+    noteSkillTemplate,
+    noteSkillOpenAi
+  ] = await Promise.all([
+    readBundledSkillFile(DIAGRAM_SKILL_ROOT_SEGMENTS, 'workspace-templates', 'canvas-diagrams-command.md'),
+    readBundledSkillFile(DIAGRAM_SKILL_ROOT_SEGMENTS, 'workspace-templates', 'claude-md-section.md'),
+    readBundledSkillFile(DIAGRAM_SKILL_ROOT_SEGMENTS, 'scripts', 'emit_diagram_request.py'),
+    readBundledSkillFile(DIAGRAM_SKILL_ROOT_SEGMENTS, 'references', 'diagram-schema.md'),
+    readBundledSkillFile(NOTE_SKILL_ROOT_SEGMENTS, 'workspace-templates', 'canvas-note-command.md'),
+    readBundledSkillFile(NOTE_SKILL_ROOT_SEGMENTS, 'workspace-templates', 'claude-md-section.md'),
+    readBundledSkillFile(NOTE_SKILL_ROOT_SEGMENTS, 'workspace-templates', 'agents-md-section.md'),
+    readBundledSkillFile(NOTE_SKILL_ROOT_SEGMENTS, 'SKILL.md'),
+    readBundledSkillFile(NOTE_SKILL_ROOT_SEGMENTS, 'agents', 'openai.yaml')
   ])
 
-  const templateVariables = {
+  const diagramTemplateVariables = {
     EMITTER_PATH: '.claude-canvas/tools/emit_diagram_request.py',
     SCHEMA_PATH: '.claude-canvas/tools/diagram-schema.md',
     REQUESTS_PATH: '.claude-canvas/diagram-inbox/requests',
     QUEUE_INDEX_PATH: '.claude-canvas/diagram-inbox/index.json'
   }
+  const noteTemplateVariables = {
+    CLI_COMMAND: 'open-canvas-cli',
+    NOTE_COMMAND_PATH: '.claude/commands/canvas-note.md'
+  }
 
   await Promise.all([
-    ensureFile(commandPath, renderTemplate(commandTemplate, templateVariables)),
+    ensureFile(commandPath, renderTemplate(commandTemplate, diagramTemplateVariables)),
     ensureFile(emitterScriptPath, emitterScript),
-    ensureFile(schemaPath, diagramSchema)
+    ensureFile(schemaPath, diagramSchema),
+    ensureFile(noteCommandPath, renderTemplate(noteCommandTemplate, noteTemplateVariables)),
+    ensureFile(workspaceSkillPath, renderTemplate(noteSkillTemplate, noteTemplateVariables)),
+    ensureFile(workspaceSkillOpenAiPath, noteSkillOpenAi)
   ])
 
   const existingClaudeContent = (await pathExists(claudePath)) ? await readFile(claudePath, 'utf8') : ''
-  await ensureFile(claudePath, mergeManagedClaudeSection(existingClaudeContent, renderTemplate(claudeTemplate, templateVariables)))
+  const nextClaudeContent = mergeManagedSection(
+    mergeManagedSection(
+      existingClaudeContent,
+      renderTemplate(claudeTemplate, diagramTemplateVariables),
+      DIAGRAM_CLAUDE_MARKER_START,
+      DIAGRAM_CLAUDE_MARKER_END
+    ),
+    renderTemplate(noteClaudeTemplate, noteTemplateVariables),
+    NOTE_CLAUDE_MARKER_START,
+    NOTE_CLAUDE_MARKER_END
+  )
+  await ensureFile(claudePath, nextClaudeContent)
+
+  const existingAgentsContent = (await pathExists(agentsPath)) ? await readFile(agentsPath, 'utf8') : ''
+  const nextAgentsContent = mergeManagedSection(
+    existingAgentsContent,
+    renderTemplate(noteAgentsTemplate, noteTemplateVariables),
+    NOTE_AGENTS_MARKER_START,
+    NOTE_AGENTS_MARKER_END
+  )
+  await ensureFile(agentsPath, nextAgentsContent)
 
   let existingQueueIndex = DEFAULT_QUEUE_INDEX
 

@@ -1195,7 +1195,7 @@ function ImageDocumentPane({
   return (
     <div
       className={clsx(
-        'relative flex h-full items-center justify-center overflow-hidden bg-[var(--surface-1)]',
+        'relative flex h-full items-center justify-center overflow-hidden bg-[var(--surface-1)] p-3',
         variant === 'viewer' ? 'rounded-[6px] border border-[color:var(--line)]' : 'rounded-[4px]'
       )}
     >
@@ -1216,7 +1216,7 @@ function ImageDocumentPane({
         src={imageUrl}
         alt=""
         draggable
-        className="h-full w-full object-contain"
+        className="max-h-full max-w-full h-auto w-auto object-contain"
         onDragStart={(event) => {
           if (!event.dataTransfer) {
             return
@@ -1308,7 +1308,7 @@ function VideoDocumentPane({
   return (
     <div
       className={clsx(
-        'relative flex h-full items-center justify-center overflow-hidden bg-[var(--surface-1)]',
+        'relative flex h-full items-center justify-center overflow-hidden bg-[var(--surface-1)] p-3',
         variant === 'viewer' ? 'rounded-[6px] border border-[color:var(--line)]' : 'rounded-[4px]'
       )}
     >
@@ -1332,7 +1332,7 @@ function VideoDocumentPane({
         preload="metadata"
         playsInline
         draggable
-        className="h-full w-full bg-black/10 object-contain"
+        className="max-h-full max-w-full h-auto w-auto bg-black/10 object-contain"
         onDragStart={(event) => {
           if (!event.dataTransfer) {
             return

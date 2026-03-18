@@ -68,7 +68,8 @@
     ],
     "extraResources": [
       "resources/**",
-      ".codex/skills/open-canvas-diagrams/**"
+      ".codex/skills/open-canvas-diagrams/**",
+      ".codex/skills/open-canvas-workspace/**"
     ],
     "mac": {
       "category": "public.app-category.productivity",

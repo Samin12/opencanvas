@@ -56,6 +56,8 @@ By default, Open Canvas launches:
 
 Open Canvas terminals also expose an `open-canvas-cli` command automatically, so Claude Code and Codex sessions inside the app can call the workspace CLI without extra setup.
 
+When you switch into a workspace, Open Canvas also installs workspace instructions for Claude and Codex plus a local `open-canvas-workspace` skill so agents know how to create notes and place files on the board with the supported CLI path.
+
 If you want different launch commands, override them before starting the app:
 
 ```bash
@@ -91,6 +93,14 @@ Environment overrides:
 ```bash
 npm install
 npm run dev
+```
+
+Useful CLI examples inside an Open Canvas terminal:
+
+```bash
+open-canvas-cli status
+cat draft.md | open-canvas-cli note create --workspace . --title "Story Draft"
+open-canvas-cli canvas add-file --workspace . --path notes/existing.md
 ```
 
 ## Build

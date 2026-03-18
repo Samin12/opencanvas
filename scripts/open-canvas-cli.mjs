@@ -3,7 +3,9 @@
 import {
   activateOpenCanvasApp,
   addWorkspace,
+  addFileToCanvas,
   clearCanvas,
+  createNote,
   enqueueDiagramRequest,
   getStatus,
   listWorkspaces,
@@ -20,10 +22,13 @@ Usage:
   npm run cli -- workspace add <path> [--select]
   npm run cli -- workspace use <path-or-index>
   npm run cli -- canvas clear [--workspace <path-or-index>]
+  npm run cli -- canvas add-file --path <file> [--workspace <path-or-index>] [--title <text>] [--x <number>] [--y <number>]
+  npm run cli -- note create --title <text> [--target-dir <dir>] [--workspace <path-or-index>] [--input <markdown-file>] [--x <number>] [--y <number>]
   npm run cli -- diagram enqueue --input <json-file> [--workspace <path-or-index>] [--summary <text>] [--request-id <id>]
 
 Notes:
   - \`open\` focuses the running Open Canvas app on macOS. It does not start the dev server.
+  - \`note create\` also places the new markdown file onto the canvas. Pass content via \`--input\` or pipe markdown into stdin.
   - \`diagram enqueue\` accepts either Open Canvas semantic JSON or Excalidraw clipboard JSON.
 `)
 }
@@ -119,6 +124,52 @@ async function main() {
       const { options } = parseOptions(rest)
       const result = await clearCanvas(options.workspace)
       console.log(`Canvas cleared: ${result.workspacePath}`)
+      return
+    }
+
+    if (command === 'canvas' && subcommand === 'add-file') {
+      const { options } = parseOptions(rest)
+
+      if (typeof options.path !== 'string' || options.path.trim().length === 0) {
+        throw new Error('The `canvas add-file` command requires --path <file>.')
+      }
+
+      const x = typeof options.x === 'string' ? Number.parseFloat(options.x) : undefined
+      const y = typeof options.y === 'string' ? Number.parseFloat(options.y) : undefined
+      const result = await addFileToCanvas({
+        filePath: options.path,
+        title: typeof options.title === 'string' ? options.title : undefined,
+        workspace: typeof options.workspace === 'string' ? options.workspace : undefined,
+        x: Number.isFinite(x) ? x : undefined,
+        y: Number.isFinite(y) ? y : undefined
+      })
+      console.log(`Placed file on canvas: ${result.filePath}`)
+      console.log(`Workspace: ${result.workspacePath}`)
+      console.log(`Tile: ${result.tileId}`)
+      return
+    }
+
+    if (command === 'note' && subcommand === 'create') {
+      const { options } = parseOptions(rest)
+
+      if (typeof options.title !== 'string' || options.title.trim().length === 0) {
+        throw new Error('The `note create` command requires --title <text>.')
+      }
+
+      const x = typeof options.x === 'string' ? Number.parseFloat(options.x) : undefined
+      const y = typeof options.y === 'string' ? Number.parseFloat(options.y) : undefined
+      const result = await createNote({
+        inputPath: typeof options.input === 'string' ? options.input : undefined,
+        targetDirectory:
+          typeof options['target-dir'] === 'string' ? options['target-dir'] : undefined,
+        title: options.title,
+        workspace: typeof options.workspace === 'string' ? options.workspace : undefined,
+        x: Number.isFinite(x) ? x : undefined,
+        y: Number.isFinite(y) ? y : undefined
+      })
+      console.log(`Created note: ${result.notePath}`)
+      console.log(`Workspace: ${result.workspacePath}`)
+      console.log(`Tile: ${result.tileId}`)
       return
     }
 

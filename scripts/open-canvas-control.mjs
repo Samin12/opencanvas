@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 
 export const APP_DIRECTORY =
   process.env.OPEN_CANVAS_APP_DIRECTORY && process.env.OPEN_CANVAS_APP_DIRECTORY.trim().length > 0
@@ -13,6 +13,20 @@ const WORKSPACE_CANVAS_STATE_FILE = 'canvas.json'
 const DIAGRAM_INBOX_DIRECTORY = join(WORKSPACE_METADATA_DIRECTORY, 'diagram-inbox')
 const DIAGRAM_REQUESTS_DIRECTORY = join(DIAGRAM_INBOX_DIRECTORY, 'requests')
 const DIAGRAM_INDEX_PATH = join(DIAGRAM_INBOX_DIRECTORY, 'index.json')
+const NOTE_EXTENSIONS = new Set(['.md', '.mdx', '.markdown', '.txt'])
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'])
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi'])
+const PDF_EXTENSIONS = new Set(['.pdf'])
+const SPREADSHEET_EXTENSIONS = new Set(['.csv', '.tsv', '.xls', '.xlsx', '.ods'])
+const PRESENTATION_EXTENSIONS = new Set(['.ppt', '.pptx', '.odp'])
+const GRID_SIZE = 20
+const AUTO_TILE_OFFSETS = [
+  { x: -220, y: -130 },
+  { x: 120, y: -90 },
+  { x: -160, y: 80 },
+  { x: 160, y: 90 },
+  { x: 0, y: -10 }
+]
 
 const DEFAULT_CONFIG = {
   workspaces: [],
@@ -131,10 +145,162 @@ export function resolveWorkspaceSelection(config, input) {
   }
 
   const resolvedInput = resolve(normalized)
+
+  const containingWorkspace = config.workspaces.find((workspacePath) =>
+    isWithinWorkspace(workspacePath, resolvedInput)
+  )
+
+  if (containingWorkspace) {
+    return containingWorkspace
+  }
+
   return (
     config.workspaces.find((workspacePath) => resolve(workspacePath) === resolvedInput) ??
     resolvedInput
   )
+}
+
+function snap(value) {
+  return Math.round(value / GRID_SIZE) * GRID_SIZE
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function isWithinWorkspace(workspacePath, targetPath) {
+  const workspaceRoot = resolve(workspacePath)
+  const candidatePath = resolve(targetPath)
+  const relativePath = relative(workspaceRoot, candidatePath)
+
+  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath))
+}
+
+function normalizeNameSegment(input, fallback) {
+  const normalized = String(input ?? '')
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return normalized.length > 0 ? normalized : fallback
+}
+
+function baseNameFromTitle(title) {
+  return normalizeNameSegment(title, 'Untitled')
+}
+
+async function createUniquePath(directoryPath, baseName, extension) {
+  let suffix = 1
+  let candidatePath = join(directoryPath, `${baseName}${extension}`)
+
+  while (await pathExists(candidatePath)) {
+    suffix += 1
+    candidatePath = join(directoryPath, `${baseName} ${suffix}${extension}`)
+  }
+
+  return candidatePath
+}
+
+function detectFileKind(filePath) {
+  const extension = extname(filePath).toLowerCase()
+
+  if (IMAGE_EXTENSIONS.has(extension)) {
+    return 'image'
+  }
+
+  if (VIDEO_EXTENSIONS.has(extension)) {
+    return 'video'
+  }
+
+  if (PDF_EXTENSIONS.has(extension)) {
+    return 'pdf'
+  }
+
+  if (SPREADSHEET_EXTENSIONS.has(extension)) {
+    return 'spreadsheet'
+  }
+
+  if (PRESENTATION_EXTENSIONS.has(extension)) {
+    return 'presentation'
+  }
+
+  if (NOTE_EXTENSIONS.has(extension)) {
+    return 'note'
+  }
+
+  return 'code'
+}
+
+function dimensionsForFileKind(fileKind) {
+  if (fileKind === 'image') {
+    return { width: 420, height: 320 }
+  }
+
+  if (fileKind === 'video') {
+    return { width: 820, height: 520 }
+  }
+
+  if (fileKind === 'pdf') {
+    return { width: 820, height: 620 }
+  }
+
+  if (fileKind === 'spreadsheet' || fileKind === 'presentation') {
+    return { width: 980, height: 620 }
+  }
+
+  if (fileKind === 'note') {
+    return { width: 360, height: 440 }
+  }
+
+  return { width: 520, height: 420 }
+}
+
+function nextZIndex(tiles) {
+  return Math.max(0, ...tiles.map((tile) => tile?.zIndex ?? 0)) + 1
+}
+
+function autoTilePosition(config, canvasState) {
+  const zoom = clamp(
+    typeof canvasState?.viewport?.zoom === 'number' && Number.isFinite(canvasState.viewport.zoom)
+      ? canvasState.viewport.zoom
+      : 1,
+    0.1,
+    2
+  )
+  const panX =
+    typeof canvasState?.viewport?.panX === 'number' && Number.isFinite(canvasState.viewport.panX)
+      ? canvasState.viewport.panX
+      : 0
+  const panY =
+    typeof canvasState?.viewport?.panY === 'number' && Number.isFinite(canvasState.viewport.panY)
+      ? canvasState.viewport.panY
+      : 0
+  const offset = AUTO_TILE_OFFSETS[(canvasState?.tiles?.length ?? 0) % AUTO_TILE_OFFSETS.length]
+
+  return {
+    x: (config.windowState.width / 2 - panX) / zoom + offset.x,
+    y: (config.windowState.height / 2 - panY) / zoom + offset.y
+  }
+}
+
+function createTileFromFile({ canvasState, config, fileKind, filePath, title, x, y }) {
+  const nextAutoPosition =
+    typeof x === 'number' && Number.isFinite(x) && typeof y === 'number' && Number.isFinite(y)
+      ? { x, y }
+      : autoTilePosition(config, canvasState)
+  const { width, height } = dimensionsForFileKind(fileKind)
+
+  return {
+    id: `tile-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    type: fileKind,
+    title,
+    x: snap(nextAutoPosition.x),
+    y: snap(nextAutoPosition.y),
+    width,
+    height,
+    zIndex: nextZIndex(Array.isArray(canvasState?.tiles) ? canvasState.tiles : []),
+    filePath
+  }
 }
 
 export async function readCanvasState(workspacePath) {
@@ -366,6 +532,142 @@ export async function clearCanvas(workspaceSelection) {
   )
 
   return { workspacePath }
+}
+
+async function readInputContent(inputPath) {
+  if (typeof inputPath === 'string' && inputPath.trim().length > 0) {
+    return readFile(resolve(inputPath), 'utf8')
+  }
+
+  if (process.stdin.isTTY) {
+    return ''
+  }
+
+  return new Promise((resolveContent, rejectContent) => {
+    let chunks = ''
+    process.stdin.setEncoding('utf8')
+    process.stdin.on('data', (chunk) => {
+      chunks += chunk
+    })
+    process.stdin.on('end', () => resolveContent(chunks))
+    process.stdin.on('error', rejectContent)
+  })
+}
+
+export async function addFileToCanvas({
+  filePath,
+  title,
+  workspace,
+  x,
+  y
+}) {
+  const config = await loadConfig()
+  const workspacePath = resolveWorkspaceSelection(config, workspace)
+
+  if (!workspacePath) {
+    throw new Error('No workspace is available for canvas placement.')
+  }
+
+  const resolvedWorkspacePath = resolve(workspacePath)
+  const resolvedFilePath = resolve(
+    isAbsolute(filePath) ? filePath : join(resolvedWorkspacePath, filePath)
+  )
+
+  if (!(await pathExists(resolvedFilePath))) {
+    throw new Error(`File does not exist: ${resolvedFilePath}`)
+  }
+
+  if (!isWithinWorkspace(resolvedWorkspacePath, resolvedFilePath)) {
+    throw new Error('Only files inside the workspace can be placed on the canvas.')
+  }
+
+  const fileStats = await stat(resolvedFilePath)
+
+  if (!fileStats.isFile()) {
+    throw new Error('Only files can be placed on the canvas.')
+  }
+
+  const canvasState = await readCanvasState(resolvedWorkspacePath)
+  const fileKind = detectFileKind(resolvedFilePath)
+  const nextTile = createTileFromFile({
+    canvasState,
+    config,
+    fileKind,
+    filePath: resolvedFilePath,
+    title: normalizeNameSegment(title ?? basename(resolvedFilePath), basename(resolvedFilePath)),
+    x: typeof x === 'number' ? x : undefined,
+    y: typeof y === 'number' ? y : undefined
+  })
+
+  const nextCanvasState = {
+    ...canvasState,
+    tiles: [...(Array.isArray(canvasState.tiles) ? canvasState.tiles : []), nextTile]
+  }
+
+  await writeJson(
+    join(resolvedWorkspacePath, WORKSPACE_METADATA_DIRECTORY, WORKSPACE_CANVAS_STATE_FILE),
+    nextCanvasState
+  )
+
+  return {
+    filePath: resolvedFilePath,
+    tileId: nextTile.id,
+    workspacePath: resolvedWorkspacePath
+  }
+}
+
+export async function createNote({
+  inputPath,
+  targetDirectory,
+  title,
+  workspace,
+  x,
+  y
+}) {
+  const config = await loadConfig()
+  const workspacePath = resolveWorkspaceSelection(config, workspace)
+
+  if (!workspacePath) {
+    throw new Error('No workspace is available for note creation.')
+  }
+
+  const resolvedWorkspacePath = resolve(workspacePath)
+  const resolvedTargetDirectoryPath = resolve(
+    targetDirectory
+      ? isAbsolute(targetDirectory)
+        ? targetDirectory
+        : join(resolvedWorkspacePath, targetDirectory)
+      : resolvedWorkspacePath
+  )
+
+  if (!isWithinWorkspace(resolvedWorkspacePath, resolvedTargetDirectoryPath)) {
+    throw new Error('Note target is outside the selected workspace.')
+  }
+
+  const targetDirectoryStats = await stat(resolvedTargetDirectoryPath)
+
+  if (!targetDirectoryStats.isDirectory()) {
+    throw new Error('Note target must be a directory.')
+  }
+
+  const content = await readInputContent(inputPath)
+  const noteTitle = baseNameFromTitle(title)
+  const notePath = await createUniquePath(resolvedTargetDirectoryPath, noteTitle, '.md')
+
+  await writeFile(notePath, content, 'utf8')
+  const placement = await addFileToCanvas({
+    filePath: notePath,
+    title: `${basename(notePath)}`,
+    workspace: resolvedWorkspacePath,
+    x,
+    y
+  })
+
+  return {
+    notePath,
+    tileId: placement.tileId,
+    workspacePath: resolvedWorkspacePath
+  }
 }
 
 export async function enqueueDiagramRequest({

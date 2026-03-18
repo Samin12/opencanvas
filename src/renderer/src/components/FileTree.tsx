@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -280,6 +281,15 @@ interface TreeContextMenuState {
   y: number
 }
 
+interface TreeInputDialogState {
+  confirmLabel: string
+  directoryPath?: string
+  mode: 'create-file' | 'create-folder' | 'rename'
+  node?: FileTreeNode
+  title: string
+  value: string
+}
+
 interface PointerDragState {
   active: boolean
   currentX: number
@@ -361,9 +371,12 @@ export function FileTree({
   const [dragState, setDragState] = useState<PointerDragState | null>(null)
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<TreeContextMenuState | null>(null)
+  const [inputDialog, setInputDialog] = useState<TreeInputDialogState | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<FileTreeNode | null>(null)
   const dragStateRef = useRef<PointerDragState | null>(null)
   const expandTimerRef = useRef<number | null>(null)
   const contextMenuRef = useRef<HTMLDivElement | null>(null)
+  const dialogInputRef = useRef<HTMLInputElement | null>(null)
   const suppressClickRef = useRef(false)
   const trimmedQuery = query.trim().toLowerCase()
   const visibleNodes = trimmedQuery ? filterNodes(nodes, trimmedQuery) : nodes
@@ -423,6 +436,62 @@ export function FileTree({
       window.removeEventListener('keydown', handleKeyDown)
     }
   }, [contextMenu])
+
+  useLayoutEffect(() => {
+    if (!contextMenu || !contextMenuRef.current) {
+      return
+    }
+
+    const rect = contextMenuRef.current.getBoundingClientRect()
+    const nextX = Math.max(8, Math.min(contextMenu.x, window.innerWidth - rect.width - 12))
+    const nextY = Math.max(8, Math.min(contextMenu.y, window.innerHeight - rect.height - 12))
+
+    if (nextX !== contextMenu.x || nextY !== contextMenu.y) {
+      setContextMenu((current) =>
+        current
+          ? {
+              ...current,
+              x: nextX,
+              y: nextY
+            }
+          : current
+      )
+    }
+  }, [contextMenu])
+
+  useEffect(() => {
+    if (!inputDialog) {
+      return
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      dialogInputRef.current?.focus()
+      dialogInputRef.current?.select()
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+    }
+  }, [inputDialog])
+
+  useEffect(() => {
+    if (!inputDialog && !deleteTarget) {
+      return
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setInputDialog(null)
+        setDeleteTarget(null)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [deleteTarget, inputDialog])
 
   function toggleDirectory(path: string) {
     setExpanded((current) => ({
@@ -507,7 +576,7 @@ export function FileTree({
     }
 
     const menuWidth = 220
-    const menuHeight = node ? 220 : 132
+    const menuHeight = node ? 304 : 132
     const nextX = Math.min(event.clientX, Math.max(8, window.innerWidth - menuWidth - 12))
     const nextY = Math.min(event.clientY, Math.max(8, window.innerHeight - menuHeight - 12))
 
@@ -519,52 +588,72 @@ export function FileTree({
     })
   }
 
-  function promptForNewFile(directoryPath: string) {
+  function openNewFileDialog(directoryPath: string) {
     setContextMenu(null)
-    const fileName = window.prompt('New file name', 'untitled.md')
-
-    if (!fileName?.trim()) {
-      return
-    }
-
-    onCreateWorkspaceFile(directoryPath, fileName.trim())
+    setInputDialog({
+      confirmLabel: 'Create File',
+      directoryPath,
+      mode: 'create-file',
+      title: 'Create a new file',
+      value: 'untitled.md'
+    })
   }
 
-  function promptForNewFolder(directoryPath: string) {
+  function openNewFolderDialog(directoryPath: string) {
     setContextMenu(null)
-    const directoryName = window.prompt('New folder name', 'New Folder')
-
-    if (!directoryName?.trim()) {
-      return
-    }
-
-    onCreateWorkspaceDirectory(directoryPath, directoryName.trim())
+    setInputDialog({
+      confirmLabel: 'Create Folder',
+      directoryPath,
+      mode: 'create-folder',
+      title: 'Create a new folder',
+      value: 'New Folder'
+    })
   }
 
-  function confirmDeleteNode(node: FileTreeNode) {
+  function openDeleteDialog(node: FileTreeNode) {
     setContextMenu(null)
-    const confirmed = window.confirm(
-      node.kind === 'directory'
-        ? `Delete folder “${node.name}” and everything inside it?`
-        : `Delete file “${node.name}”?`
-    )
-
-    if (!confirmed) {
-      return
-    }
-
-    onDeleteNode(node.path)
+    setDeleteTarget(node)
   }
 
-  function promptToRenameNode(node: FileTreeNode) {
+  function openRenameDialog(node: FileTreeNode) {
     setContextMenu(null)
-    const nextName = window.prompt('Rename', node.name)
+    setInputDialog({
+      confirmLabel: 'Rename',
+      mode: 'rename',
+      node,
+      title: `Rename ${node.kind === 'directory' ? 'folder' : 'file'}`,
+      value: node.name
+    })
+  }
 
-    if (!nextName?.trim() || nextName.trim() === node.name) {
+  function submitInputDialog() {
+    if (!inputDialog) {
       return
     }
 
-    onRenameNode(node.path, nextName.trim())
+    const nextValue = inputDialog.value.trim()
+
+    if (!nextValue) {
+      return
+    }
+
+    if (inputDialog.mode === 'create-file' && inputDialog.directoryPath) {
+      onCreateWorkspaceFile(inputDialog.directoryPath, nextValue)
+      setInputDialog(null)
+      return
+    }
+
+    if (inputDialog.mode === 'create-folder' && inputDialog.directoryPath) {
+      onCreateWorkspaceDirectory(inputDialog.directoryPath, nextValue)
+      setInputDialog(null)
+      return
+    }
+
+    if (inputDialog.mode === 'rename' && inputDialog.node && nextValue !== inputDialog.node.name) {
+      onRenameNode(inputDialog.node.path, nextValue)
+    }
+
+    setInputDialog(null)
   }
 
   function copyNodePath(node: FileTreeNode) {
@@ -965,14 +1054,14 @@ export function FileTree({
         >
           <button
             className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
-            onClick={() => promptForNewFile(contextMenu.directoryPath)}
+            onClick={() => openNewFileDialog(contextMenu.directoryPath)}
           >
             <span>New File</span>
             <span className="text-[var(--text-faint)]">+</span>
           </button>
           <button
             className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
-            onClick={() => promptForNewFolder(contextMenu.directoryPath)}
+            onClick={() => openNewFolderDialog(contextMenu.directoryPath)}
           >
             <span>New Folder</span>
             <span className="text-[var(--text-faint)]">+</span>
@@ -996,14 +1085,14 @@ export function FileTree({
               </button>
               <button
                 className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
-                onClick={() => promptToRenameNode(contextMenu.node!)}
+                onClick={() => openRenameDialog(contextMenu.node!)}
               >
                 <span>Rename</span>
                 <span className="text-[var(--text-faint)]">↵</span>
               </button>
               <button
                 className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[12px] font-medium text-[var(--danger,#b95151)] transition hover:bg-[var(--surface-0)]"
-                onClick={() => confirmDeleteNode(contextMenu.node!)}
+                onClick={() => openDeleteDialog(contextMenu.node!)}
               >
                 <span>Delete</span>
                 <span className="text-[var(--text-faint)]">⌫</span>
@@ -1013,6 +1102,107 @@ export function FileTree({
         </div>,
         document.body
       )
+        : null}
+      {inputDialog && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[540] flex items-center justify-center bg-black/18 px-4"
+              onMouseDown={() => setInputDialog(null)}
+            >
+              <div
+                className="w-full max-w-[28rem] rounded-[10px] border border-[color:var(--line)] bg-[var(--surface-2)] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.2)]"
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <div className="text-[13px] font-semibold text-[var(--text)]">{inputDialog.title}</div>
+                <div className="mt-1 text-[12px] text-[var(--text-dim)]">
+                  {inputDialog.mode === 'rename'
+                    ? 'Enter the new name for this workspace item.'
+                    : 'This will be created in the selected folder.'}
+                </div>
+                <form
+                  className="mt-4 space-y-3"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    submitInputDialog()
+                  }}
+                >
+                  <input
+                    ref={dialogInputRef}
+                    value={inputDialog.value}
+                    onChange={(event) =>
+                      setInputDialog((current) =>
+                        current
+                          ? {
+                              ...current,
+                              value: event.target.value
+                            }
+                          : current
+                      )
+                    }
+                    className="h-11 w-full rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 text-[13px] text-[var(--text)] outline-none transition focus:border-[color:var(--accent)]"
+                  />
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      className="rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-[12px] font-medium text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                      onClick={() => setInputDialog(null)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="rounded-[6px] border border-[color:var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-[12px] font-medium text-[var(--accent)] transition hover:brightness-[0.98]"
+                    >
+                      {inputDialog.confirmLabel}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+      {deleteTarget && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[540] flex items-center justify-center bg-black/18 px-4"
+              onMouseDown={() => setDeleteTarget(null)}
+            >
+              <div
+                className="w-full max-w-[28rem] rounded-[10px] border border-[color:var(--line)] bg-[var(--surface-2)] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.2)]"
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <div className="text-[13px] font-semibold text-[var(--text)]">
+                  Delete {deleteTarget.kind === 'directory' ? 'folder' : 'file'}?
+                </div>
+                <div className="mt-2 text-[12px] leading-5 text-[var(--text-dim)]">
+                  {deleteTarget.kind === 'directory'
+                    ? `Delete “${deleteTarget.name}” and everything inside it?`
+                    : `Delete “${deleteTarget.name}”?`}
+                </div>
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-[12px] font-medium text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                    onClick={() => setDeleteTarget(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-[6px] border border-[color:var(--error-line)] bg-[var(--error-bg)] px-3 py-2 text-[12px] font-medium text-[var(--error-text)] transition hover:brightness-[0.98]"
+                    onClick={() => {
+                      onDeleteNode(deleteTarget.path)
+                      setDeleteTarget(null)
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
         : null}
     </div>
   )
