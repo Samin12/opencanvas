@@ -14,7 +14,9 @@ import type { FileTreeNode } from '@shared/types'
 
 interface FileTreeProps {
   activePath: string | null
+  collapseAllVersion?: number
   darkMode: boolean
+  expandAllVersion?: number
   nodes: FileTreeNode[]
   onCreateWorkspaceDirectory: (targetDirectoryPath: string, directoryName: string) => void
   onCreateWorkspaceFile: (targetDirectoryPath: string, fileName: string) => void
@@ -274,6 +276,12 @@ function collectDirectoryPaths(nodes: FileTreeNode[]) {
   return directoryPaths
 }
 
+function directoryExpansionState(nodes: FileTreeNode[], expanded: boolean) {
+  const directoryPaths = collectDirectoryPaths(nodes)
+
+  return Object.fromEntries(Object.keys(directoryPaths).map((path) => [path, expanded]))
+}
+
 interface TreeContextMenuState {
   directoryPath: string
   node: FileTreeNode | null
@@ -318,6 +326,38 @@ function displayFileNameParts(node: FileTreeNode) {
   }
 }
 
+function defaultFileNameSelectionEnd(fileName: string) {
+  const trimmedName = fileName.trim()
+  const lastDotIndex = trimmedName.lastIndexOf('.')
+
+  if (lastDotIndex <= 0) {
+    return trimmedName.length
+  }
+
+  return lastDotIndex
+}
+
+function dialogSelectionRange(dialog: TreeInputDialogState) {
+  if (dialog.mode === 'rename' && dialog.node?.kind === 'file') {
+    return {
+      end: displayFileNameParts(dialog.node).stem.length,
+      start: 0
+    }
+  }
+
+  if (dialog.mode === 'create-file') {
+    return {
+      end: defaultFileNameSelectionEnd(dialog.value),
+      start: 0
+    }
+  }
+
+  return {
+    end: dialog.value.length,
+    start: 0
+  }
+}
+
 function directChildCount(node: FileTreeNode) {
   return node.kind === 'directory' ? node.children?.length ?? 0 : 0
 }
@@ -353,7 +393,9 @@ function filterNodes(nodes: FileTreeNode[], query: string): FileTreeNode[] {
 
 export function FileTree({
   activePath,
+  collapseAllVersion = 0,
   darkMode,
+  expandAllVersion = 0,
   nodes,
   onCreateWorkspaceDirectory,
   onCreateWorkspaceFile,
@@ -384,6 +426,14 @@ export function FileTree({
   useEffect(() => {
     setExpanded((current) => ({ ...collectDirectoryPaths(nodes), ...current }))
   }, [nodes])
+
+  useEffect(() => {
+    setExpanded(directoryExpansionState(nodes, false))
+  }, [collapseAllVersion])
+
+  useEffect(() => {
+    setExpanded(directoryExpansionState(nodes, true))
+  }, [expandAllVersion])
 
   useEffect(() => {
     dragStateRef.current = dragState
@@ -465,14 +515,22 @@ export function FileTree({
     }
 
     const frameId = window.requestAnimationFrame(() => {
-      dialogInputRef.current?.focus()
-      dialogInputRef.current?.select()
+      const input = dialogInputRef.current
+
+      if (!input) {
+        return
+      }
+
+      const selection = dialogSelectionRange(inputDialog)
+
+      input.focus()
+      input.setSelectionRange(selection.start, selection.end)
     })
 
     return () => {
       window.cancelAnimationFrame(frameId)
     }
-  }, [inputDialog])
+  }, [inputDialog?.directoryPath, inputDialog?.mode, inputDialog?.node?.path, inputDialog?.title])
 
   useEffect(() => {
     if (!inputDialog && !deleteTarget) {

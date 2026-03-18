@@ -54,6 +54,32 @@ function TreeViewIcon() {
   )
 }
 
+function ExpandTreeIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+    >
+      <path d="M2.5 3.25H13.5M2.5 8H9.75M2.5 12.75H9.75" />
+      <path d="M11.25 6.1V9.9M9.35 8H13.15" />
+    </svg>
+  )
+}
+
+function CollapseTreeIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+    >
+      <path d="M2.5 3.25H13.5M2.5 8H13.5M2.5 12.75H13.5" />
+      <path d="M9.35 8H13.15" />
+    </svg>
+  )
+}
+
 function RecentFilesIcon() {
   return (
     <svg
@@ -517,6 +543,8 @@ function SidebarComponent({
   const [fileBrowserMode, setFileBrowserMode] = useState<FileBrowserMode>('tree')
   const [fileQuery, setFileQuery] = useState('')
   const [recentAscending, setRecentAscending] = useState(false)
+  const [collapseAllVersion, setCollapseAllVersion] = useState(0)
+  const [expandAllVersion, setExpandAllVersion] = useState(0)
   const compactBrowserChrome = sidebarWidth < 340
   const normalizedFileQuery = fileQuery.trim().toLowerCase()
   const workspaceFiles = flattenWorkspaceFiles(workspaceTree)
@@ -811,6 +839,32 @@ function SidebarComponent({
                 </button>
               </HoverTooltip>
             </div>
+            {fileBrowserMode === 'tree' ? (
+              <div className="flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] p-1">
+                <HoverTooltip label="Collapse all folders">
+                  <button
+                    aria-label="Collapse all folders"
+                    data-managed-tooltip="custom"
+                    className="flex h-8 w-8 items-center justify-center rounded-[3px] text-[var(--text-faint)] transition hover:bg-[var(--surface-0)] hover:text-[var(--text)]"
+                    disabled={!activeWorkspacePath}
+                    onClick={() => setCollapseAllVersion((current) => current + 1)}
+                  >
+                    <CollapseTreeIcon />
+                  </button>
+                </HoverTooltip>
+                <HoverTooltip label="Expand all folders">
+                  <button
+                    aria-label="Expand all folders"
+                    data-managed-tooltip="custom"
+                    className="flex h-8 w-8 items-center justify-center rounded-[3px] text-[var(--text-faint)] transition hover:bg-[var(--surface-0)] hover:text-[var(--text)]"
+                    disabled={!activeWorkspacePath}
+                    onClick={() => setExpandAllVersion((current) => current + 1)}
+                  >
+                    <ExpandTreeIcon />
+                  </button>
+                </HoverTooltip>
+              </div>
+            ) : null}
             <div className="relative min-w-0 flex-1">
               <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[var(--text-faint)]">
                 <SearchIcon />
@@ -896,7 +950,9 @@ function SidebarComponent({
             ) : (
               <FileTree
                 activePath={activeTreePath}
+                collapseAllVersion={collapseAllVersion}
                 darkMode={darkMode}
+                expandAllVersion={expandAllVersion}
                 nodes={workspaceTree}
                 onCreateWorkspaceDirectory={onCreateWorkspaceDirectory}
                 onCreateWorkspaceFile={onCreateWorkspaceFile}

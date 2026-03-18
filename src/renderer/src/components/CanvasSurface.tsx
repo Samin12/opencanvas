@@ -61,6 +61,7 @@ interface CanvasSurfaceProps {
   onImportAssetFile: (file: File) => Promise<FileTreeNode | null>
   onImportImageFile: (file: File) => Promise<FileTreeNode | null>
   onOpenFile: (node: FileTreeNode) => void
+  onRenameNode: (targetPath: string, nextName: string) => void
   onStateChange: (state: CanvasState, options?: { immediate?: boolean }) => void
   shortcutsSuspended?: boolean
   state: CanvasState
@@ -740,6 +741,31 @@ function tileSubtitleLabel(tile: CanvasTile) {
   return tile.filePath?.replace(/^.*[\\/]/, '') ?? ''
 }
 
+function fileNameFromPath(targetPath: string) {
+  const pathParts = targetPath.split(/[\\/]/).filter(Boolean)
+  return pathParts[pathParts.length - 1] ?? targetPath
+}
+
+function splitFileName(targetName: string) {
+  const extensionIndex = targetName.lastIndexOf('.')
+
+  if (extensionIndex <= 0) {
+    return {
+      extension: '',
+      stem: targetName
+    }
+  }
+
+  return {
+    extension: targetName.slice(extensionIndex),
+    stem: targetName.slice(0, extensionIndex)
+  }
+}
+
+function isMarkdownNotePath(targetPath: string | null | undefined) {
+  return typeof targetPath === 'string' && /\.(?:md|mdx|markdown)$/i.test(targetPath)
+}
+
 function tileCenterWithinBounds(tile: CanvasTile, bounds: FrameBoundsSnapshot) {
   const centerX = tile.x + tile.width / 2
   const centerY = tile.y + tile.height / 2
@@ -809,6 +835,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       onImportAssetFile,
       onImportImageFile,
       onOpenFile,
+      onRenameNode,
       onStateChange,
       shortcutsSuspended = false,
       state
@@ -829,6 +856,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const canvasActiveRef = useRef(true)
     const activeScrollCaptureElementRef = useRef<HTMLElement | null>(null)
     const lastPointerScrollActivationAtRef = useRef(0)
+    const renamingInputRef = useRef<HTMLInputElement | null>(null)
+    const renameCancelRef = useRef(false)
     const frameBoundsRef = useRef<Map<string, FrameBoundsSnapshot>>(new Map())
     const stateRef = useRef(state)
     const drawColorRef = useRef<TLDefaultColorStyle>('black')
@@ -845,6 +874,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const [tileRefreshTokens, setTileRefreshTokens] = useState<Record<string, number>>({})
     const [noteCopyActionsByTile, setNoteCopyActionsByTile] = useState<Record<string, MarkdownCopyActions | null>>({})
     const [convertingStickyNote, setConvertingStickyNote] = useState(false)
+    const [renamingTileId, setRenamingTileId] = useState<string | null>(null)
+    const [renamingValue, setRenamingValue] = useState('')
     const [zoomIndicator, setZoomIndicator] = useState<string | null>(null)
 
     stateRef.current = state
@@ -858,6 +889,73 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       return stateRef.current.tiles.find((tile) => tile.id === tileId) ?? null
     }
+
+    function beginTileRename(tile: CanvasTile) {
+      if (!tile.filePath || !isMarkdownNotePath(tile.filePath)) {
+        return
+      }
+
+      const { stem } = splitFileName(fileNameFromPath(tile.filePath))
+      renameCancelRef.current = false
+      setRenamingTileId(tile.id)
+      setRenamingValue(stem)
+    }
+
+    function cancelTileRename() {
+      renameCancelRef.current = true
+      setRenamingTileId(null)
+      setRenamingValue('')
+    }
+
+    function commitTileRename(tile: CanvasTile) {
+      if (!tile.filePath) {
+        cancelTileRename()
+        return
+      }
+
+      const trimmedValue = renamingValue.trim()
+      const currentName = fileNameFromPath(tile.filePath)
+      const { extension } = splitFileName(currentName)
+
+      setRenamingTileId(null)
+      setRenamingValue('')
+
+      if (!trimmedValue) {
+        return
+      }
+
+      const nextName =
+        extension && !trimmedValue.toLowerCase().endsWith(extension.toLowerCase())
+          ? `${trimmedValue}${extension}`
+          : trimmedValue
+
+      if (nextName === currentName) {
+        return
+      }
+
+      onRenameNode(tile.filePath, nextName)
+    }
+
+    useEffect(() => {
+      if (!renamingTileId || !renamingInputRef.current) {
+        return
+      }
+
+      renamingInputRef.current.focus()
+      renamingInputRef.current.select()
+    }, [renamingTileId])
+
+    useEffect(() => {
+      if (!renamingTileId) {
+        return
+      }
+
+      const activeTile = tileById(renamingTileId)
+
+      if (!activeTile?.filePath || !isMarkdownNotePath(activeTile.filePath)) {
+        cancelTileRename()
+      }
+    }, [renamingTileId, state])
 
     function registerNoteCopyActions(tileId: string, actions: MarkdownCopyActions | null) {
       setNoteCopyActionsByTile((current) => {
@@ -3842,6 +3940,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 const hasFileDocument = Boolean(tile.filePath)
                 const showNoteShortcutHelp = tile.type === 'note'
                 const tileRefreshToken = tileRefreshTokens[tile.id] ?? 0
+                const isMarkdownTile = tileFileKind === 'note' && isMarkdownNotePath(tile.filePath)
+                const isRenamingThisTile = renamingTileId === tile.id
+                const renameExtension = tile.filePath ? splitFileName(fileNameFromPath(tile.filePath)).extension : ''
                 const connectorLabel =
                   tile.type === 'term'
                     ? dragConnection?.sourceKind === 'group'
@@ -3937,7 +4038,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     beginTileDrag(tile, event)
                   }}
                   onDoubleClick={() => {
-                    if (tile.filePath && tileFileKind) {
+                    if (tile.filePath && tileFileKind && !isMarkdownTile) {
                       onOpenFile({
                         kind: 'file',
                         name: tile.title,
@@ -3948,9 +4049,72 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   }}
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[12px] font-medium text-[var(--text)]">
-                      {tile.title}
-                    </div>
+                    {isRenamingThisTile && isMarkdownTile ? (
+                      <div
+                        className="flex items-center gap-1.5"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onDoubleClick={(event) => event.stopPropagation()}
+                      >
+                        <input
+                          ref={renamingInputRef}
+                          value={renamingValue}
+                          onChange={(event) => {
+                            setRenamingValue(event.target.value)
+                          }}
+                          className="min-w-0 flex-1 rounded-[4px] border border-[color:var(--accent)] bg-[var(--surface-0)] px-2 py-1 text-[12px] font-medium text-[var(--text)] outline-none"
+                          onBlur={() => {
+                            if (renameCancelRef.current) {
+                              renameCancelRef.current = false
+                              return
+                            }
+
+                            commitTileRename(tile)
+                          }}
+                          onKeyDown={(event) => {
+                            event.stopPropagation()
+
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              commitTileRename(tile)
+                              return
+                            }
+
+                            if (event.key === 'Escape') {
+                              event.preventDefault()
+                              cancelTileRename()
+                            }
+                          }}
+                        />
+                        {renameExtension ? (
+                          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-faint)]">
+                            {renameExtension}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className={clsx(
+                          'block max-w-full truncate bg-transparent p-0 text-left text-[12px] font-medium text-[var(--text)]',
+                          isMarkdownTile && 'cursor-text'
+                        )}
+                        onPointerDown={(event) => {
+                          event.stopPropagation()
+                        }}
+                        onDoubleClick={(event) => {
+                          if (!isMarkdownTile) {
+                            return
+                          }
+
+                          event.preventDefault()
+                          event.stopPropagation()
+                          beginTileRename(tile)
+                        }}
+                        title={isMarkdownTile ? 'Double-click to rename this markdown file' : tile.title}
+                      >
+                        {tile.title}
+                      </button>
+                    )}
                     <div className="truncate text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
                       {tileSubtitleLabel(tile)}
                     </div>

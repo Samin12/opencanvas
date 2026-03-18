@@ -1941,6 +1941,7 @@ export default function App() {
             onImportAssetFile={importWorkspaceAssetFile}
             onImportImageFile={importWorkspaceImageFile}
             onOpenFile={previewFile}
+            onRenameNode={(targetPath, nextName) => void renameWorkspaceNode(targetPath, nextName)}
             onStateChange={handleCanvasStateChange}
             shortcutsSuspended={Boolean(viewerFile)}
             state={canvasState}
