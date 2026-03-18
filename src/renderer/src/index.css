@@ -183,30 +183,12 @@ textarea {
 .terminal-pane .xterm-viewport {
   overflow-y: scroll !important;
   overscroll-behavior: contain;
-  scrollbar-color: var(--line-strong) transparent;
-  scrollbar-gutter: stable both-edges;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
 
 .terminal-pane .xterm-viewport::-webkit-scrollbar {
-  width: 10px;
-}
-
-.terminal-pane .xterm-viewport::-webkit-scrollbar-track {
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--line-strong) 18%, transparent);
-}
-
-.terminal-pane .xterm-viewport::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: var(--line-strong);
-  background-clip: padding-box;
-}
-
-.terminal-pane .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: var(--text-faint);
-  background-clip: padding-box;
+  width: 0;
+  height: 0;
 }
 
 .collab-tldraw {

@@ -3,6 +3,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent
 } from 'react'
@@ -11,6 +12,11 @@ import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 
 import type { FileTreeNode } from '@shared/types'
+import {
+  externalDownloadFromDataTransfer,
+  externalPathsFromDataTransfer,
+  hasExternalPathPayload
+} from '../utils/externalDropPaths'
 
 interface FileTreeProps {
   activePath: string | null
@@ -22,6 +28,11 @@ interface FileTreeProps {
   onCreateWorkspaceFile: (targetDirectoryPath: string, fileName: string) => void
   onCopyNodePath: (targetPath: string) => void
   onDeleteNode: (targetPath: string) => void
+  onImportExternalDownload: (
+    download: { fileName?: string; mimeType?: string | null; url: string },
+    targetDirectoryPath: string | null
+  ) => void
+  onImportExternalPaths: (sourcePaths: string[], targetDirectoryPath: string | null) => void
   onMoveFile: (sourcePath: string, targetDirectoryPath: string) => void
   onPlaceFile: (node: FileTreeNode) => void
   onRevealNodeInFinder: (targetPath: string) => void
@@ -401,6 +412,8 @@ export function FileTree({
   onCreateWorkspaceFile,
   onCopyNodePath,
   onDeleteNode,
+  onImportExternalDownload,
+  onImportExternalPaths,
   onMoveFile,
   onPlaceFile,
   onRevealNodeInFinder,
@@ -412,10 +425,13 @@ export function FileTree({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [dragState, setDragState] = useState<PointerDragState | null>(null)
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null)
+  const [externalDragActive, setExternalDragActive] = useState(false)
+  const [externalDropTargetPath, setExternalDropTargetPath] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<TreeContextMenuState | null>(null)
   const [inputDialog, setInputDialog] = useState<TreeInputDialogState | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<FileTreeNode | null>(null)
   const dragStateRef = useRef<PointerDragState | null>(null)
+  const externalDragDepthRef = useRef(0)
   const expandTimerRef = useRef<number | null>(null)
   const contextMenuRef = useRef<HTMLDivElement | null>(null)
   const dialogInputRef = useRef<HTMLInputElement | null>(null)
@@ -444,6 +460,20 @@ export function FileTree({
       if (expandTimerRef.current !== null) {
         window.clearTimeout(expandTimerRef.current)
       }
+    }
+  }, [])
+
+  useEffect(() => {
+    function handleWindowDrop() {
+      clearExternalDragState()
+    }
+
+    window.addEventListener('dragend', handleWindowDrop)
+    window.addEventListener('drop', handleWindowDrop)
+
+    return () => {
+      window.removeEventListener('dragend', handleWindowDrop)
+      window.removeEventListener('drop', handleWindowDrop)
     }
   }, [])
 
@@ -623,6 +653,104 @@ export function FileTree({
     scheduleDirectoryExpand(candidatePath, directoryHover && !isExpanded)
 
     return candidatePath
+  }
+
+  function resolveExternalDropTargetFromPoint(clientX: number, clientY: number) {
+    if (typeof document === 'undefined') {
+      return rootDirectoryPath
+    }
+
+    const elementAtPoint = document.elementFromPoint(clientX, clientY) as HTMLElement | null
+    const dropElement = elementAtPoint?.closest<HTMLElement>('[data-file-tree-drop-path], [data-file-tree-root-drop="true"]')
+
+    if (!dropElement) {
+      clearPendingExpand()
+      return rootDirectoryPath
+    }
+
+    const candidatePath =
+      dropElement.dataset.fileTreeDropPath ??
+      (dropElement.dataset.fileTreeRootDrop === 'true' ? rootDirectoryPath : null)
+    const directoryHover = dropElement.dataset.fileTreeDirectory === 'true'
+
+    if (candidatePath && directoryHover) {
+      const isExpanded = trimmedQuery ? true : expanded[candidatePath] ?? true
+      scheduleDirectoryExpand(candidatePath, !isExpanded)
+    } else {
+      clearPendingExpand()
+    }
+
+    return candidatePath ?? rootDirectoryPath
+  }
+
+  function clearExternalDragState() {
+    externalDragDepthRef.current = 0
+    setExternalDragActive(false)
+    setExternalDropTargetPath(null)
+    clearPendingExpand()
+  }
+
+  function handleExternalDragEnter(event: ReactDragEvent<HTMLElement>) {
+    if (!rootDirectoryPath || !hasExternalPathPayload(event.dataTransfer)) {
+      return
+    }
+
+    externalDragDepthRef.current += 1
+    setExternalDragActive(true)
+    setExternalDropTargetPath(resolveExternalDropTargetFromPoint(event.clientX, event.clientY))
+    event.preventDefault()
+  }
+
+  function handleExternalDragOver(event: ReactDragEvent<HTMLElement>) {
+    if (!rootDirectoryPath || !hasExternalPathPayload(event.dataTransfer)) {
+      return
+    }
+
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setExternalDragActive(true)
+    setExternalDropTargetPath(resolveExternalDropTargetFromPoint(event.clientX, event.clientY))
+  }
+
+  function handleExternalDragLeave(event: ReactDragEvent<HTMLElement>) {
+    if (!rootDirectoryPath || !hasExternalPathPayload(event.dataTransfer)) {
+      return
+    }
+
+    externalDragDepthRef.current = Math.max(0, externalDragDepthRef.current - 1)
+
+    if (externalDragDepthRef.current === 0) {
+      clearExternalDragState()
+    }
+  }
+
+  function handleExternalDrop(event: ReactDragEvent<HTMLElement>) {
+    if (!rootDirectoryPath) {
+      return
+    }
+
+    const sourcePaths = externalPathsFromDataTransfer(event.dataTransfer)
+    const externalDownload = externalDownloadFromDataTransfer(event.dataTransfer)
+
+    if (sourcePaths.length === 0 && !externalDownload) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+    const targetDirectoryPath =
+      resolveExternalDropTargetFromPoint(event.clientX, event.clientY) ?? rootDirectoryPath
+
+    clearExternalDragState()
+
+    if (sourcePaths.length > 0) {
+      onImportExternalPaths(sourcePaths, targetDirectoryPath)
+      return
+    }
+
+    if (externalDownload) {
+      onImportExternalDownload(externalDownload, targetDirectoryPath)
+    }
   }
 
   function openContextMenu(event: ReactMouseEvent, node: FileTreeNode | null, directoryPath: string) {
@@ -840,6 +968,7 @@ export function FileTree({
     if (node.kind === 'directory') {
       const isExpanded = trimmedQuery ? true : expanded[node.path] ?? true
       const childCount = directChildCount(node)
+      const isDropTarget = dropTargetPath === node.path || externalDropTargetPath === node.path
 
       return (
         <div key={node.path} className="space-y-0.5">
@@ -860,7 +989,7 @@ export function FileTree({
                 activePath === node.path &&
                   'border-[color:var(--line)] bg-[color:color-mix(in_srgb,var(--surface-selected)_85%,transparent)] text-[var(--text)]',
                 dragState?.sourcePath === node.path && 'opacity-55',
-                dropTargetPath === node.path &&
+                isDropTarget &&
                   'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
               )}
               onMouseDown={(event) => {
@@ -877,6 +1006,10 @@ export function FileTree({
                 onSelectNode(node)
                 toggleDirectory(node.path)
               }}
+              onDragEnterCapture={handleExternalDragEnter}
+              onDragLeaveCapture={handleExternalDragLeave}
+              onDragOverCapture={handleExternalDragOver}
+              onDropCapture={handleExternalDrop}
               onContextMenu={(event) => openContextMenu(event, node, node.path)}
               title={`Toggle folder: ${node.name}`}
               onPointerDown={(event) => startDraggingNode(event, node)}
@@ -925,9 +1058,10 @@ export function FileTree({
       )
     }
 
-    const { extensionLabel, stem } = displayFileNameParts(node)
+  const { extensionLabel, stem } = displayFileNameParts(node)
+  const parentDropTargetPath = parentDirectoryPath(node.path) ?? rootDirectoryPath ?? null
 
-    return (
+  return (
       <div key={node.path} className="relative">
         {depth > 0 ? (
           <span
@@ -944,7 +1078,8 @@ export function FileTree({
             dragState?.sourcePath === node.path && 'opacity-55',
             activePath === node.path
               ? 'border-[color:var(--line)] bg-[color:color-mix(in_srgb,var(--surface-selected)_85%,transparent)] text-[var(--text)]'
-              : 'text-[var(--text-dim)] hover:bg-[color:color-mix(in_srgb,var(--surface-selected)_65%,transparent)]'
+              : 'text-[var(--text-dim)] hover:bg-[color:color-mix(in_srgb,var(--surface-selected)_65%,transparent)]',
+            parentDropTargetPath && externalDropTargetPath === parentDropTargetPath && 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
           )}
           onMouseDown={(event) => {
             if (event.button === 2) {
@@ -959,6 +1094,10 @@ export function FileTree({
 
             onSelectNode(node)
           }}
+          onDragEnterCapture={handleExternalDragEnter}
+          onDragLeaveCapture={handleExternalDragLeave}
+          onDragOverCapture={handleExternalDragOver}
+          onDropCapture={handleExternalDrop}
           onContextMenu={(event) =>
             openContextMenu(event, node, parentDirectoryPath(node.path) ?? rootDirectoryPath ?? node.path)
           }
@@ -1004,6 +1143,14 @@ export function FileTree({
       <div
         className="rounded-[4px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-0)] p-4 text-sm text-[var(--text-dim)]"
         data-file-tree-root-drop={rootDirectoryPath ? 'true' : undefined}
+        onDragEnterCapture={handleExternalDragEnter}
+        onDragLeaveCapture={handleExternalDragLeave}
+        onDragOverCapture={handleExternalDragOver}
+        onDropCapture={handleExternalDrop}
+        onDragEnter={handleExternalDragEnter}
+        onDragLeave={handleExternalDragLeave}
+        onDragOver={handleExternalDragOver}
+        onDrop={handleExternalDrop}
         onContextMenu={(event) => {
           if (rootDirectoryPath) {
             openContextMenu(event, null, rootDirectoryPath)
@@ -1020,6 +1167,14 @@ export function FileTree({
       <div
         className="rounded-[4px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-0)] p-4 text-sm text-[var(--text-dim)]"
         data-file-tree-root-drop={rootDirectoryPath ? 'true' : undefined}
+        onDragEnterCapture={handleExternalDragEnter}
+        onDragLeaveCapture={handleExternalDragLeave}
+        onDragOverCapture={handleExternalDragOver}
+        onDropCapture={handleExternalDrop}
+        onDragEnter={handleExternalDragEnter}
+        onDragLeave={handleExternalDragLeave}
+        onDragOver={handleExternalDragOver}
+        onDrop={handleExternalDrop}
         onContextMenu={(event) => {
           if (rootDirectoryPath) {
             openContextMenu(event, null, rootDirectoryPath)
@@ -1035,6 +1190,14 @@ export function FileTree({
     <div
       className={clsx('space-y-0.5 font-[var(--font-mono)]', dragState?.active && 'select-none')}
       data-file-tree-root-drop={rootDirectoryPath ? 'true' : undefined}
+      onDragEnterCapture={handleExternalDragEnter}
+      onDragLeaveCapture={handleExternalDragLeave}
+      onDragOverCapture={handleExternalDragOver}
+      onDropCapture={handleExternalDrop}
+      onDragEnter={handleExternalDragEnter}
+      onDragLeave={handleExternalDragLeave}
+      onDragOver={handleExternalDragOver}
+      onDrop={handleExternalDrop}
       onContextMenu={(event) => {
         if (!rootDirectoryPath) {
           return
@@ -1049,31 +1212,31 @@ export function FileTree({
         openContextMenu(event, null, rootDirectoryPath)
       }}
     >
-      {rootDirectoryPath && dragState?.active ? (
+      {rootDirectoryPath && (dragState?.active || externalDragActive) ? (
         <div
           data-file-tree-root-drop="true"
           className={clsx(
             'mb-2 rounded-[6px] border border-dashed px-3 py-2 text-[11px] font-medium uppercase tracking-[0.14em] transition',
-            dropTargetPath === rootDirectoryPath
+            (externalDragActive ? externalDropTargetPath : dropTargetPath) === rootDirectoryPath
               ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
               : 'border-[color:var(--line-strong)] bg-[var(--surface-0)] text-[var(--text-faint)]'
           )}
         >
-          Drop Here To Move To Workspace Root
+          {externalDragActive ? 'Drop Here To Import Into Workspace Root' : 'Drop Here To Move To Workspace Root'}
         </div>
       ) : null}
       {visibleNodes.map((node) => renderNode(node, 0))}
-      {rootDirectoryPath && dragState?.active ? (
+      {rootDirectoryPath && (dragState?.active || externalDragActive) ? (
         <div
           data-file-tree-root-drop="true"
           className={clsx(
             'mt-2 rounded-[6px] border border-dashed px-3 py-2 text-[11px] font-medium uppercase tracking-[0.14em] transition',
-            dropTargetPath === rootDirectoryPath
+            (externalDragActive ? externalDropTargetPath : dropTargetPath) === rootDirectoryPath
               ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
               : 'border-[color:var(--line-strong)] bg-[var(--surface-0)] text-[var(--text-faint)]'
           )}
         >
-          Or Drop Here To Move Back To Root
+          {externalDragActive ? 'Or Drop Here To Import Back To Root' : 'Or Drop Here To Move Back To Root'}
         </div>
       ) : null}
       {dragState?.active && typeof document !== 'undefined'

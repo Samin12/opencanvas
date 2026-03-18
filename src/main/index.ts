@@ -6,7 +6,7 @@ import { registerIpcHandlers } from './ipc'
 import { ensurePreviewServer } from './previewServer'
 import { loadConfig, saveConfig } from './storage'
 
-const { app, BrowserWindow, screen } = electron
+const { app, BrowserWindow, screen, shell } = electron
 type AppWindow = InstanceType<typeof BrowserWindow>
 const INSTANCE_LABEL = process.env.OPEN_CANVAS_INSTANCE_LABEL?.trim()
 const APP_NAME = INSTANCE_LABEL ? `Open Canvas (${INSTANCE_LABEL})` : 'Open Canvas'
@@ -77,6 +77,7 @@ function toCanvasPinchPayload(
 async function createMainWindow(): Promise<void> {
   const config = await loadConfig()
   const iconPath = bundledResourcePath('resources', 'claude-canvas-icon.png')
+  let hasLoadedMainDocument = false
 
   mainWindow = new BrowserWindow({
     x: config.windowState.x,
@@ -111,6 +112,32 @@ async function createMainWindow(): Promise<void> {
 
     event.preventDefault()
     mainWindow?.webContents.send('canvas:pinch', payload)
+  })
+
+  mainWindow.webContents.once('did-finish-load', () => {
+    hasLoadedMainDocument = true
+  })
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!hasLoadedMainDocument) {
+      return
+    }
+
+    event.preventDefault()
+
+    if (/^https?:/i.test(url)) {
+      void shell.openExternal(url)
+    }
+  })
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) {
+      void shell.openExternal(url)
+    }
+
+    return {
+      action: 'deny'
+    }
   })
 
   mainWindow.on('close', async () => {

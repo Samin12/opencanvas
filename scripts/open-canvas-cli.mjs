@@ -4,6 +4,7 @@ import {
   activateOpenCanvasApp,
   addWorkspace,
   addFileToCanvas,
+  addUrlToCanvas,
   clearCanvas,
   createNote,
   enqueueDiagramRequest,
@@ -23,12 +24,14 @@ Usage:
   npm run cli -- workspace use <path-or-index>
   npm run cli -- canvas clear [--workspace <path-or-index>]
   npm run cli -- canvas add-file --path <file> [--workspace <path-or-index>] [--title <text>] [--x <number>] [--y <number>]
+  npm run cli -- canvas add-url --url <url> [--workspace <path-or-index>] [--title <text>] [--x <number>] [--y <number>]
   npm run cli -- note create --title <text> [--target-dir <dir>] [--workspace <path-or-index>] [--input <markdown-file>] [--x <number>] [--y <number>]
   npm run cli -- diagram enqueue --input <json-file> [--workspace <path-or-index>] [--summary <text>] [--request-id <id>]
 
 Notes:
   - \`open\` focuses the running Open Canvas app on macOS. It does not start the dev server.
   - \`note create\` also places the new markdown file onto the canvas. Pass content via \`--input\` or pipe markdown into stdin.
+  - \`canvas add-url\` creates a new embed tile for Google Slides and other supported URLs.
   - \`diagram enqueue\` accepts either Open Canvas semantic JSON or Excalidraw clipboard JSON.
 `)
 }
@@ -144,6 +147,28 @@ async function main() {
         y: Number.isFinite(y) ? y : undefined
       })
       console.log(`Placed file on canvas: ${result.filePath}`)
+      console.log(`Workspace: ${result.workspacePath}`)
+      console.log(`Tile: ${result.tileId}`)
+      return
+    }
+
+    if (command === 'canvas' && subcommand === 'add-url') {
+      const { options } = parseOptions(rest)
+
+      if (typeof options.url !== 'string' || options.url.trim().length === 0) {
+        throw new Error('The `canvas add-url` command requires --url <url>.')
+      }
+
+      const x = typeof options.x === 'string' ? Number.parseFloat(options.x) : undefined
+      const y = typeof options.y === 'string' ? Number.parseFloat(options.y) : undefined
+      const result = await addUrlToCanvas({
+        title: typeof options.title === 'string' ? options.title : undefined,
+        url: options.url,
+        workspace: typeof options.workspace === 'string' ? options.workspace : undefined,
+        x: Number.isFinite(x) ? x : undefined,
+        y: Number.isFinite(y) ? y : undefined
+      })
+      console.log(`Placed URL on canvas: ${result.url}`)
       console.log(`Workspace: ${result.workspacePath}`)
       console.log(`Tile: ${result.tileId}`)
       return

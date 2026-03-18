@@ -120,6 +120,8 @@ function sanitizeCanvasState(input: Partial<CanvasState> | undefined): CanvasSta
             embedUrl: typeof tile.embedUrl === 'string' ? tile.embedUrl : undefined,
             filePath: typeof tile.filePath === 'string' ? tile.filePath : undefined,
             sessionId: typeof tile.sessionId === 'string' ? tile.sessionId : undefined,
+            terminalNotifyOnComplete:
+              tile.type === 'term' ? Boolean(tile.terminalNotifyOnComplete) : undefined,
             terminalProvider:
               tile.type === 'term'
                 ? tile.terminalProvider === 'codex'

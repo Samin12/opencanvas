@@ -13,8 +13,11 @@ import type {
   FileMetadata,
   FileTreeNode,
   ImageAssetData,
+  ImportWorkspaceDownloadOptions,
+  ImportWorkspacePathsOptions,
   OfficeViewerBootstrap,
   OfficeViewerSession,
+  PresentationPreviewResult,
   RenameWorkspaceNodeOptions,
   TerminalActivityItem,
   TerminalSessionSnapshot,
@@ -46,8 +49,12 @@ const api: CollaboratorApi = {
     ipcRenderer.invoke('system:copy-html', html, text) as Promise<void>,
   readOfficeViewerBootstrap: (force?: boolean) =>
     ipcRenderer.invoke('office:bootstrap', Boolean(force)) as Promise<OfficeViewerBootstrap>,
+  ensureOfficeViewer: () =>
+    ipcRenderer.invoke('office:ensure') as Promise<OfficeViewerBootstrap>,
   getOfficeViewerSession: (filePath: string) =>
     ipcRenderer.invoke('office:session', filePath) as Promise<OfficeViewerSession>,
+  ensurePresentationPreview: (filePath: string) =>
+    ipcRenderer.invoke('presentation:preview', filePath) as Promise<PresentationPreviewResult>,
   createTerminalSession: (options) =>
     ipcRenderer.invoke('terminal:create', options) as Promise<TerminalSessionSnapshot>,
   readTerminalActivity: (sessionId: string) =>
@@ -114,6 +121,10 @@ const api: CollaboratorApi = {
     ipcRenderer.invoke('workspace:create-file', workspacePath, options) as Promise<FileTreeNode>,
   createWorkspaceDirectory: (workspacePath: string, options: CreateWorkspaceDirectoryOptions) =>
     ipcRenderer.invoke('workspace:create-directory', workspacePath, options) as Promise<FileTreeNode>,
+  importWorkspacePaths: (workspacePath: string, options: ImportWorkspacePathsOptions) =>
+    ipcRenderer.invoke('workspace:import-paths', workspacePath, options) as Promise<FileTreeNode[]>,
+  importWorkspaceDownload: (workspacePath: string, options: ImportWorkspaceDownloadOptions) =>
+    ipcRenderer.invoke('workspace:import-download', workspacePath, options) as Promise<FileTreeNode>,
   importWorkspaceAsset: (workspacePath: string, asset: WorkspaceAssetImport) =>
     ipcRenderer.invoke('workspace:import-asset', workspacePath, asset) as Promise<FileTreeNode>,
   importWorkspaceImage: (workspacePath: string, image: WorkspaceImageImport) =>

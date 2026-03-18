@@ -15,5 +15,11 @@ cat <temp-file> | {{CLI_COMMAND}} note create --workspace . --title "<title>"
 {{CLI_COMMAND}} canvas add-file --workspace . --path <existing-file>
 ```
 
+4. If the result is a Google Slides or other supported URL, run:
+
+```bash
+{{CLI_COMMAND}} canvas add-url --workspace . --url <supported-url>
+```
+
 Use `--target-dir <dir>` when the note belongs in a specific folder.
 Prefer this CLI workflow over editing `.claude-canvas/canvas.json` directly.

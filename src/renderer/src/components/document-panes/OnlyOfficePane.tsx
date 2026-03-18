@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { ErrorPane, FileViewerSurface, LoadingPane, type ViewerVariant } from './FileViewerSurface'
 
@@ -87,28 +87,34 @@ function ActionButton({
 
 export function OnlyOfficePane({
   filePath,
+  headerActions,
   kindLabel,
   officeViewer = null,
   refreshToken = 0,
   showTileRefreshButton = true,
   showViewerRefreshButton = true,
+  unavailableActions: extraUnavailableActions,
   variant = 'tile'
 }: {
   filePath: string
+  headerActions?: ReactNode
   kindLabel: 'Presentation Surface' | 'Spreadsheet Surface'
   officeViewer?: OfficeViewerBootstrap | null
   refreshToken?: number
   showTileRefreshButton?: boolean
   showViewerRefreshButton?: boolean
+  unavailableActions?: ReactNode
   variant?: ViewerVariant
 }) {
   const elementId = useId().replace(/:/g, '-')
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [session, setSession] = useState<OfficeViewerSession | null>(null)
+  const [viewerBootstrap, setViewerBootstrap] = useState<OfficeViewerBootstrap | null>(officeViewer)
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable' | 'error'>('loading')
   const [unavailableMessage, setUnavailableMessage] = useState(
     'The ONLYOFFICE document server is unavailable. Run `npm run office:up` in the project root, then refresh this tile.'
   )
+  const [startingViewer, setStartingViewer] = useState(false)
   const [reloadCount, setReloadCount] = useState(0)
 
   useEffect(() => {
@@ -134,9 +140,12 @@ export function OnlyOfficePane({
           return
         }
 
+        setViewerBootstrap(bootstrap)
+
         if (bootstrap.status === 'disabled') {
           setUnavailableMessage(
-            'The ONLYOFFICE viewer is disabled for this build. Open this file externally or enable the document server.'
+            bootstrap.detail ??
+              'The ONLYOFFICE viewer is disabled for this build. Open this file externally or enable the document server.'
           )
           setStatus('unavailable')
           return
@@ -144,7 +153,8 @@ export function OnlyOfficePane({
 
         if (bootstrap.status !== 'ready' || !bootstrap.baseUrl) {
           setUnavailableMessage(
-            'The ONLYOFFICE document server is unavailable. Run `npm run office:up` in the project root, then refresh this tile.'
+            bootstrap.detail ??
+              'The ONLYOFFICE document server is unavailable. Run `npm run office:up` in the project root, then refresh this tile.'
           )
           setStatus('unavailable')
           return
@@ -171,6 +181,32 @@ export function OnlyOfficePane({
       cancelled = true
     }
   }, [filePath, officeViewer, reloadCount])
+
+  async function startViewer() {
+    if (startingViewer || typeof window.collaborator.ensureOfficeViewer !== 'function') {
+      return
+    }
+
+    setStartingViewer(true)
+
+    try {
+      const bootstrap = await window.collaborator.ensureOfficeViewer()
+      setViewerBootstrap(bootstrap)
+
+      if (bootstrap.status === 'ready') {
+        setReloadCount((current) => current + 1)
+        return
+      }
+
+      setUnavailableMessage(
+        bootstrap.detail ??
+          'The ONLYOFFICE helper could not be started. Retry in a few seconds or open the file externally.'
+      )
+      setStatus('unavailable')
+    } finally {
+      setStartingViewer(false)
+    }
+  }
 
   useEffect(() => {
     if (status !== 'ready' || !session || !hostRef.current) {
@@ -247,6 +283,22 @@ export function OnlyOfficePane({
   const unavailableActions = useMemo(
     () => (
       <>
+        {viewerBootstrap?.setupAvailable ? (
+          <ActionButton
+            onClick={() => {
+              void startViewer()
+            }}
+          >
+            {startingViewer ? 'Starting…' : 'Start viewer'}
+          </ActionButton>
+        ) : null}
+        <ActionButton
+          onClick={() => {
+            setReloadCount((current) => current + 1)
+          }}
+        >
+          Retry
+        </ActionButton>
         <ActionButton
           onClick={() => {
             void window.collaborator.openPath(filePath)
@@ -261,9 +313,10 @@ export function OnlyOfficePane({
         >
           Setup docs
         </ActionButton>
+        {extraUnavailableActions}
       </>
     ),
-    [filePath]
+    [extraUnavailableActions, filePath, startingViewer, viewerBootstrap?.setupAvailable]
   )
 
   if (status === 'loading') {
@@ -292,6 +345,7 @@ export function OnlyOfficePane({
 
   return (
     <FileViewerSurface
+      headerActions={headerActions}
       label={kindLabel}
       onRefresh={() => setReloadCount((current) => current + 1)}
       showTileRefreshButton={showTileRefreshButton}

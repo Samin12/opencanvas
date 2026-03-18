@@ -28,6 +28,7 @@ import {
   parseCanvasDiagramQueueIndex,
   resolveWorkspaceRelativePath
 } from './utils/canvasDiagramValidation'
+import { hasExternalPathPayload } from './utils/externalDropPaths'
 import { extractPastedUrl } from './utils/embedTiles'
 import { keyboardShortcutsBlocked } from './utils/keyboard'
 import { installButtonTooltipSync } from './utils/buttonTooltips'
@@ -60,6 +61,10 @@ function flattenFiles(nodes: FileTreeNode[]): FileTreeNode[] {
   }
 
   return files
+}
+
+function firstFileNode(nodes: FileTreeNode[]): FileTreeNode | null {
+  return flattenFiles(nodes)[0] ?? null
 }
 
 function collectDirectoryPaths(nodes: FileTreeNode[]): string[] {
@@ -1066,6 +1071,37 @@ export default function App() {
   }, [activeWorkspace])
 
   useEffect(() => {
+    function handleExternalDragOver(event: DragEvent) {
+      if (!hasExternalPathPayload(event.dataTransfer)) {
+        return
+      }
+
+      event.preventDefault()
+
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = 'copy'
+      }
+    }
+
+    function handleExternalDrop(event: DragEvent) {
+      if (!hasExternalPathPayload(event.dataTransfer)) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+    }
+
+    window.addEventListener('dragover', handleExternalDragOver, true)
+    window.addEventListener('drop', handleExternalDrop, true)
+
+    return () => {
+      window.removeEventListener('dragover', handleExternalDragOver, true)
+      window.removeEventListener('drop', handleExternalDrop, true)
+    }
+  }, [])
+
+  useEffect(() => {
     function handlePointerMove(event: PointerEvent) {
       if (!resizeRef.current || !config) {
         return
@@ -1447,6 +1483,89 @@ export default function App() {
     }
   }
 
+  async function importWorkspacePathsIntoActiveWorkspace(
+    sourcePaths: string[],
+    targetDirectoryPath: string | null,
+    options?: { openViewer?: boolean }
+  ): Promise<FileTreeNode[]> {
+    if (!activeWorkspace) {
+      setWorkspaceError('Add a workspace before importing files from Finder.')
+      return []
+    }
+
+    if (typeof window.collaborator.importWorkspacePaths !== 'function') {
+      setWorkspaceError('Restart Open Canvas once to enable Finder imports.')
+      return []
+    }
+
+    try {
+      const importedNodes = await window.collaborator.importWorkspacePaths(activeWorkspace, {
+        sourcePaths,
+        targetDirectoryPath: targetDirectoryPath ?? activeWorkspace
+      })
+      const nextTree = await refreshWorkspaceTree(activeWorkspace)
+      const nextNodes = importedNodes.map((node) => findNodeByPath(nextTree, node.path) ?? node)
+      const firstImportedNode = nextNodes[0] ?? null
+      const firstImportedFile = firstFileNode(nextNodes)
+
+      if (firstImportedNode) {
+        setSelectedTreePath(firstImportedNode.path)
+      }
+
+      setViewerFile(options?.openViewer ? firstImportedFile : null)
+      setWorkspaceError(null)
+
+      return nextNodes
+    } catch (error) {
+      setWorkspaceError(
+        error instanceof Error && error.message
+          ? `Those Finder items could not be imported: ${error.message}`
+          : 'Those Finder items could not be imported.'
+      )
+      return []
+    }
+  }
+
+  async function importWorkspaceDownloadIntoActiveWorkspace(
+    download: { fileName?: string; mimeType?: string | null; url: string },
+    targetDirectoryPath: string | null,
+    options?: { openViewer?: boolean }
+  ): Promise<FileTreeNode | null> {
+    if (!activeWorkspace) {
+      setWorkspaceError('Add a workspace before importing downloaded files.')
+      return null
+    }
+
+    if (typeof window.collaborator.importWorkspaceDownload !== 'function') {
+      setWorkspaceError('Restart Open Canvas once to enable browser download imports.')
+      return null
+    }
+
+    try {
+      const importedNode = await window.collaborator.importWorkspaceDownload(activeWorkspace, {
+        fileName: download.fileName,
+        mimeType: download.mimeType ?? null,
+        targetDirectoryPath: targetDirectoryPath ?? activeWorkspace,
+        url: download.url
+      })
+      const nextTree = await refreshWorkspaceTree(activeWorkspace)
+      const nextNode = findNodeByPath(nextTree, importedNode.path) ?? importedNode
+
+      setSelectedTreePath(nextNode.path)
+      setViewerFile(options?.openViewer && nextNode.kind === 'file' ? nextNode : null)
+      setWorkspaceError(null)
+
+      return nextNode
+    } catch (error) {
+      setWorkspaceError(
+        error instanceof Error && error.message
+          ? `That downloaded file could not be imported: ${error.message}`
+          : 'That downloaded file could not be imported.'
+      )
+      return null
+    }
+  }
+
   async function moveFileIntoDirectory(sourcePath: string, targetDirectoryPath: string) {
     if (!activeWorkspace) {
       return
@@ -1823,6 +1942,16 @@ export default function App() {
               onCreateWorkspaceFile={(targetDirectoryPath, fileName) =>
                 void createWorkspaceFile(targetDirectoryPath, fileName)
               }
+              onImportExternalDownload={(download, targetDirectoryPath) =>
+                void importWorkspaceDownloadIntoActiveWorkspace(download, targetDirectoryPath, {
+                  openViewer: false
+                })
+              }
+              onImportExternalPaths={(sourcePaths, targetDirectoryPath) =>
+                void importWorkspacePathsIntoActiveWorkspace(sourcePaths, targetDirectoryPath, {
+                  openViewer: false
+                })
+              }
               onCreateTerminal={createTerminal}
               onCopyNodePath={(targetPath) => void copyWorkspaceNodePath(targetPath)}
               onDeleteNode={(targetPath) => void deleteWorkspaceNode(targetPath)}
@@ -1925,6 +2054,7 @@ export default function App() {
           <CanvasSurface
             activeWorkspacePath={activeWorkspace}
             darkMode={darkMode}
+            importTargetDirectoryPath={noteTargetPath ?? activeWorkspace}
             key={canvasWorkspacePath ?? 'no-workspace'}
             officeViewer={officeViewer}
             onBoardReady={() => {
@@ -1939,6 +2069,16 @@ export default function App() {
               createWorkspaceMarkdownNote({ initialContent: content })
             }
             onImportAssetFile={importWorkspaceAssetFile}
+            onImportExternalDownload={(download, targetDirectoryPath) =>
+              importWorkspaceDownloadIntoActiveWorkspace(download, targetDirectoryPath, {
+                openViewer: false
+              })
+            }
+            onImportExternalPaths={(sourcePaths, targetDirectoryPath) =>
+              importWorkspacePathsIntoActiveWorkspace(sourcePaths, targetDirectoryPath, {
+                openViewer: false
+              })
+            }
             onImportImageFile={importWorkspaceImageFile}
             onOpenFile={previewFile}
             onRenameNode={(targetPath, nextName) => void renameWorkspaceNode(targetPath, nextName)}
@@ -1996,6 +2136,16 @@ export default function App() {
               }
               onCreateWorkspaceFile={(targetDirectoryPath, fileName) =>
                 void createWorkspaceFile(targetDirectoryPath, fileName)
+              }
+              onImportExternalDownload={(download, targetDirectoryPath) =>
+                void importWorkspaceDownloadIntoActiveWorkspace(download, targetDirectoryPath, {
+                  openViewer: false
+                })
+              }
+              onImportExternalPaths={(sourcePaths, targetDirectoryPath) =>
+                void importWorkspacePathsIntoActiveWorkspace(sourcePaths, targetDirectoryPath, {
+                  openViewer: false
+                })
               }
               onCreateTerminal={createTerminal}
               onCopyNodePath={(targetPath) => void copyWorkspaceNodePath(targetPath)}

@@ -18,12 +18,14 @@ interface TerminalPaneProps {
   darkMode: boolean
   focusMode: TerminalUiMode | null
   isSelected: boolean
+  notifyOnComplete: boolean
   onCreateMarkdownCard: (options: {
     baseName?: string
     content: string
     targetDirectoryPath?: string
   }) => Promise<void>
   onFocusModeChange: (mode: TerminalUiMode) => void
+  onToggleNotifyOnComplete: (enabled: boolean) => void
   provider: TerminalProvider
   sessionId: string
 }
@@ -31,6 +33,7 @@ interface TerminalPaneProps {
 const DEFAULT_TERMINAL_FONT_SIZE = 12.5
 const MIN_TERMINAL_FONT_SIZE = 10
 const MAX_TERMINAL_FONT_SIZE = 19
+const COMPLETION_CHIME_MIN_INTERVAL_MS = 1500
 
 function terminalProviderUiLabel(provider: TerminalProvider) {
   return provider === 'codex' ? 'Codex' : 'Claude'
@@ -137,6 +140,70 @@ function activityAccent(activity: TerminalActivityItem) {
   return 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)]'
 }
 
+function shouldPlayCompletionChime(
+  activity: TerminalActivityItem,
+  _provider: TerminalProvider
+) {
+  return (
+    activity.state === 'success' &&
+    (activity.kind === 'status' || activity.kind === 'task' || activity.kind === 'exit')
+  )
+}
+
+function completionAudioContext(audioContextRef: { current: AudioContext | null }) {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const AudioContextCtor =
+    window.AudioContext ??
+    (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+
+  if (!AudioContextCtor) {
+    return null
+  }
+
+  if (!audioContextRef.current) {
+    audioContextRef.current = new AudioContextCtor()
+  }
+
+  return audioContextRef.current
+}
+
+function playCompletionChime(audioContextRef: { current: AudioContext | null }) {
+  const audioContext = completionAudioContext(audioContextRef)
+
+  if (!audioContext) {
+    return
+  }
+
+  if (audioContext.state === 'suspended') {
+    void audioContext.resume()
+  }
+
+  const startAt = audioContext.currentTime + 0.02
+  const notes = [
+    { duration: 0.12, frequency: 740, gain: 0.045, offset: 0 },
+    { duration: 0.18, frequency: 987, gain: 0.035, offset: 0.11 }
+  ]
+
+  notes.forEach((note) => {
+    const oscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+
+    oscillator.type = 'sine'
+    oscillator.frequency.setValueAtTime(note.frequency, startAt + note.offset)
+    gainNode.gain.setValueAtTime(0.0001, startAt + note.offset)
+    gainNode.gain.exponentialRampToValueAtTime(note.gain, startAt + note.offset + 0.02)
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, startAt + note.offset + note.duration)
+
+    oscillator.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+    oscillator.start(startAt + note.offset)
+    oscillator.stop(startAt + note.offset + note.duration + 0.03)
+  })
+}
+
 function syncTerminalWheelAttributes(host: HTMLDivElement | null, enabled: boolean) {
   if (!host) {
     return
@@ -164,8 +231,10 @@ function TerminalPaneComponent({
   darkMode,
   focusMode,
   isSelected,
+  notifyOnComplete,
   onCreateMarkdownCard,
   onFocusModeChange,
+  onToggleNotifyOnComplete,
   provider,
   sessionId
 }: TerminalPaneProps) {
@@ -181,9 +250,9 @@ function TerminalPaneComponent({
   const activityRefreshTimerRef = useRef<number | null>(null)
   const historyRequestIdRef = useRef(0)
   const activityRequestIdRef = useRef(0)
+  const completionAudioContextRef = useRef<AudioContext | null>(null)
+  const lastCompletionChimeAtRef = useRef(0)
   const pendingSelectionCardTextRef = useRef('')
-  const terminalWheelEnabledRef = useRef(false)
-  const terminalWheelRemainderRef = useRef(0)
   const terminalRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const [layout, setLayout] = useState<'split' | 'stack'>('split')
@@ -194,7 +263,7 @@ function TerminalPaneComponent({
   const [activities, setActivities] = useState<TerminalActivityItem[]>([])
   const [activityLoading, setActivityLoading] = useState(false)
   const [activityError, setActivityError] = useState<string | null>(null)
-  const [activityOpen, setActivityOpen] = useState(true)
+  const [activityOpen, setActivityOpen] = useState(false)
   const [composerValue, setComposerValue] = useState('')
   const [sessionCwd, setSessionCwd] = useState<string | null>(cwd)
   const [selectedText, setSelectedText] = useState('')
@@ -217,8 +286,27 @@ function TerminalPaneComponent({
   const historyFocusActive = isSelected && historyOpen
   const hasLinkedContextPrompt = Boolean(contextPrompt?.trim())
 
-  function canScrollTerminal(activeTerminal: Terminal) {
-    return activeTerminal.buffer.active.baseY > 0 || activeTerminal.buffer.normal.baseY > 0
+  function primeCompletionChime() {
+    const audioContext = completionAudioContext(completionAudioContextRef)
+
+    if (audioContext?.state === 'suspended') {
+      void audioContext.resume()
+    }
+  }
+
+  function maybePlayCompletionChime(activity: TerminalActivityItem) {
+    if (!notifyOnComplete || !shouldPlayCompletionChime(activity, provider)) {
+      return
+    }
+
+    const now = Date.now()
+
+    if (now - lastCompletionChimeAtRef.current < COMPLETION_CHIME_MIN_INTERVAL_MS) {
+      return
+    }
+
+    lastCompletionChimeAtRef.current = now
+    playCompletionChime(completionAudioContextRef)
   }
 
   function composedPrompt(prompt: string) {
@@ -289,54 +377,6 @@ function TerminalPaneComponent({
     const ratio = Math.min(Math.max((clientY - rect.top) / rect.height, 0), 1)
     terminal.scrollToLine(Math.round(ratio * terminal.buffer.active.baseY))
     syncScrollMetrics(terminal)
-  }
-
-  function scrollTerminalByWheelDelta(activeTerminal: Terminal, deltaY: number, deltaMode: number) {
-    const linesDelta =
-      deltaMode === 1
-        ? deltaY
-        : deltaMode === 2
-          ? deltaY * Math.max(activeTerminal.rows - 1, 1)
-          : deltaY / 20
-
-    terminalWheelRemainderRef.current += linesDelta
-
-    const wholeLines =
-      terminalWheelRemainderRef.current > 0
-        ? Math.floor(terminalWheelRemainderRef.current)
-        : Math.ceil(terminalWheelRemainderRef.current)
-
-    if (wholeLines === 0) {
-      return
-    }
-
-    terminalWheelRemainderRef.current -= wholeLines
-    activeTerminal.scrollLines(wholeLines)
-    syncScrollMetrics(activeTerminal)
-  }
-
-  function maybeOpenHistoryFromWheel(deltaX: number, deltaY: number) {
-    const terminal = terminalRef.current
-
-    if (
-      !terminalWheelEnabledRef.current ||
-      !terminal ||
-      historyOpenRef.current ||
-      historyLoadingRef.current
-    ) {
-      return false
-    }
-
-    if (Math.abs(deltaY) < 0.5 || Math.abs(deltaY) < Math.abs(deltaX) || deltaY >= 0) {
-      return false
-    }
-
-    if (canScrollTerminal(terminal)) {
-      return false
-    }
-
-    void loadHistory({ scrollToBottom: true })
-    return true
   }
 
   function stopScrollbarDrag() {
@@ -589,33 +629,6 @@ function TerminalPaneComponent({
     fitRef.current = fitAddon
     syncTerminalWheelAttributes(host, terminalWheelActive)
 
-    const viewport = host.querySelector<HTMLElement>('.xterm-viewport')
-    const handleViewportWheel = (event: WheelEvent) => {
-      if (!terminalWheelEnabledRef.current) {
-        return
-      }
-
-      if (Math.abs(event.deltaY) < 0.5 || Math.abs(event.deltaY) < Math.abs(event.deltaX)) {
-        return
-      }
-
-      if (!canScrollTerminal(terminal)) {
-        if (maybeOpenHistoryFromWheel(event.deltaX, event.deltaY)) {
-          event.preventDefault()
-          event.stopPropagation()
-          event.stopImmediatePropagation?.()
-        }
-        return
-      }
-
-      event.preventDefault()
-      event.stopPropagation()
-      event.stopImmediatePropagation?.()
-      scrollTerminalByWheelDelta(terminal, event.deltaY, event.deltaMode)
-    }
-
-    viewport?.addEventListener('wheel', handleViewportWheel, { passive: false, capture: true })
-
     const disposeData = terminal.onData((data) => {
       window.collaborator.writeTerminalInput(sessionId, data)
     })
@@ -646,6 +659,7 @@ function TerminalPaneComponent({
 
     const detachTerminalActivity = window.collaborator.onTerminalActivity(sessionId, (activity) => {
       setActivities((current) => [...current.slice(-179), activity])
+      maybePlayCompletionChime(activity)
     })
 
     let cancelled = false
@@ -733,7 +747,6 @@ function TerminalPaneComponent({
       resizeObserver.disconnect()
       stopScheduledActivityRefresh()
       stopScrollbarDrag()
-      viewport?.removeEventListener('wheel', handleViewportWheel, true)
       detachTerminalActivity()
       detachTerminalData()
       detachTerminalExit()
@@ -747,10 +760,9 @@ function TerminalPaneComponent({
       fitRef.current = null
       syncScrollMetrics(null)
     }
-  }, [cwd, provider, sessionId])
+  }, [cwd, notifyOnComplete, provider, sessionId])
 
   useEffect(() => {
-    terminalWheelEnabledRef.current = terminalWheelActive
     syncTerminalWheelAttributes(hostRef.current, terminalWheelActive)
 
     if (shellFocusActive) {
@@ -799,6 +811,21 @@ function TerminalPaneComponent({
   }, [])
 
   useEffect(() => {
+    return () => {
+      const audioContext = completionAudioContextRef.current
+
+      if (!audioContext) {
+        return
+      }
+
+      void audioContext.close().catch(() => {
+        // Ignore audio shutdown issues during unmount.
+      })
+      completionAudioContextRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
     historyRequestIdRef.current += 1
     activityRequestIdRef.current += 1
     setHistoryOpen(false)
@@ -810,7 +837,6 @@ function TerminalPaneComponent({
     setActivities([])
     setSelectedText('')
     setSessionCwd(cwd)
-    terminalWheelRemainderRef.current = 0
     stopScheduledActivityRefresh()
     stopScrollbarDrag()
     historyScrollToBottomRef.current = false
@@ -840,11 +866,14 @@ function TerminalPaneComponent({
     syncScrollMetrics(terminal)
   }, [sessionId, terminalFontSize])
 
-  const hasVisibleTerminalScrollback = scrollMetrics.maxViewportY > 0
-  const canOpenHistoryRail = isSelected && !historyOpen && !hasVisibleTerminalScrollback
+  const hasVisibleTerminalScrollback =
+    scrollMetrics.maxViewportY > 0 || scrollMetrics.normalMaxViewportY > 0
+  const effectiveMaxY = scrollMetrics.maxViewportY > 0
+    ? scrollMetrics.maxViewportY
+    : scrollMetrics.normalMaxViewportY
   const thumbHeightPercent =
-    scrollMetrics.maxViewportY > 0
-      ? Math.max(8, (scrollMetrics.rows / (scrollMetrics.rows + scrollMetrics.maxViewportY)) * 100)
+    effectiveMaxY > 0
+      ? Math.max(8, (scrollMetrics.rows / (scrollMetrics.rows + effectiveMaxY)) * 100)
       : 100
   const thumbTopPercent =
     scrollMetrics.maxViewportY > 0
@@ -899,32 +928,6 @@ function TerminalPaneComponent({
           </div>
           <button
             type="button"
-            className={clsx(
-              'rounded-[4px] border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] transition',
-              focusMode === 'chat' && isSelected
-                ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
-                : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:text-[var(--text)]'
-            )}
-            onClick={focusChat}
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            Chat
-          </button>
-          <button
-            type="button"
-            className={clsx(
-              'rounded-[4px] border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] transition',
-              focusMode === 'shell' && isSelected
-                ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
-                : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:text-[var(--text)]'
-            )}
-            onClick={focusShell}
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            Shell
-          </button>
-          <button
-            type="button"
             className="rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]"
             onClick={() => {
               void loadHistory()
@@ -943,6 +946,44 @@ function TerminalPaneComponent({
             onMouseDown={(event) => event.stopPropagation()}
           >
             {activityOpen ? 'Hide Activity' : 'Show Activity'}
+          </button>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={notifyOnComplete}
+            className={clsx(
+              'inline-flex items-center gap-2 rounded-[999px] border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] transition',
+              notifyOnComplete
+                ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:text-[var(--text)]'
+            )}
+            title="Play a chime when this terminal reports a completed task"
+            onClick={() => {
+              const nextEnabled = !notifyOnComplete
+
+              if (nextEnabled) {
+                primeCompletionChime()
+              }
+
+              onToggleNotifyOnComplete(nextEnabled)
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <span>Chime</span>
+            <span
+              aria-hidden="true"
+              className={clsx(
+                'relative h-3.5 w-6 rounded-full transition',
+                notifyOnComplete ? 'bg-[var(--accent)]' : 'bg-[var(--surface-2)]'
+              )}
+            >
+              <span
+                className={clsx(
+                  'absolute top-[1px] h-3 w-3 rounded-full bg-white shadow-[0_1px_2px_rgba(15,23,42,0.18)] transition',
+                  notifyOnComplete ? 'left-[11px]' : 'left-[1px]'
+                )}
+              />
+            </span>
           </button>
           <button
             type="button"
@@ -983,12 +1024,6 @@ function TerminalPaneComponent({
 
           event.stopPropagation()
           focusShell()
-        }}
-        onWheelCapture={(event) => {
-          if (maybeOpenHistoryFromWheel(event.deltaX, event.deltaY)) {
-            event.preventDefault()
-            event.stopPropagation()
-          }
         }}
       >
         <div
@@ -1065,10 +1100,14 @@ function TerminalPaneComponent({
             </div>
           ) : null}
 
-          {isSelected && !historyOpen && hasVisibleTerminalScrollback ? (
+          {!historyOpen && hasVisibleTerminalScrollback ? (
             <div
               ref={scrollbarTrackRef}
-              className="absolute bottom-2 right-1.5 top-2 z-20 w-3 rounded-full bg-[rgba(15,23,42,0.08)]"
+              className={clsx(
+                'absolute bottom-2 right-1 top-2 z-20 w-[10px] rounded-full transition-opacity duration-150',
+                isSelected ? 'opacity-100' : 'opacity-0 hover:opacity-70'
+              )}
+              style={{ background: 'rgba(15, 23, 42, 0.06)' }}
               onPointerDown={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
@@ -1078,10 +1117,10 @@ function TerminalPaneComponent({
               title="Scroll terminal output"
             >
               <div
-                className="absolute left-[2px] right-[2px] rounded-full bg-[var(--line-strong)] transition-colors hover:bg-[var(--text-faint)]"
+                className="absolute left-[1.5px] right-[1.5px] rounded-full bg-[var(--text-faint)] transition-colors hover:bg-[var(--text-dim)]"
                 style={{
                   height: `${thumbHeightPercent}%`,
-                  opacity: hasVisibleTerminalScrollback ? 1 : 0.45,
+                  minHeight: '24px',
                   top: `${thumbTopPercent}%`
                 }}
                 onPointerDown={(event) => {
@@ -1093,23 +1132,6 @@ function TerminalPaneComponent({
             </div>
           ) : null}
 
-          {canOpenHistoryRail ? (
-            <button
-              type="button"
-              className="absolute bottom-2 right-1.5 top-2 z-20 flex w-5 items-center justify-center rounded-full border border-[color:var(--line)] bg-[rgba(255,253,250,0.92)] px-0 text-[8px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)] shadow-[0_10px_24px_rgba(15,23,42,0.08)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] dark:bg-[rgba(13,16,20,0.92)]"
-              style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
-              title="Open tmux scrollback"
-              onClick={() => {
-                void loadHistory({ scrollToBottom: true })
-              }}
-              onMouseDown={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-              }}
-            >
-              History
-            </button>
-          ) : null}
         </div>
 
         {activityOpen ? (
@@ -1226,7 +1248,7 @@ function TerminalPaneComponent({
         }}
       >
         <div className="mb-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]">
-          <span>{focusMode === 'shell' && isSelected ? 'Shell focused' : `${providerLabel} composer`}</span>
+          <span>{focusMode === 'shell' && isSelected ? `${providerLabel} terminal` : `${providerLabel} composer`}</span>
           <span>
             {selectedText.trim().length > 0
               ? 'Selection ready to save'
@@ -1285,8 +1307,10 @@ export const TerminalPane = memo(TerminalPaneComponent, (previous, next) => {
     previous.darkMode === next.darkMode &&
     previous.focusMode === next.focusMode &&
     previous.isSelected === next.isSelected &&
+    previous.notifyOnComplete === next.notifyOnComplete &&
     previous.onCreateMarkdownCard === next.onCreateMarkdownCard &&
     previous.onFocusModeChange === next.onFocusModeChange &&
+    previous.onToggleNotifyOnComplete === next.onToggleNotifyOnComplete &&
     previous.provider === next.provider &&
     previous.sessionId === next.sessionId
   )

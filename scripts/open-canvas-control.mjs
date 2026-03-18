@@ -303,6 +303,49 @@ function createTileFromFile({ canvasState, config, fileKind, filePath, title, x,
   }
 }
 
+function embedTitleFromUrl(url, providedTitle) {
+  const fallbackTitle = normalizeNameSegment(providedTitle ?? '', '')
+
+  if (fallbackTitle) {
+    return fallbackTitle
+  }
+
+  try {
+    const parsed = new URL(url)
+
+    if (parsed.hostname === 'docs.google.com' && /^\/presentation\//.test(parsed.pathname)) {
+      return 'Google Slides'
+    }
+
+    if (/powerpoint/i.test(parsed.hostname) || /powerpoint/i.test(parsed.pathname)) {
+      return 'PowerPoint'
+    }
+
+    return normalizeNameSegment(parsed.hostname.replace(/^www\./, ''), 'Embed')
+  } catch {
+    return 'Embed'
+  }
+}
+
+function createTileFromUrl({ canvasState, config, title, url, x, y }) {
+  const nextAutoPosition =
+    typeof x === 'number' && Number.isFinite(x) && typeof y === 'number' && Number.isFinite(y)
+      ? { x, y }
+      : autoTilePosition(config, canvasState)
+
+  return {
+    id: `tile-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    type: 'embed',
+    title: embedTitleFromUrl(url, title),
+    x: snap(nextAutoPosition.x),
+    y: snap(nextAutoPosition.y),
+    width: 720,
+    height: 520,
+    zIndex: nextZIndex(Array.isArray(canvasState?.tiles) ? canvasState.tiles : []),
+    embedUrl: url
+  }
+}
+
 export async function readCanvasState(workspacePath) {
   if (!workspacePath) {
     return EMPTY_CANVAS_STATE
@@ -612,6 +655,55 @@ export async function addFileToCanvas({
   return {
     filePath: resolvedFilePath,
     tileId: nextTile.id,
+    workspacePath: resolvedWorkspacePath
+  }
+}
+
+export async function addUrlToCanvas({
+  title,
+  url,
+  workspace,
+  x,
+  y
+}) {
+  const config = await loadConfig()
+  const workspacePath = resolveWorkspaceSelection(config, workspace)
+
+  if (!workspacePath) {
+    throw new Error('No workspace is available for canvas placement.')
+  }
+
+  let canonicalUrl
+
+  try {
+    canonicalUrl = new URL(url).toString()
+  } catch {
+    throw new Error('The `canvas add-url` command requires a valid --url value.')
+  }
+
+  const resolvedWorkspacePath = resolve(workspacePath)
+  const canvasState = await readCanvasState(resolvedWorkspacePath)
+  const nextTile = createTileFromUrl({
+    canvasState,
+    config,
+    title,
+    url: canonicalUrl,
+    x: typeof x === 'number' ? x : undefined,
+    y: typeof y === 'number' ? y : undefined
+  })
+  const nextCanvasState = {
+    ...canvasState,
+    tiles: [...(Array.isArray(canvasState.tiles) ? canvasState.tiles : []), nextTile]
+  }
+
+  await writeJson(
+    join(resolvedWorkspacePath, WORKSPACE_METADATA_DIRECTORY, WORKSPACE_CANVAS_STATE_FILE),
+    nextCanvasState
+  )
+
+  return {
+    tileId: nextTile.id,
+    url: canonicalUrl,
     workspacePath: resolvedWorkspacePath
   }
 }

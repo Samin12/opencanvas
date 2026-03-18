@@ -483,6 +483,11 @@ interface SidebarProps {
   onCreateNote: () => void
   onCreateWorkspaceDirectory: (targetDirectoryPath: string, directoryName: string) => void
   onCreateWorkspaceFile: (targetDirectoryPath: string, fileName: string) => void
+  onImportExternalDownload: (
+    download: { fileName?: string; mimeType?: string | null; url: string },
+    targetDirectoryPath: string | null
+  ) => void
+  onImportExternalPaths: (sourcePaths: string[], targetDirectoryPath: string | null) => void
   onCreateTerminal: (provider: TerminalProvider) => void
   onCopyNodePath: (targetPath: string) => void
   onDeleteNode: (targetPath: string) => void
@@ -516,6 +521,8 @@ function SidebarComponent({
   onCreateNote,
   onCreateWorkspaceDirectory,
   onCreateWorkspaceFile,
+  onImportExternalDownload,
+  onImportExternalPaths,
   onCreateTerminal,
   onCopyNodePath,
   onDeleteNode,
@@ -958,6 +965,8 @@ function SidebarComponent({
                 onCreateWorkspaceFile={onCreateWorkspaceFile}
                 onCopyNodePath={onCopyNodePath}
                 onDeleteNode={onDeleteNode}
+                onImportExternalDownload={onImportExternalDownload}
+                onImportExternalPaths={onImportExternalPaths}
                 query={fileQuery}
                 onMoveFile={onMoveFile}
                 onPlaceFile={onPlaceFile}

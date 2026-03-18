@@ -49,6 +49,11 @@ import { EmbedPane } from './EmbedPane'
 import { HoverTooltip } from './HoverTooltip'
 import { TerminalPane } from './TerminalPane'
 import { embedDescriptorFromUrl, extractDroppedUrl } from '../utils/embedTiles'
+import {
+  externalDownloadFromDataTransfer,
+  externalPathsFromDataTransfer,
+  hasExternalPathPayload
+} from '../utils/externalDropPaths'
 import { keyboardShortcutsBlocked } from '../utils/keyboard'
 import { composeTooltipLabel } from '../utils/buttonTooltips'
 import { renderCanvasDiagramSet } from '../utils/canvasDiagramRenderer'
@@ -57,6 +62,7 @@ import { COLLABORATOR_TERMINAL_CARD_MIME, type TerminalCardTransferPayload } fro
 interface CanvasSurfaceProps {
   activeWorkspacePath: string | null
   darkMode: boolean
+  importTargetDirectoryPath: string | null
   officeViewer: OfficeViewerBootstrap | null
   onBoardReady?: () => void
   onCreateMarkdownCard: (options: {
@@ -67,6 +73,14 @@ interface CanvasSurfaceProps {
   onCreateMarkdownNote: () => void
   onConvertStickyNoteToMarkdown: (content: string) => Promise<FileTreeNode | null>
   onImportAssetFile: (file: File) => Promise<FileTreeNode | null>
+  onImportExternalDownload: (
+    download: { fileName?: string; mimeType?: string | null; url: string },
+    targetDirectoryPath: string | null
+  ) => Promise<FileTreeNode | null>
+  onImportExternalPaths: (
+    sourcePaths: string[],
+    targetDirectoryPath: string | null
+  ) => Promise<FileTreeNode[]>
   onImportImageFile: (file: File) => Promise<FileTreeNode | null>
   onOpenFile: (node: FileTreeNode) => void
   onRenameNode: (targetPath: string, nextName: string) => void
@@ -218,6 +232,65 @@ const VIDEO_FILE_EXTENSIONS = new Set(['.avi', '.m4v', '.mkv', '.mov', '.mp4', '
 const PDF_FILE_EXTENSIONS = new Set(['.pdf'])
 const SPREADSHEET_FILE_EXTENSIONS = new Set(['.csv', '.tsv', '.xls', '.xlsx', '.ods'])
 const PRESENTATION_FILE_EXTENSIONS = new Set(['.ppt', '.pptx', '.odp'])
+const RENDERABLE_CODE_FILE_EXTENSIONS = new Set([
+  '.c',
+  '.cc',
+  '.cfg',
+  '.conf',
+  '.cpp',
+  '.cs',
+  '.css',
+  '.env',
+  '.go',
+  '.graphql',
+  '.gql',
+  '.h',
+  '.hpp',
+  '.html',
+  '.ini',
+  '.java',
+  '.js',
+  '.json',
+  '.jsx',
+  '.kt',
+  '.less',
+  '.log',
+  '.lua',
+  '.mjs',
+  '.php',
+  '.pl',
+  '.properties',
+  '.py',
+  '.rb',
+  '.rs',
+  '.scss',
+  '.sh',
+  '.sql',
+  '.svelte',
+  '.swift',
+  '.toml',
+  '.ts',
+  '.tsx',
+  '.txt',
+  '.vue',
+  '.xml',
+  '.yaml',
+  '.yml',
+  '.zsh'
+])
+const RENDERABLE_CODE_FILE_NAMES = new Set([
+  '.bashrc',
+  '.editorconfig',
+  '.env',
+  '.gitignore',
+  '.npmrc',
+  '.prettierrc',
+  '.tool-versions',
+  'dockerfile',
+  'makefile',
+  'readme',
+  'readme.txt'
+])
 const IMPORTABLE_ASSET_MIME_TYPES = new Set([
   'application/pdf',
   'application/vnd.ms-excel',
@@ -576,6 +649,49 @@ function droppedImportableAssetFiles(dataTransfer: DataTransfer | null) {
   return Array.from(dataTransfer?.files ?? []).filter(isImportableAssetFile)
 }
 
+function isRenderableImportedFile(node: FileTreeNode) {
+  if (node.kind !== 'file') {
+    return false
+  }
+
+  if (
+    node.fileKind === 'note' ||
+    node.fileKind === 'image' ||
+    node.fileKind === 'video' ||
+    node.fileKind === 'pdf' ||
+    node.fileKind === 'spreadsheet' ||
+    node.fileKind === 'presentation'
+  ) {
+    return true
+  }
+
+  if (node.fileKind !== 'code') {
+    return false
+  }
+
+  const lowerName = node.name.toLowerCase()
+  const { extension } = splitFileName(lowerName)
+
+  return RENDERABLE_CODE_FILE_EXTENSIONS.has(extension) || RENDERABLE_CODE_FILE_NAMES.has(lowerName)
+}
+
+function collectRenderableImportedFiles(nodes: FileTreeNode[]) {
+  const files: FileTreeNode[] = []
+
+  for (const node of nodes) {
+    if (isRenderableImportedFile(node)) {
+      files.push(node)
+      continue
+    }
+
+    if (node.children?.length) {
+      files.push(...collectRenderableImportedFiles(node.children))
+    }
+  }
+
+  return files
+}
+
 function viewportToCamera(viewport: CanvasState['viewport']) {
   const zoom = clamp(viewport.zoom, MIN_ZOOM, MAX_ZOOM)
 
@@ -835,12 +951,15 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     {
       activeWorkspacePath,
       darkMode,
+      importTargetDirectoryPath,
       officeViewer,
       onBoardReady,
       onCreateMarkdownCard,
       onCreateMarkdownNote,
       onConvertStickyNoteToMarkdown,
       onImportAssetFile,
+      onImportExternalDownload,
+      onImportExternalPaths,
       onImportImageFile,
       onOpenFile,
       onRenameNode,
@@ -2242,6 +2361,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           height: frame.height,
           zIndex: nextZIndex(stateRef.current.tiles),
           sessionId: sessionId(),
+          terminalNotifyOnComplete: false,
           terminalProvider: provider
         },
         { immediate: true }
@@ -2891,17 +3011,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
         if (!event.ctrlKey && !event.metaKey) {
           if (nativeWheelElement) {
-            const nativeScrollableElement = container
-              ? scrollableElementFromTarget(event.target, container)
-              : null
-
-            if (
-              nativeScrollableElement &&
-              canScrollElementForDelta(nativeScrollableElement, normalizedDeltaX, normalizedDeltaY)
-            ) {
-              clearWheelGestureOwner()
-              return
-            }
+            // Inside a native-wheel region (terminal, document pane, etc.).
+            // Let the event propagate so the component's own handlers process
+            // it — e.g. xterm mouse tracking in alt-screen mode, xterm
+            // viewport scroll in normal mode, or native overflow scroll in
+            // document viewers. Never fall through to canvas panning.
+            clearWheelGestureOwner()
+            return
           }
 
           if (!targetInsideCanvas && !activeWheelOwner) {
@@ -3438,6 +3554,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           height: frame.height,
           zIndex: nextZIndex(stateRef.current.tiles),
           sessionId: sessionId(),
+          terminalNotifyOnComplete: false,
           terminalProvider: provider
         },
         { immediate: true }
@@ -3477,7 +3594,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         return
       }
 
-      if (!activeWorkspacePath || droppedImportableAssetFiles(event.dataTransfer).length === 0) {
+      if (!activeWorkspacePath || !hasExternalPathPayload(event.dataTransfer)) {
+        if (!activeWorkspacePath || droppedImportableAssetFiles(event.dataTransfer).length === 0) {
+          return
+        }
+
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'copy'
         return
       }
 
@@ -3573,6 +3696,52 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         return
       }
 
+      const externalPaths = externalPathsFromDataTransfer(event.dataTransfer)
+      const externalDownload = externalDownloadFromDataTransfer(event.dataTransfer)
+
+      if (externalPaths.length > 0 || externalDownload) {
+        event.preventDefault()
+        event.stopPropagation()
+
+        const dropClientX = event.clientX
+        const dropClientY = event.clientY
+
+        void (async () => {
+          const importedNodes =
+            externalPaths.length > 0
+              ? await onImportExternalPaths(
+                  externalPaths,
+                  importTargetDirectoryPath ?? activeWorkspacePath
+                )
+              : (() => {
+                  return externalDownload
+                    ? onImportExternalDownload(
+                        externalDownload,
+                        importTargetDirectoryPath ?? activeWorkspacePath
+                      ).then((importedNode) => (importedNode ? [importedNode] : []))
+                    : Promise.resolve([])
+                })()
+          const importedFiles = collectRenderableImportedFiles(await importedNodes)
+
+          for (const [index, importedNode] of importedFiles.entries()) {
+            const staggerOffset = index * 28
+
+            spawnFileTileAtClientPoint(
+              importedNode,
+              dropClientX + staggerOffset,
+              dropClientY + staggerOffset
+            )
+          }
+        })()
+        return
+      }
+
+      if (!activeWorkspacePath || droppedImportableAssetFiles(event.dataTransfer).length === 0) {
+        return
+      }
+
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
       const assetFiles = droppedImportableAssetFiles(event.dataTransfer)
 
       if (assetFiles.length === 0) {
@@ -3760,8 +3929,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
                     {PASTE_IMAGE_SHORTCUT_KEY}
                   </span>{' '}
-                  with an image or a supported URL, or drop an image, video, PDF, spreadsheet,
-                  presentation, or URL onto the canvas. Imported files are saved in{' '}
+                  with an image or a supported URL, or drop Finder files, folders, images, videos,
+                  PDFs, spreadsheets, presentations, or URLs onto the canvas. External imports are saved in the
+                  selected folder when possible, otherwise in{' '}
+                  <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
+                    the workspace root
+                  </span>{' '}
+                  . Clipboard/media imports still use{' '}
                   <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
                     .claude-canvas/assets
                   </span>{' '}
@@ -4385,9 +4559,20 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                               : null
                           }
                           isSelected={selectedTileId === tile.id}
+                          notifyOnComplete={Boolean(tile.terminalNotifyOnComplete)}
                           onCreateMarkdownCard={(options) => createMarkdownCardForTerminal(tile.id, options)}
                           onFocusModeChange={(mode) => {
                             focusTerminal(tile.id, mode)
+                          }}
+                          onToggleNotifyOnComplete={(enabled) => {
+                            updateTile(
+                              tile.id,
+                              (currentTile) => ({
+                                ...currentTile,
+                                terminalNotifyOnComplete: enabled
+                              }),
+                              { immediate: true }
+                            )
                           }}
                           provider={terminalProviderForTile(tile)}
                           sessionId={tile.sessionId as string}

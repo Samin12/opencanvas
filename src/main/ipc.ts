@@ -8,13 +8,16 @@ import type {
   CreateWorkspaceDirectoryOptions,
   CreateWorkspaceFileOptions,
   CreateWorkspaceNoteOptions,
+  ImportWorkspaceDownloadOptions,
+  ImportWorkspacePathsOptions,
   RenameWorkspaceNodeOptions,
   TerminalProvider,
   WorkspaceAssetImport,
   WorkspaceImageImport
 } from '../shared/types'
 
-import { createOfficeViewerSession, readOfficeViewerBootstrap } from './onlyOffice'
+import { createOfficeViewerSession, ensureOfficeViewer, readOfficeViewerBootstrap } from './onlyOffice'
+import { ensurePresentationPreview } from './presentationPreview'
 import { previewFileUrl } from './previewServer'
 import { ensureWorkspaceDiagramTools } from './diagramTools'
 import {
@@ -39,7 +42,9 @@ import {
   createWorkspaceNote,
   deleteWorkspaceNode,
   importWorkspaceAsset,
+  importWorkspaceDownload,
   importWorkspaceImage,
+  importWorkspacePaths,
   moveWorkspaceNode,
   readFileMetadata,
   readImageAssetData,
@@ -106,6 +111,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('office:bootstrap', async (_event, force?: boolean) =>
     readOfficeViewerBootstrap({ force: Boolean(force) })
   )
+  ipcMain.handle('office:ensure', async () => ensureOfficeViewer())
+  ipcMain.handle('presentation:preview', async (_event, filePath: string) =>
+    ensurePresentationPreview(filePath)
+  )
   ipcMain.handle('system:open-external-url', async (_event, url: string) => {
     await shell.openExternal(url)
   })
@@ -154,6 +163,16 @@ export function registerIpcHandlers(): void {
     'workspace:create-directory',
     async (_event, workspacePath: string, options: CreateWorkspaceDirectoryOptions) =>
       createWorkspaceDirectory(workspacePath, options)
+  )
+  ipcMain.handle(
+    'workspace:import-paths',
+    async (_event, workspacePath: string, options: ImportWorkspacePathsOptions) =>
+      importWorkspacePaths(workspacePath, options)
+  )
+  ipcMain.handle(
+    'workspace:import-download',
+    async (_event, workspacePath: string, options: ImportWorkspaceDownloadOptions) =>
+      importWorkspaceDownload(workspacePath, options)
   )
   ipcMain.handle(
     'workspace:import-asset',

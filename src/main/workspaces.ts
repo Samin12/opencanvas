@@ -1,5 +1,5 @@
 import { unwatchFile, watchFile } from 'node:fs'
-import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -10,6 +10,8 @@ import type {
   FileKind,
   FileTreeNode,
   ImageAssetData,
+  ImportWorkspaceDownloadOptions,
+  ImportWorkspacePathsOptions,
   RenameWorkspaceNodeOptions,
   TextFileDocument,
   WorkspaceAssetImport,
@@ -178,6 +180,57 @@ function assetImportBaseName(fileName?: string | null): string {
     .trim()
 
   return candidate.length > 0 ? candidate : 'Imported asset'
+}
+
+function downloadFileNameFromHeaders(contentDisposition: string | null): string | null {
+  if (!contentDisposition) {
+    return null
+  }
+
+  const utf8Match = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(contentDisposition)
+
+  if (utf8Match) {
+    const decoded = decodeURIComponent(utf8Match[1]).trim()
+    return decoded.length > 0 ? decoded : null
+  }
+
+  const plainMatch = /filename\s*=\s*"?([^\";]+)"?/i.exec(contentDisposition)
+
+  if (!plainMatch) {
+    return null
+  }
+
+  const decoded = plainMatch[1].trim()
+  return decoded.length > 0 ? decoded : null
+}
+
+function downloadTargetName(
+  url: string,
+  fileName: string | undefined,
+  mimeType: string | null,
+  contentDisposition: string | null
+) {
+  const headerName = downloadFileNameFromHeaders(contentDisposition)
+  const urlName = (() => {
+    try {
+      const parsed = new URL(url)
+      const pathName = basename(parsed.pathname)
+      return pathName.length > 0 ? pathName : null
+    } catch {
+      return null
+    }
+  })()
+  const rawName = (fileName ?? headerName ?? urlName ?? 'Downloaded file').trim()
+  const normalizedBaseName = assetImportBaseName(rawName)
+  const explicitExtension = extname(rawName)
+  const mimeExtension =
+    typeof mimeType === 'string' && mimeType.length > 0 ? ASSET_MIME_EXTENSIONS.get(mimeType.toLowerCase()) : null
+  const extension = explicitExtension || mimeExtension || ''
+
+  return {
+    baseName: basename(normalizedBaseName, extname(normalizedBaseName)),
+    extension
+  }
 }
 
 function assetImportBytes(bytes: WorkspaceAssetImport['bytes']): Uint8Array {
@@ -600,6 +653,106 @@ export async function importWorkspaceAsset(
   )
 
   await writeFile(targetPath, assetImportBytes(asset.bytes))
+
+  return ensureNode(targetPath)
+}
+
+export async function importWorkspacePaths(
+  workspacePath: string,
+  options: ImportWorkspacePathsOptions
+): Promise<FileTreeNode[]> {
+  const resolvedWorkspacePath = resolve(workspacePath)
+  const resolvedTargetDirectoryPath = resolve(options.targetDirectoryPath ?? workspacePath)
+
+  if (!isWithinWorkspace(resolvedWorkspacePath, resolvedTargetDirectoryPath)) {
+    throw new Error('Import target is outside the active workspace')
+  }
+
+  const targetDirectoryStats = await stat(resolvedTargetDirectoryPath)
+
+  if (!targetDirectoryStats.isDirectory()) {
+    throw new Error('Import target must be a directory')
+  }
+
+  const sourcePaths = Array.from(
+    new Set(
+      (Array.isArray(options.sourcePaths) ? options.sourcePaths : [])
+        .filter((sourcePath): sourcePath is string => typeof sourcePath === 'string' && sourcePath.trim().length > 0)
+        .map((sourcePath) => resolve(sourcePath))
+    )
+  )
+
+  if (sourcePaths.length === 0) {
+    return []
+  }
+
+  const importedNodes: FileTreeNode[] = []
+
+  for (const sourcePath of sourcePaths) {
+    const sourceStats = await lstat(sourcePath)
+    const extension = sourceStats.isDirectory() ? '' : extname(sourcePath)
+    const baseName = sourceStats.isDirectory()
+      ? basename(sourcePath)
+      : basename(sourcePath, extension)
+    const targetPath = await createUniquePath(resolvedTargetDirectoryPath, baseName, extension)
+
+    await cp(sourcePath, targetPath, {
+      errorOnExist: true,
+      force: false,
+      preserveTimestamps: true,
+      recursive: true
+    })
+
+    importedNodes.push(await ensureNode(targetPath))
+  }
+
+  return importedNodes
+}
+
+export async function importWorkspaceDownload(
+  workspacePath: string,
+  options: ImportWorkspaceDownloadOptions
+): Promise<FileTreeNode> {
+  const resolvedWorkspacePath = resolve(workspacePath)
+  const resolvedTargetDirectoryPath = resolve(options.targetDirectoryPath ?? workspacePath)
+
+  if (!isWithinWorkspace(resolvedWorkspacePath, resolvedTargetDirectoryPath)) {
+    throw new Error('Import target is outside the active workspace')
+  }
+
+  const targetDirectoryStats = await stat(resolvedTargetDirectoryPath)
+
+  if (!targetDirectoryStats.isDirectory()) {
+    throw new Error('Import target must be a directory')
+  }
+
+  const sourceUrl = typeof options.url === 'string' ? options.url.trim() : ''
+
+  if (!sourceUrl) {
+    throw new Error('Download import requires a URL')
+  }
+
+  const response = await fetch(sourceUrl)
+
+  if (!response.ok) {
+    throw new Error(`Download failed with status ${response.status}`)
+  }
+
+  const contentType = response.headers.get('content-type') ?? options.mimeType ?? null
+  const targetName = downloadTargetName(
+    sourceUrl,
+    options.fileName,
+    contentType,
+    response.headers.get('content-disposition')
+  )
+  const targetPath = await createUniquePath(
+    resolvedTargetDirectoryPath,
+    targetName.baseName,
+    targetName.extension
+  )
+  const responseBytes = new Uint8Array(await response.arrayBuffer())
+
+  await writeFile(targetPath, responseBytes)
 
   return ensureNode(targetPath)
 }

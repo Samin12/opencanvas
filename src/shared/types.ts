@@ -28,6 +28,7 @@ export interface CanvasTile {
   embedUrl?: string
   filePath?: string
   sessionId?: string
+  terminalNotifyOnComplete?: boolean
   terminalProvider?: TerminalProvider
 }
 
@@ -98,7 +99,10 @@ export interface FileMetadata {
 
 export interface OfficeViewerBootstrap {
   baseUrl?: string
+  detail?: string
   status: OfficeViewerStatus
+  setupAvailable?: boolean
+  setupCommand?: string
 }
 
 export interface OfficeViewerSession {
@@ -110,6 +114,13 @@ export interface OfficeViewerSession {
   filePath: string
   kind: OfficeDocumentKind
   title: string
+}
+
+export interface PresentationPreviewResult {
+  detail?: string
+  filePath?: string
+  source?: 'keynote' | 'libreoffice'
+  status: 'ready' | 'unavailable' | 'error'
 }
 
 export interface BootstrapData {
@@ -142,6 +153,18 @@ export interface CreateWorkspaceFileOptions {
 export interface CreateWorkspaceDirectoryOptions {
   directoryName: string
   targetDirectoryPath?: string
+}
+
+export interface ImportWorkspacePathsOptions {
+  sourcePaths: string[]
+  targetDirectoryPath?: string
+}
+
+export interface ImportWorkspaceDownloadOptions {
+  fileName?: string
+  mimeType?: string | null
+  targetDirectoryPath?: string
+  url: string
 }
 
 export interface RenameWorkspaceNodeOptions {
@@ -311,6 +334,14 @@ export interface CollaboratorApi {
     workspacePath: string,
     options: CreateWorkspaceDirectoryOptions
   ) => Promise<FileTreeNode>
+  importWorkspacePaths: (
+    workspacePath: string,
+    options: ImportWorkspacePathsOptions
+  ) => Promise<FileTreeNode[]>
+  importWorkspaceDownload: (
+    workspacePath: string,
+    options: ImportWorkspaceDownloadOptions
+  ) => Promise<FileTreeNode>
   importWorkspaceAsset: (
     workspacePath: string,
     asset: WorkspaceAssetImport
@@ -358,7 +389,9 @@ export interface CollaboratorApi {
   ) => () => void
   onCanvasPinch: (listener: (payload: CanvasPinchPayload) => void) => () => void
   readOfficeViewerBootstrap: (force?: boolean) => Promise<OfficeViewerBootstrap>
+  ensureOfficeViewer: () => Promise<OfficeViewerBootstrap>
   getOfficeViewerSession: (filePath: string) => Promise<OfficeViewerSession>
+  ensurePresentationPreview: (filePath: string) => Promise<PresentationPreviewResult>
   openExternalUrl: (url: string) => Promise<void>
   releaseTerminalSession: (sessionId: string) => void
   resizeTerminalSession: (sessionId: string, cols: number, rows: number) => void

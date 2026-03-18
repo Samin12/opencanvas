@@ -58,6 +58,7 @@ interface SurfaceFrameProps {
   fileKind: 'note' | 'code' | 'pdf'
   headerActions?: ReactNode
   onRefresh?: () => void
+  surfaceLabel?: string
   showTileRefreshButton?: boolean
   showViewerRefreshButton?: boolean
   status: DocumentStatus
@@ -74,6 +75,7 @@ function SurfaceFrame({
   fileKind,
   headerActions,
   onRefresh,
+  surfaceLabel: explicitSurfaceLabel,
   showTileRefreshButton = true,
   showViewerRefreshButton = true,
   status,
@@ -81,7 +83,8 @@ function SurfaceFrame({
 }: SurfaceFrameProps) {
   const statusLabel = status === 'saving' ? 'Saving' : 'Synced'
   const surfaceLabel =
-    fileKind === 'note' ? 'Note Surface' : fileKind === 'pdf' ? 'PDF Surface' : 'Code Surface'
+    explicitSurfaceLabel ??
+    (fileKind === 'note' ? 'Note Surface' : fileKind === 'pdf' ? 'PDF Surface' : 'Code Surface')
 
   return (
     <div
@@ -1029,6 +1032,7 @@ function CodeDocumentPane({
   const [reloadCount, setReloadCount] = useState(0)
   const [status, setStatus] = useState<DocumentStatus>('loading')
   const fileChangeCount = useFileChangeSignal(filePath)
+  const isJsonDocument = /\.json$/i.test(filePath)
 
   useEffect(() => {
     setDocument(null)
@@ -1096,7 +1100,15 @@ function CodeDocumentPane({
   return (
     <SurfaceFrame
       fileKind="code"
+      headerActions={
+        isJsonDocument ? (
+          <div className="rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)]">
+            Editable JSON
+          </div>
+        ) : null
+      }
       onRefresh={() => setReloadCount((current) => current + 1)}
+      surfaceLabel={isJsonDocument ? 'JSON Surface' : 'Code Surface'}
       showTileRefreshButton={showTileRefreshButton}
       showViewerRefreshButton={showViewerRefreshButton}
       status={status}

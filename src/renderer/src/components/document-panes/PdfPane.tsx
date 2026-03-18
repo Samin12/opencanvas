@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from 'pdfjs-dist'
 
@@ -17,6 +17,7 @@ type ScaleMode = 'fit-width' | 'custom'
 
 interface PdfPaneProps {
   filePath?: string
+  headerActions?: ReactNode
   refreshToken?: number
   showTileRefreshButton?: boolean
   showViewerRefreshButton?: boolean
@@ -33,6 +34,7 @@ interface PageLayout {
 
 export function PdfPane({
   filePath,
+  headerActions,
   refreshToken = 0,
   showTileRefreshButton = true,
   showViewerRefreshButton = true,
@@ -360,6 +362,7 @@ export function PdfPane({
   if (renderMode === 'iframe' || !pdfDocument) {
     return (
       <FileViewerSurface
+        headerActions={headerActions}
         label="PDF Surface"
         onRefresh={() => setReloadCount((current) => current + 1)}
         showTileRefreshButton={showTileRefreshButton}
@@ -379,6 +382,7 @@ export function PdfPane({
 
   return (
     <FileViewerSurface
+      headerActions={headerActions}
       label="PDF Surface"
       onRefresh={() => setReloadCount((current) => current + 1)}
       showTileRefreshButton={showTileRefreshButton}
