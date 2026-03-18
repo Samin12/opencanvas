@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 
 import type {
   TerminalActivityItem,
@@ -25,6 +25,8 @@ const TMUX_HISTORY_LIMIT = '50000'
 const TMUX_SOCKET_NAME = process.env.OPEN_CANVAS_TMUX_SOCKET?.trim() || 'collaborator-clone'
 const TERMINAL_SESSIONS_DIRECTORY = join(APP_DIRECTORY, 'terminal-sessions')
 const TMUX_CONFIG_PATH = join(APP_DIRECTORY, 'tmux.conf')
+const OPEN_CANVAS_BIN_DIRECTORY = join(APP_DIRECTORY, 'bin')
+const OPEN_CANVAS_CLI_SHIM_PATH = join(OPEN_CANVAS_BIN_DIRECTORY, 'open-canvas-cli')
 const TERMINAL_START_COMMANDS: Record<TerminalProvider, string> = {
   claude: process.env.COLLABORATOR_CLAUDE_COMMAND ?? 'claude --dangerously-skip-permissions',
   codex:
@@ -850,6 +852,50 @@ function ensureNodePtyHelperPermissions(): void {
   }
 }
 
+function resolveOpenCanvasCliEntryPath(): string | null {
+  const candidates = [
+    join(app.getAppPath(), 'scripts', 'open-canvas-cli.mjs'),
+    join(process.cwd(), 'scripts', 'open-canvas-cli.mjs')
+  ]
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate
+    }
+  }
+
+  return null
+}
+
+function ensureOpenCanvasCliShim(): string | null {
+  const entryPath = resolveOpenCanvasCliEntryPath()
+
+  if (!entryPath) {
+    return null
+  }
+
+  mkdirSync(OPEN_CANVAS_BIN_DIRECTORY, { recursive: true })
+
+  const shimSource = `#!/bin/sh
+exec node ${shellEscape(entryPath)} "$@"
+`
+
+  const currentSource =
+    existsSync(OPEN_CANVAS_CLI_SHIM_PATH) ? readFileSync(OPEN_CANVAS_CLI_SHIM_PATH, 'utf8') : null
+
+  if (currentSource !== shimSource) {
+    writeFileSync(OPEN_CANVAS_CLI_SHIM_PATH, shimSource, 'utf8')
+  }
+
+  chmodSync(OPEN_CANVAS_CLI_SHIM_PATH, 0o755)
+  return OPEN_CANVAS_BIN_DIRECTORY
+}
+
+function prependPathEntry(existingPath: string | undefined, entry: string): string {
+  const parts = (existingPath ?? '').split(delimiter).filter(Boolean)
+  return [entry, ...parts.filter((part) => part !== entry)].join(delimiter)
+}
+
 function terminalEnvironment(shell: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -859,6 +905,13 @@ function terminalEnvironment(shell: string): NodeJS.ProcessEnv {
   }
 
   delete env.CLAUDECODE
+
+  const cliBinDirectory = ensureOpenCanvasCliShim()
+
+  if (cliBinDirectory) {
+    env.PATH = prependPathEntry(env.PATH, cliBinDirectory)
+    env.OPEN_CANVAS_CLI_COMMAND = 'open-canvas-cli'
+  }
 
   return env
 }

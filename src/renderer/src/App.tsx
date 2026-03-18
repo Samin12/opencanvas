@@ -62,6 +62,32 @@ function flattenFiles(nodes: FileTreeNode[]): FileTreeNode[] {
   return files
 }
 
+function collectDirectoryPaths(nodes: FileTreeNode[]): string[] {
+  const paths: string[] = []
+
+  for (const node of nodes) {
+    if (node.kind !== 'directory') {
+      continue
+    }
+
+    paths.push(node.path)
+
+    if (node.children?.length) {
+      paths.push(...collectDirectoryPaths(node.children))
+    }
+  }
+
+  return paths
+}
+
+function workspaceMetadataPath(workspacePath: string): string {
+  return `${workspacePath}/.claude-canvas`
+}
+
+function workspaceCanvasStatePath(workspacePath: string): string {
+  return `${workspaceMetadataPath(workspacePath)}/canvas.json`
+}
+
 function findNodeByPath(nodes: FileTreeNode[], targetPath: string): FileTreeNode | null {
   for (const node of nodes) {
     if (node.path === targetPath) {
@@ -569,6 +595,85 @@ export default function App() {
   }, [activeWorkspace])
 
   useEffect(() => {
+    if (!activeWorkspace || typeof window.collaborator.onFileChanged !== 'function') {
+      return
+    }
+
+    let cancelled = false
+    const workspacePath = activeWorkspace
+    let treeRefreshTimer: number | null = null
+    let canvasRefreshTimer: number | null = null
+    const stopWatching: Array<() => void> = []
+    const metadataPath = workspaceMetadataPath(workspacePath)
+    const canvasPath = workspaceCanvasStatePath(workspacePath)
+    const watchedDirectoryPaths = new Set<string>([
+      workspacePath,
+      metadataPath,
+      ...collectDirectoryPaths(workspaceTree)
+    ])
+
+    function clearTimers() {
+      if (treeRefreshTimer !== null) {
+        window.clearTimeout(treeRefreshTimer)
+        treeRefreshTimer = null
+      }
+
+      if (canvasRefreshTimer !== null) {
+        window.clearTimeout(canvasRefreshTimer)
+        canvasRefreshTimer = null
+      }
+    }
+
+    function scheduleTreeRefresh() {
+      if (treeRefreshTimer !== null) {
+        window.clearTimeout(treeRefreshTimer)
+      }
+
+      treeRefreshTimer = window.setTimeout(() => {
+        treeRefreshTimer = null
+
+        if (!cancelled) {
+          void refreshWorkspaceTree(workspacePath, { quiet: true })
+        }
+      }, 150)
+    }
+
+    function scheduleCanvasRefresh() {
+      if (canvasRefreshTimer !== null) {
+        window.clearTimeout(canvasRefreshTimer)
+      }
+
+      canvasRefreshTimer = window.setTimeout(() => {
+        canvasRefreshTimer = null
+
+        if (!cancelled) {
+          void refreshWorkspaceCanvas(workspacePath)
+        }
+      }, 120)
+    }
+
+    for (const path of watchedDirectoryPaths) {
+      stopWatching.push(window.collaborator.onFileChanged(path, scheduleTreeRefresh))
+    }
+
+    stopWatching.push(
+      window.collaborator.onFileChanged(canvasPath, () => {
+        scheduleTreeRefresh()
+        scheduleCanvasRefresh()
+      })
+    )
+
+    return () => {
+      cancelled = true
+      clearTimers()
+
+      for (const stop of stopWatching) {
+        stop()
+      }
+    }
+  }, [activeWorkspace, workspaceTree])
+
+  useEffect(() => {
     if (!config) {
       return
     }
@@ -1061,9 +1166,11 @@ export default function App() {
     })
   }
 
-  async function refreshWorkspaceTree(workspacePath: string) {
-    setLoadingWorkspace(true)
-    setWorkspaceError(null)
+  async function refreshWorkspaceTree(workspacePath: string, options?: { quiet?: boolean }) {
+    if (!options?.quiet) {
+      setLoadingWorkspace(true)
+      setWorkspaceError(null)
+    }
 
     try {
       const tree = await window.collaborator.readWorkspaceTree(workspacePath)
@@ -1072,13 +1179,45 @@ export default function App() {
         setWorkspaceTree(tree)
       })
 
+      if (selectedTreePath && !findNodeByPath(tree, selectedTreePath)) {
+        setSelectedTreePath(null)
+      }
+
+      if (viewerFile && !findNodeByPath(tree, viewerFile.path)) {
+        setViewerFile(null)
+      }
+
       return tree
     } catch {
-      setWorkspaceError('The workspace tree could not be read.')
-      setWorkspaceTree([])
+      if (!options?.quiet) {
+        setWorkspaceError('The workspace tree could not be read.')
+        setWorkspaceTree([])
+      }
       return [] as FileTreeNode[]
     } finally {
-      setLoadingWorkspace(false)
+      if (!options?.quiet) {
+        setLoadingWorkspace(false)
+      }
+    }
+  }
+
+  async function refreshWorkspaceCanvas(workspacePath: string) {
+    if (canvasWorkspaceRef.current !== workspacePath || canvasSaveTimerRef.current !== null) {
+      return
+    }
+
+    try {
+      const nextCanvasState = await window.collaborator.readCanvasState(workspacePath)
+
+      if (canvasWorkspaceRef.current !== workspacePath) {
+        return
+      }
+
+      canvasStateRef.current = nextCanvasState
+      setCanvasWorkspacePath(workspacePath)
+      setCanvasState(nextCanvasState)
+    } catch {
+      // Ignore live refresh failures and keep the current canvas visible.
     }
   }
 

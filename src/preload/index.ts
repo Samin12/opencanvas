@@ -25,6 +25,10 @@ import type {
 
 const { contextBridge, ipcRenderer } = electron
 
+if (typeof ipcRenderer.setMaxListeners === 'function' && typeof ipcRenderer.getMaxListeners === 'function') {
+  ipcRenderer.setMaxListeners(Math.max(ipcRenderer.getMaxListeners(), 64))
+}
+
 if ('webFrame' in electron && electron.webFrame) {
   try {
     electron.webFrame.setVisualZoomLevelLimits(1, 1)

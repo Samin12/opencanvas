@@ -363,6 +363,7 @@ export function FileTree({
   const [contextMenu, setContextMenu] = useState<TreeContextMenuState | null>(null)
   const dragStateRef = useRef<PointerDragState | null>(null)
   const expandTimerRef = useRef<number | null>(null)
+  const contextMenuRef = useRef<HTMLDivElement | null>(null)
   const suppressClickRef = useRef(false)
   const trimmedQuery = query.trim().toLowerCase()
   const visibleNodes = trimmedQuery ? filterNodes(nodes, trimmedQuery) : nodes
@@ -392,20 +393,30 @@ export function FileTree({
       setContextMenu(null)
     }
 
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as Node | null
+
+      if (target && contextMenuRef.current?.contains(target)) {
+        return
+      }
+
+      dismissMenu()
+    }
+
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         dismissMenu()
       }
     }
 
-    document.addEventListener('pointerdown', dismissMenu)
+    document.addEventListener('pointerdown', handlePointerDown)
     window.addEventListener('blur', dismissMenu)
     window.addEventListener('resize', dismissMenu)
     window.addEventListener('scroll', dismissMenu, true)
     window.addEventListener('keydown', handleKeyDown)
 
     return () => {
-      document.removeEventListener('pointerdown', dismissMenu)
+      document.removeEventListener('pointerdown', handlePointerDown)
       window.removeEventListener('blur', dismissMenu)
       window.removeEventListener('resize', dismissMenu)
       window.removeEventListener('scroll', dismissMenu, true)
@@ -947,6 +958,7 @@ export function FileTree({
       {contextMenu && typeof document !== 'undefined'
         ? createPortal(
         <div
+          ref={contextMenuRef}
           className="fixed z-[520] min-w-[220px] rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-2)] p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.18)]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onPointerDown={(event) => event.stopPropagation()}

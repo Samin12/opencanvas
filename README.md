@@ -54,6 +54,8 @@ By default, Open Canvas launches:
 - `claude --dangerously-skip-permissions`
 - `codex --dangerously-bypass-approvals-and-sandbox`
 
+Open Canvas terminals also expose an `open-canvas-cli` command automatically, so Claude Code and Codex sessions inside the app can call the workspace CLI without extra setup.
+
 If you want different launch commands, override them before starting the app:
 
 ```bash
