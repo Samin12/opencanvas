@@ -32,21 +32,20 @@ export function SearchDialog({
   scope
 }: SearchDialogProps) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const resultRefs = useRef<Array<HTMLButtonElement | null>>([])
   const [query, setQuery] = useState('')
+  const [highlightedIndex, setHighlightedIndex] = useState(0)
 
   useEffect(() => {
     if (!open) {
       setQuery('')
+      setHighlightedIndex(0)
       return
     }
 
     const frame = window.requestAnimationFrame(() => inputRef.current?.focus())
     return () => window.cancelAnimationFrame(frame)
   }, [open])
-
-  if (!open) {
-    return null
-  }
 
   const normalizedQuery = query.trim().toLowerCase()
   const filteredResults = results
@@ -66,6 +65,36 @@ export function SearchDialog({
   const emptyMessage = isGlobalSearch
     ? 'No files match this query in your opened workspaces.'
     : 'No files match this query in the current workspace.'
+  const activeIndex =
+    filteredResults.length === 0 ? -1 : Math.min(highlightedIndex, filteredResults.length - 1)
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    setHighlightedIndex((current) => {
+      if (filteredResults.length === 0) {
+        return 0
+      }
+
+      return Math.min(current, filteredResults.length - 1)
+    })
+  }, [filteredResults.length, open])
+
+  useEffect(() => {
+    if (activeIndex < 0) {
+      return
+    }
+
+    resultRefs.current[activeIndex]?.scrollIntoView({
+      block: 'nearest'
+    })
+  }, [activeIndex])
+
+  if (!open) {
+    return null
+  }
 
   return (
     <div className="absolute inset-0 z-[300] flex items-start justify-center bg-[color:var(--overlay)] px-6 py-20 backdrop-blur-sm">
@@ -76,14 +105,37 @@ export function SearchDialog({
         <input
           ref={inputRef}
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            setQuery(event.target.value)
+            setHighlightedIndex(0)
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Escape') {
               onClose()
+              return
             }
 
-            if (event.key === 'Enter' && filteredResults[0]) {
-              onSelect(filteredResults[0])
+            if (event.key === 'ArrowDown') {
+              event.preventDefault()
+              setHighlightedIndex((current) =>
+                filteredResults.length === 0
+                  ? 0
+                  : Math.min(current + 1, filteredResults.length - 1)
+              )
+              return
+            }
+
+            if (event.key === 'ArrowUp') {
+              event.preventDefault()
+              setHighlightedIndex((current) =>
+                filteredResults.length === 0 ? 0 : Math.max(current - 1, 0)
+              )
+              return
+            }
+
+            if (event.key === 'Enter' && activeIndex >= 0 && filteredResults[activeIndex]) {
+              event.preventDefault()
+              onSelect(filteredResults[activeIndex])
             }
           }}
           className="w-full rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-4 py-3 text-[15px] text-[var(--text)] outline-none transition focus:border-[color:var(--accent)]"
@@ -99,12 +151,21 @@ export function SearchDialog({
               {emptyMessage}
             </div>
           ) : (
-            filteredResults.map((result) => (
+            filteredResults.map((result, index) => (
               <button
                 key={`${result.workspacePath}:${result.file.path}`}
-                className="flex w-full items-start justify-between gap-4 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-4 py-3 text-left transition hover:border-[color:var(--line-strong)] hover:bg-[var(--surface-1)]"
+                ref={(node) => {
+                  resultRefs.current[index] = node
+                }}
+                className={`flex w-full items-start justify-between gap-4 rounded-[4px] border px-4 py-3 text-left transition ${
+                  index === activeIndex
+                    ? 'border-[color:var(--accent)] bg-[var(--surface-1)]'
+                    : 'border-[color:var(--line)] bg-[var(--surface-0)] hover:border-[color:var(--line-strong)] hover:bg-[var(--surface-1)]'
+                }`}
                 onClick={() => onSelect(result)}
+                onMouseEnter={() => setHighlightedIndex(index)}
                 title={`Open preview for ${result.file.name}`}
+                aria-selected={index === activeIndex}
               >
                 <div className="min-w-0">
                   <div className="truncate text-[13px] font-medium text-[var(--text)]">

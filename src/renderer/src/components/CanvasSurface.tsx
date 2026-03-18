@@ -3281,10 +3281,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         const nextTool = BOARD_TOOL_SHORTCUTS[lowerKey]
 
         if (event.key === 'Escape') {
-          if (linkSourceTileId) {
+          if (dragConnectionRef.current || linkSourceTileId) {
             event.preventDefault()
             event.stopPropagation()
             setLinkSourceTileId(null)
+            setActiveDragConnection(null)
             return
           }
 
@@ -3376,6 +3377,15 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }, [focusedTerminal, linkSourceTileId, selectedTileId, shortcutsSuspended])
 
     useEffect(() => {
+      function cancelActiveCanvasInteraction() {
+        if (dragConnectionRef.current) {
+          setLinkSourceTileId(null)
+          setActiveDragConnection(null)
+        }
+
+        interactionRef.current = null
+      }
+
       function handlePointerMove(event: PointerEvent) {
         const interaction = interactionRef.current
 
@@ -3532,12 +3542,24 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         }
       }
 
+      function handlePointerCancel() {
+        cancelActiveCanvasInteraction()
+      }
+
+      function handleWindowBlur() {
+        cancelActiveCanvasInteraction()
+      }
+
       window.addEventListener('pointermove', handlePointerMove)
       window.addEventListener('pointerup', handlePointerUp)
+      window.addEventListener('pointercancel', handlePointerCancel)
+      window.addEventListener('blur', handleWindowBlur)
 
       return () => {
         window.removeEventListener('pointermove', handlePointerMove)
         window.removeEventListener('pointerup', handlePointerUp)
+        window.removeEventListener('pointercancel', handlePointerCancel)
+        window.removeEventListener('blur', handleWindowBlur)
       }
     }, [onStateChange])
 
