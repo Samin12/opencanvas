@@ -19,6 +19,7 @@ import {
 } from 'tldraw'
 import {
   DefaultColorStyle,
+  DefaultLabelColorStyle,
   DefaultColorThemePalette,
   DefaultSizeStyle,
   GeoShapeGeoStyle,
@@ -105,6 +106,7 @@ type BoardTool = 'hand' | 'select' | 'box' | 'arrow' | 'text' | 'note' | 'draw' 
 type ShortcutAction = BoardTool | 'markdown' | 'terminal-claude' | 'terminal-codex'
 type DrawShapeUpdate = TLShapePartial<TLDrawShape>
 type FrameShapeUpdate = TLShapePartial<TLFrameShape>
+type NoteShapeUpdate = TLShapePartial<TLNoteShape>
 type GestureLikeEvent = Event & {
   clientX?: number
   clientY?: number
@@ -361,6 +363,8 @@ const DRAW_SIZE_ITEMS: Array<{
   { size: 'l', label: 'Bold', previewSize: 5 },
   { size: 'xl', label: 'Heavy', previewSize: 6.5 }
 ]
+const STICKY_NOTE_COLOR: TLDefaultColorStyle = 'yellow'
+const STICKY_NOTE_TEXT_COLOR: TLDefaultColorStyle = 'black'
 const BOARD_TOOL_SHORTCUTS: Record<string, BoardTool> = {
   a: 'arrow',
   b: 'box',
@@ -2552,6 +2556,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       if (nextTool === 'draw') {
         editor.setStyleForNextShapes(DefaultColorStyle, drawColor)
         editor.setStyleForNextShapes(DefaultSizeStyle, drawSize)
+      } else if (nextTool === 'note') {
+        editor.setStyleForNextShapes(DefaultColorStyle, STICKY_NOTE_COLOR)
+        editor.setStyleForNextShapes(DefaultLabelColorStyle, STICKY_NOTE_TEXT_COLOR)
+      } else if (nextTool === 'text') {
+        editor.setStyleForNextShapes(DefaultColorStyle, darkMode ? 'white' : 'black')
       }
 
       editor.setCurrentTool(nextTool)
@@ -2560,13 +2569,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     function applyDrawColor(nextColor: TLDefaultColorStyle) {
       drawColorRef.current = nextColor
       setDrawColor(nextColor)
-      editorRef.current?.setStyleForNextShapes(DefaultColorStyle, nextColor)
+
+      if (activeBoardTool === 'draw') {
+        editorRef.current?.setStyleForNextShapes(DefaultColorStyle, nextColor)
+      }
     }
 
     function applyDrawSize(nextSize: TLDefaultSizeStyle) {
       drawSizeRef.current = nextSize
       setDrawSize(nextSize)
-      editorRef.current?.setStyleForNextShapes(DefaultSizeStyle, nextSize)
+
+      if (activeBoardTool === 'draw') {
+        editorRef.current?.setStyleForNextShapes(DefaultSizeStyle, nextSize)
+      }
     }
 
     function createEditableTextAtViewportCenter() {
@@ -2603,6 +2618,42 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       editor.setCurrentTool('select')
       startEditingShapeWithRichText(editor, textShapeId, { selectAll: true })
       setActiveBoardTool('text')
+    }
+
+    function normalizeStickyNoteShapes(editor: Editor) {
+      const noteShapeUpdates: NoteShapeUpdate[] = editor
+        .getCurrentPageShapes()
+        .flatMap((shape) => {
+          if (shape.type !== 'note') {
+            return []
+          }
+
+          const nextProps: Partial<TLNoteShape['props']> = {}
+
+          if (shape.props.color !== STICKY_NOTE_COLOR) {
+            nextProps.color = STICKY_NOTE_COLOR
+          }
+
+          if (shape.props.labelColor !== STICKY_NOTE_TEXT_COLOR) {
+            nextProps.labelColor = STICKY_NOTE_TEXT_COLOR
+          }
+
+          if (Object.keys(nextProps).length === 0) {
+            return []
+          }
+
+          return [
+            {
+              id: shape.id,
+              type: 'note',
+              props: nextProps
+            }
+          ]
+        })
+
+      if (noteShapeUpdates.length > 0) {
+        editor.updateShapes(noteShapeUpdates)
+      }
     }
 
     function runShortcutAction(action: ShortcutAction) {
@@ -2699,6 +2750,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       editor.setStyleForNextShapes(DefaultColorStyle, drawColor)
       editor.setStyleForNextShapes(DefaultSizeStyle, drawSize)
       applyBoardTool('hand')
+      normalizeStickyNoteShapes(editor)
       frameBoundsRef.current = frameBoundsSnapshot(editor)
       setSelectedCanvasNoteId(selectedStickyNoteFromEditor(editor)?.shape.id ?? null)
       onBoardReady?.()
@@ -2730,6 +2782,33 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             {
               id: record.id,
               type: 'draw',
+              props: nextProps
+            }
+          ]
+        })
+        const noteShapeUpdates: NoteShapeUpdate[] = records.flatMap((record) => {
+          if (record.typeName !== 'shape' || record.type !== 'note') {
+            return []
+          }
+
+          const nextProps: Partial<TLNoteShape['props']> = {}
+
+          if (record.props.color !== STICKY_NOTE_COLOR) {
+            nextProps.color = STICKY_NOTE_COLOR
+          }
+
+          if (record.props.labelColor !== STICKY_NOTE_TEXT_COLOR) {
+            nextProps.labelColor = STICKY_NOTE_TEXT_COLOR
+          }
+
+          if (Object.keys(nextProps).length === 0) {
+            return []
+          }
+
+          return [
+            {
+              id: record.id,
+              type: 'note',
               props: nextProps
             }
           ]
@@ -2767,6 +2846,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
         if (drawShapeUpdates.length > 0) {
           editor.updateShapes(drawShapeUpdates)
+        }
+
+        if (noteShapeUpdates.length > 0) {
+          editor.updateShapes(noteShapeUpdates)
         }
 
         if (frameShapeUpdates.length > 0) {
@@ -2950,8 +3033,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }, [shortcutsSuspended])
 
     useEffect(() => {
+      if (activeBoardTool !== 'draw') {
+        return
+      }
+
       editorRef.current?.setStyleForNextShapes(DefaultColorStyle, drawColor)
-    }, [drawColor])
+    }, [activeBoardTool, drawColor])
 
     useEffect(() => {
       if (!focusedTerminal) {
@@ -2968,8 +3055,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }, [focusedTerminal, selectedTileId, state.tiles])
 
     useEffect(() => {
+      if (activeBoardTool !== 'draw') {
+        return
+      }
+
       editorRef.current?.setStyleForNextShapes(DefaultSizeStyle, drawSize)
-    }, [drawSize])
+    }, [activeBoardTool, drawSize])
 
     useEffect(() => {
       if (!darkMode && drawColor === 'white') {
