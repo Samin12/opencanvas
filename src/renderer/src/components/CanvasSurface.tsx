@@ -220,10 +220,13 @@ const WHEEL_GESTURE_LOCK_MS = 180
 const POINTER_SCROLL_ACTIVATION_WINDOW_MS = 400
 const MIN_TILE_WIDTH = 280
 const MIN_TILE_HEIGHT = 220
+const NOTE_TILE_DEFAULT_WIDTH = 360
+const NOTE_TILE_DEFAULT_HEIGHT = 168
+const NOTE_TILE_MIN_WIDTH = 240
+const NOTE_TILE_MIN_HEIGHT = 140
+const TILE_HEADER_HEIGHT = 37
 const DEFAULT_TERMINAL_WIDTH = 860
 const DEFAULT_TERMINAL_HEIGHT = 620
-const DEFAULT_TERMINAL_CARD_WIDTH = 460
-const DEFAULT_TERMINAL_CARD_HEIGHT = 520
 const CAMERA_EPSILON = 0.001
 const FRAME_MOVE_EPSILON = 0.01
 const GROUP_FRAME_HEADER_HEIGHT = 32
@@ -758,6 +761,28 @@ function createTileFromFile(
   const isPdf = file.fileKind === 'pdf'
   const isSpreadsheet = file.fileKind === 'spreadsheet'
   const isPresentation = file.fileKind === 'presentation'
+  const width = isImage
+    ? 420
+    : isVideo
+      ? 820
+      : isPdf
+        ? 820
+        : isSpreadsheet || isPresentation
+          ? 980
+          : isNote
+            ? NOTE_TILE_DEFAULT_WIDTH
+            : 520
+  const height = isImage
+    ? 320
+    : isVideo
+      ? 520
+      : isPdf
+        ? 620
+        : isSpreadsheet || isPresentation
+          ? 620
+          : isNote
+            ? NOTE_TILE_DEFAULT_HEIGHT
+            : 420
 
   return {
     id: `tile-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -765,11 +790,24 @@ function createTileFromFile(
     title: file.name,
     x: snap(x),
     y: snap(y),
-    width: isImage ? 420 : isVideo ? 820 : isPdf ? 820 : isSpreadsheet || isPresentation ? 980 : isNote ? 360 : 520,
-    height: isImage ? 320 : isVideo ? 520 : isPdf ? 620 : isSpreadsheet || isPresentation ? 620 : isNote ? 440 : 420,
+    width,
+    height,
     zIndex,
-    filePath: file.path
+    filePath: file.path,
+    noteSizeMode: isNote ? 'auto' : undefined
   }
+}
+
+function minTileWidthForTile(tile: CanvasTile) {
+  return tile.type === 'note' ? NOTE_TILE_MIN_WIDTH : MIN_TILE_WIDTH
+}
+
+function minTileHeightForTile(tile: CanvasTile) {
+  return tile.type === 'note' ? NOTE_TILE_MIN_HEIGHT : MIN_TILE_HEIGHT
+}
+
+function autoSizedNoteTileHeight(contentHeight: number) {
+  return snap(Math.max(NOTE_TILE_DEFAULT_HEIGHT, contentHeight + TILE_HEADER_HEIGHT))
 }
 
 function createEmbedTile(url: string, x: number, y: number, zIndex: number): CanvasTile | null {
@@ -1853,8 +1891,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       const createdTile = {
         ...draftTile,
-        width: DEFAULT_TERMINAL_CARD_WIDTH,
-        height: DEFAULT_TERMINAL_CARD_HEIGHT,
         x: snap(nextX),
         y: snap(nextY)
       }
@@ -1933,6 +1969,31 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           tiles: stateRef.current.tiles.map((tile) => (tile.id === tileId ? updater(tile) : tile))
         },
         options
+      )
+    }
+
+    function handleNoteContentHeightChange(tileId: string, contentHeight: number) {
+      const tile = tileById(tileId)
+
+      if (!tile || tile.type !== 'note' || tile.noteSizeMode === 'manual') {
+        return
+      }
+
+      const nextHeight = autoSizedNoteTileHeight(contentHeight)
+
+      if (Math.abs(tile.height - nextHeight) < 2) {
+        return
+      }
+
+      updateTile(
+        tileId,
+        (currentTile) =>
+          currentTile.type === 'note' && currentTile.noteSizeMode !== 'manual'
+            ? {
+                ...currentTile,
+                height: nextHeight
+              }
+            : currentTile
       )
     }
 
@@ -3446,37 +3507,49 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               return tile
             }
 
+            const minWidth = minTileWidthForTile(tile)
+            const minHeight = minTileHeightForTile(tile)
             let nextX = interaction.startX
             let nextY = interaction.startY
             let nextWidth = interaction.startWidth
             let nextHeight = interaction.startHeight
 
             if (interaction.handle.includes('e')) {
-              nextWidth = Math.max(MIN_TILE_WIDTH, interaction.startWidth + deltaX)
+              nextWidth = Math.max(minWidth, interaction.startWidth + deltaX)
             }
 
             if (interaction.handle.includes('s')) {
-              nextHeight = Math.max(MIN_TILE_HEIGHT, interaction.startHeight + deltaY)
+              nextHeight = Math.max(minHeight, interaction.startHeight + deltaY)
             }
 
             if (interaction.handle.includes('w')) {
-              const width = Math.max(MIN_TILE_WIDTH, interaction.startWidth - deltaX)
+              const width = Math.max(minWidth, interaction.startWidth - deltaX)
               nextX = interaction.startX + (interaction.startWidth - width)
               nextWidth = width
             }
 
             if (interaction.handle.includes('n')) {
-              const height = Math.max(MIN_TILE_HEIGHT, interaction.startHeight - deltaY)
+              const height = Math.max(minHeight, interaction.startHeight - deltaY)
               nextY = interaction.startY + (interaction.startHeight - height)
               nextHeight = height
             }
+
+            const nextNoteSizeMode =
+              tile.type === 'note'
+                ? tile.noteSizeMode === 'manual' ||
+                  nextWidth < interaction.startWidth - 2 ||
+                  nextHeight < interaction.startHeight - 2
+                  ? 'manual'
+                  : 'auto'
+                : undefined
 
             return {
               ...tile,
               x: nextX,
               y: nextY,
               width: nextWidth,
-              height: nextHeight
+              height: nextHeight,
+              noteSizeMode: nextNoteSizeMode
             }
           })
         })
@@ -4591,7 +4664,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   </div>
                 </div>
 
-                <div className="h-[calc(100%-37px)] p-2">
+                <div
+                  className={clsx(
+                    'h-[calc(100%-37px)]',
+                    tile.type === 'note' ? 'overflow-hidden' : 'p-2'
+                  )}
+                >
                   {tile.type === 'term' ? (
                     <div className="flex h-full min-h-0 flex-col gap-2">
                       <div
@@ -4698,6 +4776,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     <DocumentPane
                       fileKind={tileFileKind}
                       filePath={tile.filePath}
+                      noteSizingMode={tile.type === 'note' ? tile.noteSizeMode ?? 'auto' : undefined}
+                      onNoteContentHeightChange={
+                        tile.type === 'note'
+                          ? (contentHeight) => {
+                              handleNoteContentHeightChange(tile.id, contentHeight)
+                            }
+                          : undefined
+                      }
                       officeViewer={officeViewer}
                       onSetPresentationEmbedUrl={
                         tile.type === 'presentation'

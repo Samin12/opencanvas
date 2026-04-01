@@ -119,6 +119,12 @@ function sanitizeCanvasState(input: Partial<CanvasState> | undefined): CanvasSta
               : undefined,
             embedUrl: typeof tile.embedUrl === 'string' ? tile.embedUrl : undefined,
             filePath: typeof tile.filePath === 'string' ? tile.filePath : undefined,
+            noteSizeMode:
+              tile.type === 'note'
+                ? tile.noteSizeMode === 'manual'
+                  ? 'manual'
+                  : 'auto'
+                : undefined,
             sessionId: typeof tile.sessionId === 'string' ? tile.sessionId : undefined,
             terminalNotifyOnComplete:
               tile.type === 'term' ? Boolean(tile.terminalNotifyOnComplete) : undefined,

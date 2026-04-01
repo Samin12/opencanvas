@@ -35,10 +35,87 @@ import {
 } from '../utils/markdownShortcuts'
 
 const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
+const MARKDOWN_PASTE_STRUCTURE_PATTERN =
+  /^(#{1,6}\s|>\s|\s*[-*+]\s|\s*\d+\.\s|\s*\[[ xX]\]\s|```|~~~|\|.+\||-{3,}\s*$)/m
+
+function emptyNoteEditorContent() {
+  return {
+    type: 'doc',
+    content: [
+      {
+        type: 'heading',
+        attrs: {
+          level: 1
+        }
+      },
+      {
+        type: 'paragraph'
+      }
+    ]
+  }
+}
+
+function isBlankMarkdown(value: string) {
+  return value.trim().length === 0
+}
+
+function isEditorSemanticallyEmpty(editor: TiptapEditor | null | undefined) {
+  return !editor || editor.getText({ blockSeparator: '\n\n' }).trim().length === 0
+}
+
+function markdownFromPlainTextPaste(rawText: string) {
+  const normalized = rawText.replace(/\r\n?/g, '\n').trim()
+
+  if (!normalized) {
+    return null
+  }
+
+  if (MARKDOWN_PASTE_STRUCTURE_PATTERN.test(normalized)) {
+    return normalized
+  }
+
+  const [firstLine, ...remainingLines] = normalized.split('\n')
+  const heading = firstLine?.trim()
+  const body = remainingLines.join('\n').trim()
+
+  if (!heading) {
+    return normalized
+  }
+
+  return body ? `# ${heading}\n\n${body}` : `# ${heading}`
+}
+
+function pixelValue(rawValue: string) {
+  const parsed = Number.parseFloat(rawValue)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function measureNoteContentHeight(contentElement: HTMLElement) {
+  const computedStyle = window.getComputedStyle(contentElement)
+  const paddingTop = pixelValue(computedStyle.paddingTop)
+  const paddingBottom = pixelValue(computedStyle.paddingBottom)
+  let blockBottom = paddingTop
+
+  for (const child of Array.from(contentElement.children)) {
+    if (!(child instanceof HTMLElement)) {
+      continue
+    }
+
+    const childStyle = window.getComputedStyle(child)
+    blockBottom = Math.max(
+      blockBottom,
+      child.offsetTop + child.offsetHeight + pixelValue(childStyle.marginBottom)
+    )
+  }
+
+  return Math.ceil(Math.max(contentElement.scrollHeight, contentElement.clientHeight, blockBottom + paddingBottom))
+}
 
 interface DocumentPaneProps {
   fileKind: FileKind
   filePath: string
+  noteSizingMode?: 'auto' | 'manual'
+  onNoteContentHeightChange?: (contentHeight: number) => void
   officeViewer?: OfficeViewerBootstrap | null
   onSetPresentationEmbedUrl?: (url: string | null) => void
   onImportImageFile?: (file: File) => Promise<{ name: string; path: string } | null>
@@ -89,10 +166,10 @@ function SurfaceFrame({
   return (
     <div
       className={clsx(
-        'relative flex h-full min-h-0 flex-col bg-[var(--surface-0)]',
+        'relative flex h-full min-h-0 flex-col',
         variant === 'viewer'
-          ? 'overflow-hidden rounded-[6px] border border-[color:var(--line)] shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]'
-          : 'rounded-[4px]'
+          ? 'overflow-hidden rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-0)] shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]'
+          : 'overflow-hidden rounded-none bg-transparent'
       )}
     >
       {variant === 'viewer' ? (
@@ -462,6 +539,8 @@ export function MarkdownCopyMenu({
 function RichNoteEditor({
   filePath,
   initialContent,
+  noteSizingMode,
+  onNoteContentHeightChange,
   onDocumentChange,
   onImportImageFile,
   onRegisterNoteCopyActions,
@@ -475,6 +554,8 @@ function RichNoteEditor({
 }: {
   filePath: string
   initialContent: string
+  noteSizingMode?: 'auto' | 'manual'
+  onNoteContentHeightChange?: (contentHeight: number) => void
   onDocumentChange: (document: TextFileDocument) => void
   onImportImageFile?: (file: File) => Promise<{ name: string; path: string } | null>
   onRegisterNoteCopyActions?: (actions: MarkdownCopyActions | null) => void
@@ -489,8 +570,34 @@ function RichNoteEditor({
   const normalizedInitialContent = normalizeMarkdownImageReferences(initialContent)
   const latestDraftRef = useRef(normalizedInitialContent)
   const latestSavedRef = useRef(normalizedInitialContent)
+  const editorHostRef = useRef<HTMLDivElement | null>(null)
+  const measureFrameRef = useRef<number | null>(null)
   const saveRequestIdRef = useRef(0)
   const saveTimerRef = useRef<number | null>(null)
+  const autoSizeEnabled =
+    variant === 'tile' && noteSizingMode === 'auto' && Boolean(onNoteContentHeightChange)
+
+  function scheduleContentMeasurement() {
+    if (!autoSizeEnabled || !editor) {
+      return
+    }
+
+    if (measureFrameRef.current !== null) {
+      window.cancelAnimationFrame(measureFrameRef.current)
+    }
+
+    measureFrameRef.current = window.requestAnimationFrame(() => {
+      measureFrameRef.current = null
+
+      const contentElement = editor.view.dom as HTMLElement | null
+
+      if (!contentElement) {
+        return
+      }
+
+      onNoteContentHeightChange?.(measureNoteContentHeight(contentElement))
+    })
+  }
 
   function focusEditor(position?: 'end') {
     if (!editor) {
@@ -663,6 +770,10 @@ function RichNoteEditor({
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current)
       }
+
+      if (measureFrameRef.current !== null) {
+        window.cancelAnimationFrame(measureFrameRef.current)
+      }
     }
   }, [])
 
@@ -756,12 +867,15 @@ function RichNoteEditor({
           }
         })
       ],
-      content: normalizedInitialContent,
-      contentType: 'markdown',
+      content: isBlankMarkdown(normalizedInitialContent)
+        ? emptyNoteEditorContent()
+        : normalizedInitialContent,
+      contentType: isBlankMarkdown(normalizedInitialContent) ? undefined : 'markdown',
       editorProps: {
         attributes: {
           class: clsx(
-            'markdown-preview rich-note-editor__content h-full w-full text-[var(--text)] outline-none',
+            'markdown-preview rich-note-editor__content w-full text-[var(--text)] outline-none',
+            autoSizeEnabled ? 'min-h-full overflow-y-hidden' : 'h-full overflow-y-auto',
             variant === 'viewer' ? 'px-6 py-5 text-[16px]' : 'px-5 py-4 text-[13px]'
           ),
           'data-scroll-lock': 'true',
@@ -795,24 +909,38 @@ function RichNoteEditor({
           },
           paste: (_view: unknown, event: ClipboardEvent) => {
             const clipboardItems = event.clipboardData ? Array.from(event.clipboardData.items) : []
-            const imageItem = clipboardItems.find((item) =>
-              item.type.startsWith('image/')
-            )
+            const imageItem = clipboardItems.find((item) => item.type.startsWith('image/'))
             const imageFile = imageItem?.getAsFile()
 
-            if (!imageFile || !onImportImageFile) {
+            if (imageFile && onImportImageFile) {
+              event.preventDefault()
+              event.stopPropagation()
+              void importAndInsertImageFiles([imageFile], editor?.state.selection.from ?? null)
+              return true
+            }
+
+            const pastedText = event.clipboardData?.getData('text/plain') ?? ''
+            const markdown = markdownFromPlainTextPaste(pastedText)
+
+            if (!markdown || !editor || !isEditorSemanticallyEmpty(editor)) {
               return false
             }
 
             event.preventDefault()
             event.stopPropagation()
-            void importAndInsertImageFiles([imageFile], editor?.state.selection.from ?? null)
+            editor.commands.setContent(markdown, {
+              contentType: 'markdown',
+              emitUpdate: true
+            })
+            focusEditor()
+            scheduleContentMeasurement()
             return true
           }
         }
       },
       onUpdate: ({ editor: activeEditor }: { editor: TiptapEditor }) => {
-        queueSave(activeEditor.getMarkdown())
+        queueSave(isEditorSemanticallyEmpty(activeEditor) ? '' : activeEditor.getMarkdown())
+        scheduleContentMeasurement()
       }
     },
     [filePath, variant]
@@ -829,29 +957,82 @@ function RichNoteEditor({
     const hadLocalChanges = latestDraftRef.current !== latestSavedRef.current
     latestSavedRef.current = normalizedContent
 
+    if (isBlankMarkdown(normalizedContent) && isEditorSemanticallyEmpty(editor)) {
+      latestDraftRef.current = normalizedContent
+      onStatusChange('idle')
+      scheduleContentMeasurement()
+      return
+    }
+
     if (latestDraftRef.current === normalizedContent) {
       onStatusChange('idle')
+      scheduleContentMeasurement()
       return
     }
 
     if (editor.getMarkdown() === normalizedContent) {
       latestDraftRef.current = normalizedContent
       onStatusChange('idle')
+      scheduleContentMeasurement()
       return
     }
 
     if (!hadLocalChanges) {
       latestDraftRef.current = normalizedContent
-      editor.commands.setContent(normalizedContent, {
-        contentType: 'markdown',
-        emitUpdate: false
-      })
+      if (isBlankMarkdown(normalizedContent)) {
+        editor.commands.setContent(emptyNoteEditorContent(), {
+          emitUpdate: false
+        })
+      } else {
+        editor.commands.setContent(normalizedContent, {
+          contentType: 'markdown',
+          emitUpdate: false
+        })
+      }
       onStatusChange('idle')
+      scheduleContentMeasurement()
       return
     }
 
     onStatusChange('saving')
+    scheduleContentMeasurement()
   }, [editor, initialContent, normalizedInitialContent, onStatusChange])
+
+  useEffect(() => {
+    if (!autoSizeEnabled || !editor) {
+      return
+    }
+
+    scheduleContentMeasurement()
+
+    if (typeof ResizeObserver === 'undefined') {
+      return
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      scheduleContentMeasurement()
+    })
+
+    resizeObserver.observe(editor.view.dom)
+
+    if (editorHostRef.current) {
+      resizeObserver.observe(editorHostRef.current)
+    }
+
+    return () => {
+      resizeObserver.disconnect()
+    }
+  }, [autoSizeEnabled, editor])
+
+  useEffect(() => {
+    if (!editor) {
+      return
+    }
+
+    const contentElement = editor.view.dom as HTMLElement
+    contentElement.classList.toggle('overflow-y-hidden', autoSizeEnabled)
+    contentElement.classList.toggle('overflow-y-auto', !autoSizeEnabled)
+  }, [autoSizeEnabled, editor])
 
   useLayoutEffect(() => {
     if (!editor || variant !== 'viewer') {
@@ -913,6 +1094,7 @@ function RichNoteEditor({
       variant={variant}
     >
       <div
+        ref={editorHostRef}
         className="rich-note-editor relative min-h-0 flex-1"
         data-document-drop-target="true"
         data-shortcut-lock="true"
@@ -936,7 +1118,7 @@ function RichNoteEditor({
           }
         }}
       >
-        <EditorContent editor={editor} className="h-full" />
+        <EditorContent editor={editor} className={clsx(autoSizeEnabled ? 'min-h-full' : 'h-full')} />
       </div>
     </SurfaceFrame>
   )
@@ -944,6 +1126,8 @@ function RichNoteEditor({
 
 function NoteDocumentPane({
   filePath,
+  noteSizingMode,
+  onNoteContentHeightChange,
   onImportImageFile,
   onRegisterNoteCopyActions,
   onPassthroughScroll,
@@ -1005,6 +1189,8 @@ function NoteDocumentPane({
     <RichNoteEditor
       filePath={filePath}
       initialContent={document.content}
+      noteSizingMode={noteSizingMode}
+      onNoteContentHeightChange={onNoteContentHeightChange}
       onDocumentChange={setDocument}
       onImportImageFile={onImportImageFile}
       onRegisterNoteCopyActions={onRegisterNoteCopyActions}
@@ -1440,6 +1626,8 @@ function PdfDocumentPane({
 function DocumentPaneComponent({
   fileKind,
   filePath,
+  noteSizingMode,
+  onNoteContentHeightChange,
   officeViewer = null,
   onSetPresentationEmbedUrl,
   onImportImageFile,
@@ -1519,6 +1707,8 @@ function DocumentPaneComponent({
     return (
       <NoteDocumentPane
         filePath={filePath}
+        noteSizingMode={noteSizingMode}
+        onNoteContentHeightChange={onNoteContentHeightChange}
         onImportImageFile={onImportImageFile}
         onRegisterNoteCopyActions={onRegisterNoteCopyActions}
         onPassthroughScroll={onPassthroughScroll}
@@ -1546,6 +1736,7 @@ export const DocumentPane = memo(DocumentPaneComponent, (previous, next) => {
   return (
     previous.fileKind === next.fileKind &&
     previous.filePath === next.filePath &&
+    previous.noteSizingMode === next.noteSizingMode &&
     previous.refreshToken === next.refreshToken &&
     previous.showTileRefreshButton === next.showTileRefreshButton &&
     previous.showViewerRefreshButton === next.showViewerRefreshButton &&

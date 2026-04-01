@@ -222,9 +222,8 @@ textarea {
 .rich-note-editor__content {
   caret-color: var(--text);
   cursor: text;
-  height: 100%;
   min-height: 100%;
-  overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
 }
 
