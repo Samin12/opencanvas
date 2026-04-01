@@ -45,7 +45,15 @@ const INTERACTIVE_SHORTCUT_TARGET_SELECTOR =
   'button, [role="button"], a[href], input:not([type="hidden"]), select, textarea, summary'
 
 function terminalProviderLabel(provider: TerminalProvider) {
-  return provider === 'codex' ? 'Codex' : 'Claude Code'
+  if (provider === 'codex') {
+    return 'Codex'
+  }
+
+  if (provider === 't1code') {
+    return 'T1Code'
+  }
+
+  return 'Claude Code'
 }
 
 function flattenFiles(nodes: FileTreeNode[]): FileTreeNode[] {
@@ -1644,9 +1652,13 @@ export default function App() {
     }
   }
 
-  async function renameWorkspaceNode(targetPath: string, nextName: string) {
+  async function renameWorkspaceNode(
+    targetPath: string,
+    nextName: string,
+    options?: { suppressError?: boolean }
+  ) {
     if (!activeWorkspace) {
-      return
+      return false
     }
 
     try {
@@ -1696,12 +1708,17 @@ export default function App() {
       }
 
       setWorkspaceError(null)
+      return true
     } catch (error) {
-      setWorkspaceError(
-        error instanceof Error && error.message
-          ? `That item could not be renamed: ${error.message}`
-          : 'That item could not be renamed.'
-      )
+      if (!options?.suppressError) {
+        setWorkspaceError(
+          error instanceof Error && error.message
+            ? `That item could not be renamed: ${error.message}`
+            : 'That item could not be renamed.'
+        )
+      }
+
+      return false
     }
   }
 
@@ -2017,7 +2034,7 @@ export default function App() {
                 void moveFileIntoDirectory(sourcePath, targetDirectoryPath)
               }
               onRevealNodeInFinder={(targetPath) => void revealWorkspaceNodeInFinder(targetPath)}
-              onRenameNode={(targetPath, nextName) => void renameWorkspaceNode(targetPath, nextName)}
+              onRenameNode={renameWorkspaceNode}
               onOpenWorkspacePath={() => void openActiveWorkspacePath()}
               onMoveSidebar={setSidebarPlacement}
               onOpenSearch={() => {
@@ -2183,7 +2200,7 @@ export default function App() {
             }
             onImportImageFile={importWorkspaceImageFile}
             onOpenFile={previewFile}
-            onRenameNode={(targetPath, nextName) => void renameWorkspaceNode(targetPath, nextName)}
+            onRenameNode={renameWorkspaceNode}
             onStateChange={handleCanvasStateChange}
             shortcutsSuspended={Boolean(viewerFile)}
             state={canvasState}
@@ -2256,7 +2273,7 @@ export default function App() {
                 void moveFileIntoDirectory(sourcePath, targetDirectoryPath)
               }
               onRevealNodeInFinder={(targetPath) => void revealWorkspaceNodeInFinder(targetPath)}
-              onRenameNode={(targetPath, nextName) => void renameWorkspaceNode(targetPath, nextName)}
+              onRenameNode={renameWorkspaceNode}
               onOpenWorkspacePath={() => void openActiveWorkspacePath()}
               onMoveSidebar={setSidebarPlacement}
               onOpenSearch={() => {

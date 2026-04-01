@@ -36,11 +36,27 @@ const MAX_TERMINAL_FONT_SIZE = 19
 const COMPLETION_CHIME_MIN_INTERVAL_MS = 1500
 
 function terminalProviderUiLabel(provider: TerminalProvider) {
-  return provider === 'codex' ? 'Codex' : 'Claude'
+  if (provider === 'codex') {
+    return 'Codex'
+  }
+
+  if (provider === 't1code') {
+    return 'T1Code'
+  }
+
+  return 'Claude'
 }
 
 function terminalProviderFullLabel(provider: TerminalProvider) {
-  return provider === 'codex' ? 'Codex' : 'Claude Code'
+  if (provider === 'codex') {
+    return 'Codex'
+  }
+
+  if (provider === 't1code') {
+    return 'T1Code'
+  }
+
+  return 'Claude Code'
 }
 
 function terminalStatusMeta(status: 'connecting' | 'live' | 'exited' | 'error') {

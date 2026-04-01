@@ -84,7 +84,11 @@ interface CanvasSurfaceProps {
   ) => Promise<FileTreeNode[]>
   onImportImageFile: (file: File) => Promise<FileTreeNode | null>
   onOpenFile: (node: FileTreeNode) => void
-  onRenameNode: (targetPath: string, nextName: string) => void
+  onRenameNode: (
+    targetPath: string,
+    nextName: string,
+    options?: { suppressError?: boolean }
+  ) => Promise<boolean>
   onStateChange: (state: CanvasState, options?: { immediate?: boolean }) => void
   shortcutsSuspended?: boolean
   state: CanvasState
@@ -236,7 +240,6 @@ const NOTE_TILE_DEFAULT_WIDTH = 360
 const NOTE_TILE_DEFAULT_HEIGHT = 168
 const NOTE_TILE_MIN_WIDTH = 240
 const NOTE_TILE_MIN_HEIGHT = 140
-const TILE_HEADER_HEIGHT = 37
 const DEFAULT_TERMINAL_WIDTH = 860
 const DEFAULT_TERMINAL_HEIGHT = 620
 const CAMERA_EPSILON = 0.001
@@ -748,17 +751,41 @@ function nextZIndex(tiles: CanvasTile[]) {
 }
 
 function terminalProviderForTile(tile: CanvasTile | null | undefined): TerminalProvider {
-  return tile?.terminalProvider === 'codex' ? 'codex' : 'claude'
+  if (tile?.terminalProvider === 'codex') {
+    return 'codex'
+  }
+
+  if (tile?.terminalProvider === 't1code') {
+    return 't1code'
+  }
+
+  return 'claude'
 }
 
 function terminalProviderLabel(provider: TerminalProvider) {
-  return provider === 'codex' ? 'Codex' : 'Claude Code'
+  if (provider === 'codex') {
+    return 'Codex'
+  }
+
+  if (provider === 't1code') {
+    return 'T1Code'
+  }
+
+  return 'Claude Code'
 }
 
 function titleForTerminal(tiles: CanvasTile[], provider: TerminalProvider) {
   const count =
     tiles.filter((tile) => tile.type === 'term' && terminalProviderForTile(tile) === provider).length + 1
-  return `${provider === 'codex' ? 'Codex' : 'Claude'} ${count}`
+  if (provider === 'codex') {
+    return `Codex ${count}`
+  }
+
+  if (provider === 't1code') {
+    return `T1Code ${count}`
+  }
+
+  return `Claude ${count}`
 }
 
 function sessionId() {
@@ -823,7 +850,7 @@ function minTileHeightForTile(tile: CanvasTile) {
 }
 
 function autoSizedNoteTileHeight(contentHeight: number) {
-  return snap(Math.max(NOTE_TILE_DEFAULT_HEIGHT, contentHeight + TILE_HEADER_HEIGHT))
+  return snap(Math.max(NOTE_TILE_DEFAULT_HEIGHT, contentHeight))
 }
 
 function createEmbedTile(url: string, x: number, y: number, zIndex: number): CanvasTile | null {
@@ -944,6 +971,14 @@ function splitFileName(targetName: string) {
   }
 }
 
+function sanitizeTileFileStem(value: string) {
+  return value
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 72)
+}
+
 function isMarkdownNotePath(targetPath: string | null | undefined) {
   return typeof targetPath === 'string' && /\.(?:md|mdx|markdown)$/i.test(targetPath)
 }
@@ -1043,6 +1078,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const lastPointerScrollActivationAtRef = useRef(0)
     const renamingInputRef = useRef<HTMLInputElement | null>(null)
     const renameCancelRef = useRef(false)
+    const headingRenameRequestRef = useRef<Map<string, string>>(new Map())
     const frameBoundsRef = useRef<Map<string, FrameBoundsSnapshot>>(new Map())
     const stateRef = useRef(state)
     const drawColorRef = useRef<TLDefaultColorStyle>('black')
@@ -1248,7 +1284,47 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         return
       }
 
-      onRenameNode(tile.filePath, nextName)
+      void onRenameNode(tile.filePath, nextName)
+    }
+
+    async function handleNotePrimaryHeadingChange(tile: CanvasTile, heading: string | null) {
+      if (
+        tile.type !== 'note' ||
+        !tile.filePath ||
+        !isMarkdownNotePath(tile.filePath) ||
+        renamingTileId === tile.id
+      ) {
+        return
+      }
+
+      const nextStem = heading ? sanitizeTileFileStem(heading) : ''
+
+      if (!nextStem) {
+        return
+      }
+
+      const currentName = fileNameFromPath(tile.filePath)
+      const { extension, stem } = splitFileName(currentName)
+
+      if (stem === nextStem) {
+        return
+      }
+
+      if (headingRenameRequestRef.current.get(tile.id) === nextStem) {
+        return
+      }
+
+      headingRenameRequestRef.current.set(tile.id, nextStem)
+
+      try {
+        await onRenameNode(tile.filePath, `${nextStem}${extension}`, {
+          suppressError: true
+        })
+      } finally {
+        if (headingRenameRequestRef.current.get(tile.id) === nextStem) {
+          headingRenameRequestRef.current.delete(tile.id)
+        }
+      }
     }
 
     useEffect(() => {
@@ -4661,7 +4737,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 const isTileSelected = selectedTileIdSet.has(tile.id)
                 const isTilePrimarySelected = isTileSelected && !multiSelectedTiles && selectedTileId === tile.id
                 const isTileGroupSelected = isTileSelected && multiSelectedTiles
+                const isTilePointerHovered = hoveredTileId === tile.id
                 const isTileHovered = hoveredTileId === tile.id && !isTileSelected
+                const showFloatingTileChrome =
+                  tile.type === 'term' ||
+                  isRenamingThisTile ||
+                  isTileSelected ||
+                  isTilePointerHovered
+                const tileBodyClassName =
+                  tile.type === 'term'
+                    ? 'h-[calc(100%-37px)]'
+                    : tile.type === 'note' || tile.type === 'embed'
+                      ? 'h-full overflow-hidden'
+                      : 'h-full p-2'
                 const connectorLabel =
                   tile.type === 'term'
                     ? dragConnection?.sourceKind === 'group'
@@ -4779,177 +4867,273 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     }}
                   />
                 ) : null}
-                <div
-                  className="flex items-center justify-between rounded-t-[4px] border-b border-[color:var(--line)] bg-[var(--surface-1)] px-2.5 py-1.5"
-                  onPointerDown={(event) => {
-                    if (event.button !== 0) {
-                      return
-                    }
+                {tile.type === 'term' ? (
+                  <div
+                    className="flex items-center justify-between rounded-t-[4px] border-b border-[color:var(--line)] bg-[var(--surface-1)] px-2.5 py-1.5"
+                    onPointerDown={(event) => {
+                      if (event.button !== 0) {
+                        return
+                      }
 
-                    event.stopPropagation()
-                    beginTileDrag(tile, event)
-                  }}
-                  onDoubleClick={() => {
-                    if (tile.filePath && tileFileKind && !isMarkdownTile) {
-                      onOpenFile({
-                        kind: 'file',
-                        name: tile.title,
-                        path: tile.filePath,
-                        fileKind: tileFileKind
-                      })
-                    }
-                  }}
-                >
-                  <div className="min-w-0 flex-1">
-                    {isRenamingThisTile && isMarkdownTile ? (
-                      <div
-                        className="flex items-center gap-1.5"
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onDoubleClick={(event) => event.stopPropagation()}
-                      >
-                        <input
-                          ref={renamingInputRef}
-                          value={renamingValue}
-                          onChange={(event) => {
-                            setRenamingValue(event.target.value)
-                          }}
-                          className="min-w-0 flex-1 rounded-[4px] border border-[color:var(--accent)] bg-[var(--surface-0)] px-2 py-1 text-[12px] font-medium text-[var(--text)] outline-none"
-                          onBlur={() => {
-                            if (renameCancelRef.current) {
-                              renameCancelRef.current = false
-                              return
-                            }
-
-                            commitTileRename(tile)
-                          }}
-                          onKeyDown={(event) => {
-                            event.stopPropagation()
-
-                            if (event.key === 'Enter') {
-                              event.preventDefault()
-                              commitTileRename(tile)
-                              return
-                            }
-
-                            if (event.key === 'Escape') {
-                              event.preventDefault()
-                              cancelTileRename()
-                            }
-                          }}
-                        />
-                        {renameExtension ? (
-                          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-faint)]">
-                            {renameExtension}
-                          </span>
-                        ) : null}
+                      event.stopPropagation()
+                      beginTileDrag(tile, event)
+                    }}
+                    onDoubleClick={() => {
+                      if (tile.filePath && tileFileKind && !isMarkdownTile) {
+                        onOpenFile({
+                          kind: 'file',
+                          name: tile.title,
+                          path: tile.filePath,
+                          fileKind: tileFileKind
+                        })
+                      }
+                    }}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[12px] font-medium text-[var(--text)]">
+                        {tile.title}
                       </div>
-                    ) : (
+                      <div className="truncate text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
+                        {tileSubtitleLabel(tile)}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {hasFileDocument ? (
+                        <button
+                          className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[11px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                          onPointerDown={(event) => event.stopPropagation()}
+                          title="Refresh file"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            requestTileRefresh(tile.id)
+                          }}
+                        >
+                          ↻
+                        </button>
+                      ) : null}
+                      {hasFileDocument && tileFileKind ? (
+                        <button
+                          className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[11px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                          onPointerDown={(event) => event.stopPropagation()}
+                          title="Open preview"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onOpenFile({
+                              kind: 'file',
+                              name: tile.title,
+                              path: tile.filePath as string,
+                              fileKind: tileFileKind
+                            })
+                          }}
+                        >
+                          ↗
+                        </button>
+                      ) : null}
                       <button
-                        type="button"
-                        className={clsx(
-                          'block max-w-full truncate bg-transparent p-0 text-left text-[12px] font-medium text-[var(--text)]',
-                          isMarkdownTile && 'cursor-text'
-                        )}
-                        onPointerDown={(event) => {
+                        className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[13px] leading-none text-[var(--text-dim)] transition hover:border-[color:var(--error-line)] hover:bg-[var(--error-bg)] hover:text-[var(--error-text)]"
+                        title="Close tile"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
                           event.stopPropagation()
+                          deleteTile(tile.id)
                         }}
-                        onDoubleClick={(event) => {
-                          if (!isMarkdownTile) {
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className={clsx(
+                      'pointer-events-none absolute inset-x-0 top-0 z-30 p-2 transition duration-150 ease-out',
+                      showFloatingTileChrome ? 'translate-y-0 opacity-100' : '-translate-y-1 opacity-0'
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3 rounded-[12px] border border-white/8 bg-[color:color-mix(in_srgb,var(--surface-overlay)_88%,transparent)] px-3 py-2 shadow-[0_18px_36px_rgba(0,0,0,0.28)] backdrop-blur-md">
+                      <div
+                        className="pointer-events-auto min-w-0 flex-1 cursor-grab active:cursor-grabbing"
+                        onPointerDown={(event) => {
+                          if (event.button !== 0) {
                             return
                           }
 
-                          event.preventDefault()
                           event.stopPropagation()
-                          beginTileRename(tile)
+                          beginTileDrag(tile, event)
                         }}
-                        title={isMarkdownTile ? 'Double-click to rename this markdown file' : tile.title}
+                        onDoubleClick={() => {
+                          if (tile.filePath && tileFileKind && !isMarkdownTile) {
+                            onOpenFile({
+                              kind: 'file',
+                              name: tile.title,
+                              path: tile.filePath,
+                              fileKind: tileFileKind
+                            })
+                          }
+                        }}
                       >
-                        {tile.title}
-                      </button>
-                    )}
-                    <div className="truncate text-[10px] uppercase tracking-[0.14em] text-[var(--text-faint)]">
-                      {tileSubtitleLabel(tile)}
+                        {isRenamingThisTile && isMarkdownTile ? (
+                          <div
+                            className="flex items-center gap-1.5"
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onDoubleClick={(event) => event.stopPropagation()}
+                          >
+                            <input
+                              ref={renamingInputRef}
+                              value={renamingValue}
+                              onChange={(event) => {
+                                setRenamingValue(event.target.value)
+                              }}
+                              className="min-w-0 flex-1 rounded-[8px] border border-[color:var(--accent)] bg-[var(--surface-0)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--text)] outline-none"
+                              onBlur={() => {
+                                if (renameCancelRef.current) {
+                                  renameCancelRef.current = false
+                                  return
+                                }
+
+                                commitTileRename(tile)
+                              }}
+                              onKeyDown={(event) => {
+                                event.stopPropagation()
+
+                                if (event.key === 'Enter') {
+                                  event.preventDefault()
+                                  commitTileRename(tile)
+                                  return
+                                }
+
+                                if (event.key === 'Escape') {
+                                  event.preventDefault()
+                                  cancelTileRename()
+                                }
+                              }}
+                            />
+                            {renameExtension ? (
+                              <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-faint)]">
+                                {renameExtension}
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              className={clsx(
+                                'block max-w-full truncate bg-transparent p-0 text-left text-[13px] font-medium text-[var(--text)]',
+                                isMarkdownTile && 'cursor-text'
+                              )}
+                              onPointerDown={(event) => {
+                                event.stopPropagation()
+                              }}
+                              onDoubleClick={(event) => {
+                                if (!isMarkdownTile) {
+                                  return
+                                }
+
+                                event.preventDefault()
+                                event.stopPropagation()
+                                beginTileRename(tile)
+                              }}
+                              title={isMarkdownTile ? 'Double-click to rename this markdown file' : tile.title}
+                            >
+                              {tile.title}
+                            </button>
+                            <div className="truncate pt-0.5 text-[10px] uppercase tracking-[0.16em] text-[var(--text-faint)]">
+                              {tileSubtitleLabel(tile)}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      <div className="pointer-events-auto flex shrink-0 items-center gap-1">
+                        {showNoteShortcutHelp ? (
+                          <HoverTooltip label={NOTE_SLASH_TOOLTIP_LABEL} placement="bottom">
+                            <button
+                              type="button"
+                              aria-label="Markdown shortcuts"
+                              data-managed-tooltip="custom"
+                              className="flex h-7 w-7 items-center justify-center rounded-[10px] border border-white/10 bg-black/15 text-[10px] font-semibold text-[var(--text-faint)] transition hover:bg-black/25 hover:text-[var(--text)]"
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              /
+                            </button>
+                          </HoverTooltip>
+                        ) : null}
+                        {tileFileKind === 'note' ? (
+                          <MarkdownCopyMenu
+                            copyActions={noteCopyActionsByTile[tile.id] ?? null}
+                            variant="tile"
+                          />
+                        ) : null}
+                        {hasFileDocument ? (
+                          <button
+                            className="flex h-7 w-7 items-center justify-center rounded-[10px] border border-white/10 bg-black/15 text-[11px] text-[var(--text-dim)] transition hover:bg-black/25 hover:text-[var(--text)]"
+                            onPointerDown={(event) => event.stopPropagation()}
+                            title={
+                              tile.type === 'image'
+                                ? 'Refresh image'
+                                : tile.type === 'video'
+                                  ? 'Refresh video'
+                                  : tile.type === 'pdf'
+                                    ? 'Refresh PDF'
+                                    : 'Refresh file'
+                            }
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              requestTileRefresh(tile.id)
+                            }}
+                          >
+                            ↻
+                          </button>
+                        ) : null}
+                        {hasFileDocument && tileFileKind ? (
+                          <button
+                            className="flex h-7 w-7 items-center justify-center rounded-[10px] border border-white/10 bg-black/15 text-[11px] text-[var(--text-dim)] transition hover:bg-black/25 hover:text-[var(--text)]"
+                            onPointerDown={(event) => event.stopPropagation()}
+                            title="Open preview"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onOpenFile({
+                                kind: 'file',
+                                name: tile.title,
+                                path: tile.filePath as string,
+                                fileKind: tileFileKind
+                              })
+                            }}
+                          >
+                            ↗
+                          </button>
+                        ) : null}
+                        {tile.type === 'embed' && tile.embedUrl ? (
+                          <button
+                            className="flex h-7 w-7 items-center justify-center rounded-[10px] border border-white/10 bg-black/15 text-[11px] text-[var(--text-dim)] transition hover:bg-black/25 hover:text-[var(--text)]"
+                            onPointerDown={(event) => event.stopPropagation()}
+                            title="Open in browser"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void window.collaborator.openExternalUrl(tile.embedUrl as string)
+                            }}
+                          >
+                            ↗
+                          </button>
+                        ) : null}
+                        <button
+                          className="flex h-7 w-7 items-center justify-center rounded-[10px] border border-white/10 bg-black/15 text-[13px] leading-none text-[var(--text-dim)] transition hover:border-[color:var(--error-line)] hover:bg-[var(--error-bg)] hover:text-[var(--error-text)]"
+                          title="Close tile"
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            deleteTile(tile.id)
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    {showNoteShortcutHelp ? (
-                      <HoverTooltip label={NOTE_SLASH_TOOLTIP_LABEL} placement="bottom">
-                        <button
-                          type="button"
-                          aria-label="Markdown shortcuts"
-                          data-managed-tooltip="custom"
-                          className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[10px] font-semibold text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          /
-                        </button>
-                      </HoverTooltip>
-                    ) : null}
-                    {tileFileKind === 'note' ? (
-                      <MarkdownCopyMenu
-                        copyActions={noteCopyActionsByTile[tile.id] ?? null}
-                        variant="tile"
-                      />
-                    ) : null}
-                    {hasFileDocument ? (
-                      <button
-                        className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[11px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
-                        onPointerDown={(event) => event.stopPropagation()}
-                        title={
-                          tile.type === 'image'
-                            ? 'Refresh image'
-                            : tile.type === 'video'
-                              ? 'Refresh video'
-                              : tile.type === 'pdf'
-                                ? 'Refresh PDF'
-                              : 'Refresh file'
-                        }
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          requestTileRefresh(tile.id)
-                        }}
-                      >
-                        ↻
-                      </button>
-                    ) : null}
-                    {hasFileDocument && tileFileKind ? (
-                      <button
-                        className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[11px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
-                        onPointerDown={(event) => event.stopPropagation()}
-                        title="Open preview"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onOpenFile({
-                            kind: 'file',
-                            name: tile.title,
-                            path: tile.filePath as string,
-                            fileKind: tileFileKind
-                          })
-                        }}
-                      >
-                        ↗
-                      </button>
-                    ) : null}
-                    <button
-                      className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[13px] leading-none text-[var(--text-dim)] transition hover:border-[color:var(--error-line)] hover:bg-[var(--error-bg)] hover:text-[var(--error-text)]"
-                      title="Close tile"
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        deleteTile(tile.id)
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                </div>
+                )}
 
                 <div
-                  className={clsx(
-                    'h-[calc(100%-37px)]',
-                    tile.type === 'note' ? 'overflow-hidden' : 'p-2'
-                  )}
+                  className={tileBodyClassName}
                 >
                   {tile.type === 'term' ? (
                     <div className="flex h-full min-h-0 flex-col gap-2">
@@ -5052,7 +5236,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       </div>
                     </div>
                   ) : tile.type === 'embed' && tile.embedUrl ? (
-                    <EmbedPane title={tile.title} url={tile.embedUrl} />
+                    <EmbedPane title={tile.title} url={tile.embedUrl} variant="tile" />
                   ) : tileFileKind && tile.filePath ? (
                     <DocumentPane
                       fileKind={tileFileKind}
@@ -5062,6 +5246,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                         tile.type === 'note'
                           ? (contentHeight) => {
                               handleNoteContentHeightChange(tile.id, contentHeight)
+                            }
+                          : undefined
+                      }
+                      onPrimaryHeadingChange={
+                        tile.type === 'note'
+                          ? (heading) => {
+                              void handleNotePrimaryHeadingChange(tile, heading)
                             }
                           : undefined
                       }

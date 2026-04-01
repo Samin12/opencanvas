@@ -63,6 +63,21 @@ function isEditorSemanticallyEmpty(editor: TiptapEditor | null | undefined) {
   return !editor || editor.getText({ blockSeparator: '\n\n' }).trim().length === 0
 }
 
+function normalizeHeadingText(value: string) {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+function primaryHeadingFromEditor(editor: TiptapEditor | null | undefined) {
+  const firstBlock = editor?.state.doc.firstChild
+
+  if (!firstBlock || firstBlock.type.name !== 'heading' || firstBlock.attrs.level !== 1) {
+    return null
+  }
+
+  const heading = normalizeHeadingText(firstBlock.textContent)
+  return heading.length > 0 ? heading : null
+}
+
 function markdownFromPlainTextPaste(rawText: string) {
   const normalized = rawText.replace(/\r\n?/g, '\n').trim()
 
@@ -116,6 +131,7 @@ interface DocumentPaneProps {
   filePath: string
   noteSizingMode?: 'auto' | 'manual'
   onNoteContentHeightChange?: (contentHeight: number) => void
+  onPrimaryHeadingChange?: (heading: string | null) => void
   officeViewer?: OfficeViewerBootstrap | null
   onSetPresentationEmbedUrl?: (url: string | null) => void
   onImportImageFile?: (file: File) => Promise<{ name: string; path: string } | null>
@@ -541,6 +557,7 @@ function RichNoteEditor({
   initialContent,
   noteSizingMode,
   onNoteContentHeightChange,
+  onPrimaryHeadingChange,
   onDocumentChange,
   onImportImageFile,
   onRegisterNoteCopyActions,
@@ -556,6 +573,7 @@ function RichNoteEditor({
   initialContent: string
   noteSizingMode?: 'auto' | 'manual'
   onNoteContentHeightChange?: (contentHeight: number) => void
+  onPrimaryHeadingChange?: (heading: string | null) => void
   onDocumentChange: (document: TextFileDocument) => void
   onImportImageFile?: (file: File) => Promise<{ name: string; path: string } | null>
   onRegisterNoteCopyActions?: (actions: MarkdownCopyActions | null) => void
@@ -574,6 +592,8 @@ function RichNoteEditor({
   const measureFrameRef = useRef<number | null>(null)
   const saveRequestIdRef = useRef(0)
   const saveTimerRef = useRef<number | null>(null)
+  const headingTimerRef = useRef<number | null>(null)
+  const lastPublishedHeadingRef = useRef<string | null>(null)
   const autoSizeEnabled =
     variant === 'tile' && noteSizingMode === 'auto' && Boolean(onNoteContentHeightChange)
 
@@ -771,6 +791,10 @@ function RichNoteEditor({
         window.clearTimeout(saveTimerRef.current)
       }
 
+      if (headingTimerRef.current !== null) {
+        window.clearTimeout(headingTimerRef.current)
+      }
+
       if (measureFrameRef.current !== null) {
         window.cancelAnimationFrame(measureFrameRef.current)
       }
@@ -812,6 +836,40 @@ function RichNoteEditor({
       window.clearTimeout(saveTimerRef.current)
       saveTimerRef.current = null
     }
+  }
+
+  function clearScheduledHeadingPublish() {
+    if (headingTimerRef.current !== null) {
+      window.clearTimeout(headingTimerRef.current)
+      headingTimerRef.current = null
+    }
+  }
+
+  function publishPrimaryHeading(activeEditor: TiptapEditor | null | undefined) {
+    if (!onPrimaryHeadingChange) {
+      return
+    }
+
+    const nextHeading = primaryHeadingFromEditor(activeEditor)
+
+    if (lastPublishedHeadingRef.current === nextHeading) {
+      return
+    }
+
+    lastPublishedHeadingRef.current = nextHeading
+    onPrimaryHeadingChange(nextHeading)
+  }
+
+  function schedulePrimaryHeadingPublish(activeEditor: TiptapEditor | null | undefined) {
+    if (!onPrimaryHeadingChange) {
+      return
+    }
+
+    clearScheduledHeadingPublish()
+    headingTimerRef.current = window.setTimeout(() => {
+      headingTimerRef.current = null
+      publishPrimaryHeading(activeEditor)
+    }, 420)
   }
 
   function flushSave() {
@@ -941,6 +999,7 @@ function RichNoteEditor({
       onUpdate: ({ editor: activeEditor }: { editor: TiptapEditor }) => {
         queueSave(isEditorSemanticallyEmpty(activeEditor) ? '' : activeEditor.getMarkdown())
         scheduleContentMeasurement()
+        schedulePrimaryHeadingPublish(activeEditor)
       }
     },
     [filePath, variant]
@@ -950,6 +1009,7 @@ function RichNoteEditor({
     if (!editor) {
       latestDraftRef.current = initialContent
       latestSavedRef.current = normalizedInitialContent
+      lastPublishedHeadingRef.current = null
       return
     }
 
@@ -960,12 +1020,14 @@ function RichNoteEditor({
     if (isBlankMarkdown(normalizedContent) && isEditorSemanticallyEmpty(editor)) {
       latestDraftRef.current = normalizedContent
       onStatusChange('idle')
+      lastPublishedHeadingRef.current = primaryHeadingFromEditor(editor)
       scheduleContentMeasurement()
       return
     }
 
     if (latestDraftRef.current === normalizedContent) {
       onStatusChange('idle')
+      lastPublishedHeadingRef.current = primaryHeadingFromEditor(editor)
       scheduleContentMeasurement()
       return
     }
@@ -973,6 +1035,7 @@ function RichNoteEditor({
     if (editor.getMarkdown() === normalizedContent) {
       latestDraftRef.current = normalizedContent
       onStatusChange('idle')
+      lastPublishedHeadingRef.current = primaryHeadingFromEditor(editor)
       scheduleContentMeasurement()
       return
     }
@@ -990,11 +1053,13 @@ function RichNoteEditor({
         })
       }
       onStatusChange('idle')
+      lastPublishedHeadingRef.current = primaryHeadingFromEditor(editor)
       scheduleContentMeasurement()
       return
     }
 
     onStatusChange('saving')
+    lastPublishedHeadingRef.current = primaryHeadingFromEditor(editor)
     scheduleContentMeasurement()
   }, [editor, initialContent, normalizedInitialContent, onStatusChange])
 
@@ -1128,6 +1193,7 @@ function NoteDocumentPane({
   filePath,
   noteSizingMode,
   onNoteContentHeightChange,
+  onPrimaryHeadingChange,
   onImportImageFile,
   onRegisterNoteCopyActions,
   onPassthroughScroll,
@@ -1191,6 +1257,7 @@ function NoteDocumentPane({
       initialContent={document.content}
       noteSizingMode={noteSizingMode}
       onNoteContentHeightChange={onNoteContentHeightChange}
+      onPrimaryHeadingChange={onPrimaryHeadingChange}
       onDocumentChange={setDocument}
       onImportImageFile={onImportImageFile}
       onRegisterNoteCopyActions={onRegisterNoteCopyActions}
@@ -1628,6 +1695,7 @@ function DocumentPaneComponent({
   filePath,
   noteSizingMode,
   onNoteContentHeightChange,
+  onPrimaryHeadingChange,
   officeViewer = null,
   onSetPresentationEmbedUrl,
   onImportImageFile,
@@ -1709,6 +1777,7 @@ function DocumentPaneComponent({
         filePath={filePath}
         noteSizingMode={noteSizingMode}
         onNoteContentHeightChange={onNoteContentHeightChange}
+        onPrimaryHeadingChange={onPrimaryHeadingChange}
         onImportImageFile={onImportImageFile}
         onRegisterNoteCopyActions={onRegisterNoteCopyActions}
         onPassthroughScroll={onPassthroughScroll}

@@ -59,6 +59,7 @@ TLDraw still makes sense later for:
 - `tmux` installed and available on your `PATH`
 - Claude Code installed and available as the `claude` command on your `PATH`
 - Codex installed and available as the `codex` command on your `PATH` if you want Codex terminals
+- Bun `>=1.3.9` if you want T1Code terminals (`bunx @maria_rcks/t1code`)
 - Docker Desktop or Docker Engine if you want full-fidelity Excel / PowerPoint viewing
 
 On macOS, install `tmux` with:
@@ -71,6 +72,7 @@ By default, Open Canvas launches:
 
 - `claude --dangerously-skip-permissions`
 - `codex --dangerously-bypass-approvals-and-sandbox`
+- `bunx @maria_rcks/t1code`
 
 Open Canvas terminals also expose an `open-canvas-cli` command automatically, so Claude Code and Codex sessions inside the app can call the workspace CLI without extra setup.
 
@@ -81,6 +83,7 @@ If you want different launch commands, override them before starting the app:
 ```bash
 export COLLABORATOR_CLAUDE_COMMAND="claude"
 export COLLABORATOR_CODEX_COMMAND="codex"
+export OPEN_CANVAS_T1CODE_COMMAND="t1code"
 ```
 
 ## Office viewer

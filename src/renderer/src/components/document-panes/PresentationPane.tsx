@@ -150,6 +150,7 @@ export function PresentationPane({
           }
           title={fileName}
           url={presentationEmbedUrl}
+          variant={variant}
         />
         {isEditing ? (
           <div className="absolute inset-x-4 bottom-4 z-20 rounded-[6px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] p-3 shadow-[0_20px_40px_rgba(15,23,42,0.18)] backdrop-blur">

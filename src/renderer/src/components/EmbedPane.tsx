@@ -9,6 +9,7 @@ interface EmbedPaneProps {
   headerActions?: ReactNode
   title: string
   url: string
+  variant?: 'tile' | 'viewer'
 }
 
 function OpenExternalButton({ url }: { url: string }) {
@@ -25,7 +26,7 @@ function OpenExternalButton({ url }: { url: string }) {
   )
 }
 
-function EmbedPaneComponent({ headerActions, title, url }: EmbedPaneProps) {
+function EmbedPaneComponent({ headerActions, title, url, variant = 'tile' }: EmbedPaneProps) {
   const descriptor = embedDescriptorFromUrl(url)
 
   if (!descriptor) {
@@ -39,9 +40,11 @@ function EmbedPaneComponent({ headerActions, title, url }: EmbedPaneProps) {
   if (descriptor.renderKind === 'video') {
     return (
       <div className="relative flex h-full items-center justify-center overflow-hidden rounded-[4px] bg-black/90">
-        <div className="absolute right-3 top-3 z-10">
-          <OpenExternalButton url={descriptor.canonicalUrl} />
-        </div>
+        {variant === 'viewer' ? (
+          <div className="absolute right-3 top-3 z-10">
+            <OpenExternalButton url={descriptor.canonicalUrl} />
+          </div>
+        ) : null}
         <video
           src={descriptor.sourceUrl}
           controls
@@ -56,7 +59,23 @@ function EmbedPaneComponent({ headerActions, title, url }: EmbedPaneProps) {
   if (descriptor.renderKind === 'pdf') {
     return (
       <div className="h-full">
-        <PdfPane sourceUrl={descriptor.sourceUrl} title={title || descriptor.title} variant="tile" />
+        <PdfPane sourceUrl={descriptor.sourceUrl} title={title || descriptor.title} variant={variant} />
+      </div>
+    )
+  }
+
+  if (variant === 'tile') {
+    return (
+      <div className="relative h-full overflow-hidden rounded-[4px] bg-[var(--surface-0)]">
+        <iframe
+          key={descriptor.sourceUrl}
+          src={descriptor.sourceUrl}
+          title={title || descriptor.title}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+          className="h-full w-full border-0"
+          referrerPolicy="no-referrer-when-downgrade"
+        />
       </div>
     )
   }
@@ -92,5 +111,10 @@ function EmbedPaneComponent({ headerActions, title, url }: EmbedPaneProps) {
 }
 
 export const EmbedPane = memo(EmbedPaneComponent, (previous, next) => {
-  return previous.title === next.title && previous.url === next.url && previous.headerActions === next.headerActions
+  return (
+    previous.title === next.title &&
+    previous.url === next.url &&
+    previous.variant === next.variant &&
+    previous.headerActions === next.headerActions
+  )
 })

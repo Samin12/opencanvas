@@ -30,7 +30,11 @@ const OPEN_CANVAS_CLI_SHIM_PATH = join(OPEN_CANVAS_BIN_DIRECTORY, 'open-canvas-c
 const TERMINAL_START_COMMANDS: Record<TerminalProvider, string> = {
   claude: process.env.COLLABORATOR_CLAUDE_COMMAND ?? 'claude --dangerously-skip-permissions',
   codex:
-    process.env.COLLABORATOR_CODEX_COMMAND ?? 'codex --dangerously-bypass-approvals-and-sandbox'
+    process.env.COLLABORATOR_CODEX_COMMAND ?? 'codex --dangerously-bypass-approvals-and-sandbox',
+  t1code:
+    process.env.OPEN_CANVAS_T1CODE_COMMAND ??
+    process.env.COLLABORATOR_T1CODE_COMMAND ??
+    'bunx @maria_rcks/t1code'
 }
 const TMUX_DEFAULT_TERMINAL_CANDIDATES = ['tmux-256color', 'screen-256color', 'xterm-256color']
 const TMUX_BINARY_CANDIDATES = [
@@ -176,7 +180,15 @@ function capitalize(value: string): string {
 }
 
 function providerLabel(provider: TerminalProvider): string {
-  return provider === 'codex' ? 'Codex' : 'Claude Code'
+  if (provider === 'codex') {
+    return 'Codex'
+  }
+
+  if (provider === 't1code') {
+    return 'T1Code'
+  }
+
+  return 'Claude Code'
 }
 
 function providerCommand(provider: TerminalProvider): string {
@@ -196,7 +208,15 @@ function messageTitle(body: string, provider: TerminalProvider): string {
     }
   }
 
-  return provider === 'codex' ? 'Codex Response' : 'Claude Response'
+  if (provider === 'codex') {
+    return 'Codex Response'
+  }
+
+  if (provider === 't1code') {
+    return 'T1Code Response'
+  }
+
+  return 'Claude Response'
 }
 
 function stripClaudeLeadMarker(value: string): string {
@@ -214,6 +234,7 @@ function isClaudeUiBoundaryLine(trimmed: string): boolean {
     /^[─━]{8,}$/u.test(trimmed) ||
     /^claude code v/i.test(trimmed) ||
     /^codex cli\b/i.test(trimmed) ||
+    /^t1code\b/i.test(trimmed) ||
     /^opus\b/i.test(trimmed) ||
     /^esc to interrupt/i.test(trimmed) ||
     /^[/?] for shortcuts/i.test(trimmed)
@@ -700,7 +721,12 @@ function readPersistedTerminalSession(
       return {
         createdAt: typeof parsed.createdAt === 'number' ? parsed.createdAt : Date.now(),
         cwd: parsed.cwd,
-        provider: parsed.provider === 'codex' ? 'codex' : 'claude',
+        provider:
+          parsed.provider === 'codex'
+            ? 'codex'
+            : parsed.provider === 't1code'
+              ? 't1code'
+              : 'claude',
         sessionId: parsed.sessionId,
         tmuxSessionName: parsed.tmuxSessionName,
         updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : Date.now()
@@ -917,6 +943,9 @@ function terminalEnvironment(shell: string): NodeJS.ProcessEnv {
 }
 
 export function readTerminalDependencyState(): TerminalDependencyState {
+  const t1codeCommand =
+    process.env.OPEN_CANVAS_T1CODE_COMMAND ?? process.env.COLLABORATOR_T1CODE_COMMAND
+
   return {
     tmuxInstalled: resolveTmuxBinary() !== null,
     providers: {
@@ -929,6 +958,11 @@ export function readTerminalDependencyState(): TerminalDependencyState {
         command: providerCommandName('codex'),
         installed: resolveCommandBinary(providerCommandName('codex')) !== null,
         label: 'Codex'
+      },
+      t1code: {
+        command: t1codeCommand ? providerCommandName('t1code') : 'Bun (bunx @maria_rcks/t1code)',
+        installed: resolveCommandBinary(providerCommandName('t1code')) !== null,
+        label: 'T1Code'
       }
     }
   }

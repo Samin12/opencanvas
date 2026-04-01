@@ -148,6 +148,19 @@ async function createUniquePath(directoryPath: string, baseName: string, extensi
   return candidatePath
 }
 
+async function pathsReferToSameNode(leftPath: string, rightPath: string) {
+  try {
+    const [resolvedLeftPath, resolvedRightPath] = await Promise.all([
+      realpath(leftPath),
+      realpath(rightPath)
+    ])
+
+    return resolvedLeftPath === resolvedRightPath
+  } catch {
+    return false
+  }
+}
+
 function normalizeAssetExtension(extension: string): string | null {
   const normalized = extension.toLowerCase()
 
@@ -599,11 +612,29 @@ export async function renameWorkspaceNode(
     return ensureNode(resolvedTargetPath)
   }
 
-  if (await pathExists(nextPath)) {
+  const isCaseOnlyRename =
+    resolvedTargetPath.toLowerCase() === nextPath.toLowerCase() && resolvedTargetPath !== nextPath
+
+  if (
+    (await pathExists(nextPath)) &&
+    !(isCaseOnlyRename && (await pathsReferToSameNode(resolvedTargetPath, nextPath)))
+  ) {
     throw new Error('A file or folder with that name already exists')
   }
 
-  await rename(resolvedTargetPath, nextPath)
+  if (isCaseOnlyRename) {
+    const nextExtension = extname(nextPath)
+    const temporaryPath = await createUniquePath(
+      dirname(resolvedTargetPath),
+      `${basename(nextPath, nextExtension)} __rename__`,
+      nextExtension
+    )
+
+    await rename(resolvedTargetPath, temporaryPath)
+    await rename(temporaryPath, nextPath)
+  } else {
+    await rename(resolvedTargetPath, nextPath)
+  }
 
   return ensureNode(nextPath)
 }
