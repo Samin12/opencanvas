@@ -32,6 +32,7 @@ The script downloads the matching DMG and copies `Open Canvas.app` into `/Applic
 - Viewer overlay and quick file search (`Cmd+K`)
 - Iframe embeds for YouTube, Vimeo, Loom, Figma, remote PDFs, and generic webpages
 - Native CSV/TSV table viewing plus ONLYOFFICE-backed Excel / PowerPoint viewing
+- GitHub release update notifications with in-app install and relaunch
 - Local JSON persistence in `~/.collaborator-clone/` (legacy path preserved for compatibility)
 
 ## What is intentionally deferred
@@ -39,7 +40,7 @@ The script downloads the matching DMG and copies `Open Canvas.app` into `/Applic
 - Monaco editor integration
 - BlockNote / TipTap markdown editing
 - File watching, rename/delete tracking, and richer navigator operations
-- Auto-updater and MCP server integration
+- Binary delta auto-updater and MCP server integration
 
 ## Why this does not use TLDraw as the root canvas
 

@@ -68,6 +68,7 @@
       "package.json"
     ],
     "extraResources": [
+      "install.sh",
       "resources/**",
       ".codex/skills/open-canvas-diagrams/**",
       ".codex/skills/open-canvas-workspace/**"

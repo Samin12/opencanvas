@@ -16,6 +16,7 @@ import type {
   WorkspaceImageImport
 } from '../shared/types'
 
+import { checkForAppUpdate, getAppUpdateState, installAvailableAppUpdate } from './appUpdates'
 import { createOfficeViewerSession, ensureOfficeViewer, readOfficeViewerBootstrap } from './onlyOffice'
 import { ensurePresentationPreview } from './presentationPreview'
 import { previewFileUrl } from './previewServer'
@@ -85,6 +86,7 @@ export function registerIpcHandlers(): void {
     const canvasState = await loadCanvasState(activeWorkspacePath)
 
     return {
+      appUpdate: getAppUpdateState(),
       config,
       canvasState,
       officeViewer: await readOfficeViewerBootstrap(),
@@ -111,6 +113,11 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('office:bootstrap', async (_event, force?: boolean) =>
     readOfficeViewerBootstrap({ force: Boolean(force) })
   )
+  ipcMain.handle('app-update:get-state', async () => getAppUpdateState())
+  ipcMain.handle('app-update:check', async () => checkForAppUpdate())
+  ipcMain.handle('app-update:install', async () => {
+    await installAvailableAppUpdate()
+  })
   ipcMain.handle('office:ensure', async () => ensureOfficeViewer())
   ipcMain.handle('presentation:preview', async (_event, filePath: string) =>
     ensurePresentationPreview(filePath)

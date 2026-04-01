@@ -2,6 +2,7 @@ import * as electron from 'electron'
 
 import type {
   AppConfig,
+  AppUpdateState,
   BootstrapData,
   CanvasPinchPayload,
   CanvasState,
@@ -42,6 +43,9 @@ if ('webFrame' in electron && electron.webFrame) {
 
 const api: CollaboratorApi = {
   bootstrap: () => ipcRenderer.invoke('bootstrap') as Promise<BootstrapData>,
+  getAppUpdateState: () => ipcRenderer.invoke('app-update:get-state') as Promise<AppUpdateState>,
+  checkForAppUpdate: () => ipcRenderer.invoke('app-update:check') as Promise<AppUpdateState>,
+  installAppUpdate: () => ipcRenderer.invoke('app-update:install') as Promise<void>,
   readCanvasState: (workspacePath: string | null) =>
     ipcRenderer.invoke('canvas:read', workspacePath) as Promise<CanvasState>,
   copyTextToClipboard: (text: string) => ipcRenderer.invoke('system:copy-text', text) as Promise<void>,
@@ -99,6 +103,16 @@ const api: CollaboratorApi = {
     const channel = 'canvas:pinch'
     const handler = (_event: Electron.IpcRendererEvent, payload: CanvasPinchPayload) =>
       listener(payload)
+
+    ipcRenderer.on(channel, handler)
+
+    return () => {
+      ipcRenderer.off(channel, handler)
+    }
+  },
+  onAppUpdateState: (listener) => {
+    const channel = 'app-update:state'
+    const handler = (_event: Electron.IpcRendererEvent, state: AppUpdateState) => listener(state)
 
     ipcRenderer.on(channel, handler)
 

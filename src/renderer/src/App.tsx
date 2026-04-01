@@ -3,6 +3,7 @@ import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import type {
   AppConfig,
+  AppUpdateState,
   CanvasDiagramQueueIndex,
   CanvasState,
   EnsureWorkspaceDiagramToolsResult,
@@ -303,6 +304,7 @@ export default function App() {
   const diagramQueuePendingRef = useRef(false)
 
   const [config, setConfig] = useState<AppConfig | null>(null)
+  const [appUpdate, setAppUpdate] = useState<AppUpdateState | null>(null)
   const [canvasState, setCanvasState] = useState<CanvasState | null>(null)
   const [canvasWorkspacePath, setCanvasWorkspacePath] = useState<string | null>(null)
   const [workspaceTree, setWorkspaceTree] = useState<FileTreeNode[]>([])
@@ -320,6 +322,7 @@ export default function App() {
   const [pendingSearchResult, setPendingSearchResult] = useState<SearchDialogResult | null>(null)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [bootError, setBootError] = useState<string | null>(null)
+  const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState<string | null>(null)
   const [officeViewer, setOfficeViewer] = useState<OfficeViewerBootstrap | null>(null)
   const [terminalDependencies, setTerminalDependencies] = useState<TerminalDependencyState | null>(null)
   const [diagramTools, setDiagramTools] = useState<EnsureWorkspaceDiagramToolsResult | null>(null)
@@ -381,6 +384,7 @@ export default function App() {
 
         canvasWorkspaceRef.current = initialWorkspacePath
         canvasStateRef.current = payload.canvasState
+        setAppUpdate(payload.appUpdate)
         setCanvasWorkspacePath(initialWorkspacePath)
         setConfig(payload.config)
         setCanvasState(payload.canvasState)
@@ -677,6 +681,22 @@ export default function App() {
       }
     }
   }, [activeWorkspace, workspaceTree])
+
+  useEffect(() => {
+    return window.collaborator.onAppUpdateState((nextState) => {
+      setAppUpdate(nextState)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!dismissedUpdateVersion || !appUpdate?.latestVersion) {
+      return
+    }
+
+    if (dismissedUpdateVersion !== appUpdate.latestVersion) {
+      setDismissedUpdateVersion(null)
+    }
+  }, [appUpdate?.latestVersion, dismissedUpdateVersion])
 
   useEffect(() => {
     if (!config) {
@@ -1893,6 +1913,38 @@ export default function App() {
     scheduleCanvasSave(nextState)
   }
 
+  async function openAppUpdateRelease() {
+    if (!appUpdate?.releaseHtmlUrl) {
+      return
+    }
+
+    try {
+      await window.collaborator.openExternalUrl(appUpdate.releaseHtmlUrl)
+    } catch (error) {
+      setWorkspaceError(
+        error instanceof Error && error.message
+          ? `The release page could not be opened: ${error.message}`
+          : 'The release page could not be opened.'
+      )
+    }
+  }
+
+  async function installAppUpdate() {
+    if (!appUpdate || appUpdate.status !== 'available') {
+      return
+    }
+
+    try {
+      await window.collaborator.installAppUpdate()
+    } catch (error) {
+      setWorkspaceError(
+        error instanceof Error && error.message
+          ? `The update could not be installed: ${error.message}`
+          : 'The update could not be installed.'
+      )
+    }
+  }
+
   if (bootError) {
     return (
       <div className="app-shell">
@@ -1919,6 +1971,12 @@ export default function App() {
       </div>
     )
   }
+
+  const showAppUpdateBanner =
+    (appUpdate?.status === 'available' &&
+      appUpdate.latestVersion !== dismissedUpdateVersion &&
+      Boolean(appUpdate.releaseHtmlUrl)) ||
+    appUpdate?.status === 'installing'
 
   return (
     <div className="app-shell">
@@ -2012,6 +2070,50 @@ export default function App() {
         )}
 
         <main className="relative min-h-0 min-w-0 flex-1">
+          {showAppUpdateBanner ? (
+            <div className="glass-panel absolute left-1/2 top-3 z-[265] w-[min(44rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-[10px] border border-[color:var(--line-strong)] bg-[var(--surface-overlay)] px-4 py-3 shadow-[0_20px_44px_rgba(15,23,42,0.18)]">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
+                    {appUpdate?.status === 'installing' ? 'Installing Update' : 'Update Available'}
+                  </div>
+                  <div className="mt-1 text-sm font-medium text-[var(--text)]">
+                    {appUpdate?.status === 'installing'
+                      ? appUpdate.detail ?? 'Open Canvas is updating and will relaunch.'
+                      : `Open Canvas ${appUpdate?.latestVersion} is ready. You’re on ${appUpdate?.currentVersion}.`}
+                  </div>
+                  {appUpdate?.status === 'available' && appUpdate.detail ? (
+                    <div className="mt-1 text-[12px] text-[var(--text-dim)]">{appUpdate.detail}</div>
+                  ) : null}
+                </div>
+
+                {appUpdate?.status === 'installing' ? null : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {appUpdate?.installSupported ? (
+                      <button
+                        className="rounded-[6px] bg-[var(--accent)] px-3.5 py-2 text-[13px] font-semibold text-white transition hover:brightness-105"
+                        onClick={() => void installAppUpdate()}
+                      >
+                        Install And Relaunch
+                      </button>
+                    ) : null}
+                    <button
+                      className="rounded-[6px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-3.5 py-2 text-[13px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-1)]"
+                      onClick={() => void openAppUpdateRelease()}
+                    >
+                      View Release
+                    </button>
+                    <button
+                      className="rounded-[6px] px-3 py-2 text-[13px] font-medium text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                      onClick={() => setDismissedUpdateVersion(appUpdate?.latestVersion ?? null)}
+                    >
+                      Later
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
           {sidebarCollapsed && !viewerFile ? (
             <div
               className={clsx(
@@ -2096,7 +2198,7 @@ export default function App() {
           {workspaceError ? (
             <div
               className={clsx(
-                'absolute right-3 top-3 z-[260] max-w-[24rem] rounded-[4px] border px-3.5 py-3 text-[13px] leading-5 shadow-[0_14px_30px_rgba(0,0,0,0.18)] backdrop-blur',
+                'absolute right-3 top-20 z-[260] max-w-[24rem] rounded-[4px] border px-3.5 py-3 text-[13px] leading-5 shadow-[0_14px_30px_rgba(0,0,0,0.18)] backdrop-blur',
                 'border-[color:var(--error-line)] bg-[var(--error-bg)] text-[var(--error-text)]'
               )}
             >

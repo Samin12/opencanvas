@@ -27,6 +27,7 @@ export interface CanvasTile {
   contextGroupIds?: string[]
   embedUrl?: string
   filePath?: string
+  noteSizeMode?: 'auto' | 'manual'
   sessionId?: string
   terminalNotifyOnComplete?: boolean
   terminalProvider?: TerminalProvider
@@ -123,7 +124,30 @@ export interface PresentationPreviewResult {
   status: 'ready' | 'unavailable' | 'error'
 }
 
+export type AppUpdateStatus =
+  | 'disabled'
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'not-available'
+  | 'installing'
+  | 'error'
+
+export interface AppUpdateState {
+  checkedAt?: string
+  currentVersion: string
+  detail?: string
+  installSupported: boolean
+  latestVersion?: string
+  releaseHtmlUrl?: string
+  releaseName?: string
+  releasePublishedAt?: string
+  releaseTag?: string
+  status: AppUpdateStatus
+}
+
 export interface BootstrapData {
+  appUpdate: AppUpdateState
   config: AppConfig
   canvasState: CanvasState
   officeViewer: OfficeViewerBootstrap
@@ -314,6 +338,9 @@ export interface CanvasPinchPayload {
 
 export interface CollaboratorApi {
   bootstrap: () => Promise<BootstrapData>
+  getAppUpdateState: () => Promise<AppUpdateState>
+  checkForAppUpdate: () => Promise<AppUpdateState>
+  installAppUpdate: () => Promise<void>
   readCanvasState: (workspacePath: string | null) => Promise<CanvasState>
   saveConfig: (config: AppConfig) => Promise<AppConfig>
   saveCanvasState: (workspacePath: string | null, state: CanvasState) => Promise<CanvasState>
@@ -388,6 +415,7 @@ export interface CollaboratorApi {
     listener: (payload: { exitCode: number; signal?: number }) => void
   ) => () => void
   onCanvasPinch: (listener: (payload: CanvasPinchPayload) => void) => () => void
+  onAppUpdateState: (listener: (state: AppUpdateState) => void) => () => void
   readOfficeViewerBootstrap: (force?: boolean) => Promise<OfficeViewerBootstrap>
   ensureOfficeViewer: () => Promise<OfficeViewerBootstrap>
   getOfficeViewerSession: (filePath: string) => Promise<OfficeViewerSession>

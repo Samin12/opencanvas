@@ -27,6 +27,7 @@ Behavior:
 Overrides:
   OPEN_CANVAS_RELEASE_REPO     Change the default GitHub repo slug
   OPEN_CANVAS_APPLICATIONS_DIR Install somewhere other than /Applications
+  OPEN_CANVAS_OPEN_AFTER_INSTALL Open the app after installation when set to 1
 EOF
 }
 
@@ -37,6 +38,36 @@ log() {
 fail() {
   printf 'Error: %s\n' "$*" >&2
   exit 1
+}
+
+escape_applescript_string() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf '%s' "$value"
+}
+
+run_install_command() {
+  local shell_command="$1"
+
+  if [[ -w "$INSTALL_DIR" ]]; then
+    /bin/bash -lc "$shell_command"
+    return
+  fi
+
+  if [[ -t 0 ]] && command -v sudo >/dev/null 2>&1; then
+    sudo /bin/bash -lc "$shell_command"
+    return
+  fi
+
+  if ! command -v osascript >/dev/null 2>&1; then
+    fail "Administrator privileges are required to install into ${INSTALL_DIR}."
+  fi
+
+  local escaped_command
+  escaped_command="$(escape_applescript_string "$shell_command")"
+  osascript -e "do shell script \"${escaped_command}\" with administrator privileges" ||
+    fail "Administrator privileges were required to install Open Canvas."
 }
 
 cleanup() {
@@ -140,29 +171,30 @@ mount_point="$(printf '%s\n' "$mount_output" | awk -F '\t' '/\/Volumes\// { prin
 app_source_path="$(find "$mount_point" -maxdepth 2 -name "$APP_NAME" -print -quit)"
 [[ -n "$app_source_path" ]] || fail "Could not find ${APP_NAME} in the mounted DMG."
 
-mkdir -p "$INSTALL_DIR"
 target_app_path="${INSTALL_DIR}/${APP_NAME}"
+quoted_install_dir="$(printf '%q' "$INSTALL_DIR")"
+quoted_app_source_path="$(printf '%q' "$app_source_path")"
+quoted_target_app_path="$(printf '%q' "$target_app_path")"
+
+if [[ ! -d "$INSTALL_DIR" ]]; then
+  run_install_command "mkdir -p ${quoted_install_dir}"
+fi
 
 if [[ -e "$target_app_path" ]]; then
   log "Removing existing ${target_app_path}..."
-  if [[ -w "$INSTALL_DIR" ]]; then
-    rm -rf "$target_app_path"
-  else
-    sudo rm -rf "$target_app_path"
-  fi
+  run_install_command "rm -rf ${quoted_target_app_path}"
 fi
 
 log "Installing ${APP_NAME} into ${INSTALL_DIR}..."
-if [[ -w "$INSTALL_DIR" ]]; then
-  ditto "$app_source_path" "$target_app_path"
-else
-  sudo ditto "$app_source_path" "$target_app_path"
-fi
-
-touch "$target_app_path" || true
+run_install_command "ditto ${quoted_app_source_path} ${quoted_target_app_path} && touch ${quoted_target_app_path}"
 if command -v mdimport >/dev/null 2>&1; then
   mdimport "$target_app_path" >/dev/null 2>&1 || true
 fi
 
 log "Installed ${APP_NAME} to ${target_app_path}."
 log "You can open it from Applications or launch it with Spotlight."
+
+if [[ "${OPEN_CANVAS_OPEN_AFTER_INSTALL:-0}" == "1" ]]; then
+  log "Opening ${APP_NAME}..."
+  open "$target_app_path" >/dev/null 2>&1 || true
+fi

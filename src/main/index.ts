@@ -2,6 +2,7 @@ import * as electron from 'electron'
 import { join } from 'node:path'
 
 import type { CanvasPinchPayload } from '../shared/types'
+import { startAppUpdateChecks } from './appUpdates'
 import { registerIpcHandlers } from './ipc'
 import { ensurePreviewServer } from './previewServer'
 import { loadConfig, saveConfig } from './storage'
@@ -186,6 +187,7 @@ app.whenReady().then(async () => {
 
   registerIpcHandlers()
   await createMainWindow()
+  void startAppUpdateChecks()
 
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
