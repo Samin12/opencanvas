@@ -173,6 +173,13 @@ interface FrameBoundsSnapshot {
   y: number
 }
 
+interface TileSelectionBox {
+  currentX: number
+  currentY: number
+  startX: number
+  startY: number
+}
+
 type InteractionState =
   | {
       type: 'pan'
@@ -184,9 +191,7 @@ type InteractionState =
   | {
       startClientX: number
       startClientY: number
-      startX: number
-      startY: number
-      tileId: string
+      tileStarts: Array<{ id: string; x: number; y: number }>
       type: 'drag'
     }
   | {
@@ -210,6 +215,13 @@ type InteractionState =
       startY: number
       tileId: string
       type: 'resize'
+    }
+  | {
+      startClientX: number
+      startClientY: number
+      startX: number
+      startY: number
+      type: 'tile-select'
     }
 
 const GRID_SIZE = 20
@@ -407,6 +419,10 @@ function boardToolFromEditorToolId(toolId: string): BoardTool | null {
     default:
       return null
   }
+}
+
+function isTileSelectionBackgroundTarget(target: HTMLElement | null) {
+  return Boolean(target?.closest('.tl-background'))
 }
 
 function QuickActionIcon({ action }: { action: BoardTool }) {
@@ -1036,9 +1052,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const [drawSize, setDrawSize] = useState<TLDefaultSizeStyle>('m')
     const [dragConnection, setDragConnection] = useState<DragConnectionState | null>(null)
     const [hoveredConnection, setHoveredConnection] = useState<HoveredConnectionState | null>(null)
+    const [hoveredTileId, setHoveredTileId] = useState<string | null>(null)
     const [linkSourceTileId, setLinkSourceTileId] = useState<string | null>(null)
     const [selectedCanvasNoteId, setSelectedCanvasNoteId] = useState<string | null>(null)
     const [selectedTileId, setSelectedTileId] = useState<string | null>(null)
+    const [selectedTileIds, setSelectedTileIds] = useState<string[]>([])
+    const [tileSelectionBox, setTileSelectionBox] = useState<TileSelectionBox | null>(null)
     const [focusedTerminal, setFocusedTerminal] = useState<{ mode: TerminalUiMode; tileId: string } | null>(null)
     const [tileRefreshTokens, setTileRefreshTokens] = useState<Record<string, number>>({})
     const [noteCopyActionsByTile, setNoteCopyActionsByTile] = useState<Record<string, MarkdownCopyActions | null>>({})
@@ -1057,6 +1076,133 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       return stateRef.current.tiles.find((tile) => tile.id === tileId) ?? null
+    }
+
+    function sameTileIdList(left: string[], right: string[]) {
+      return left.length === right.length && left.every((value, index) => value === right[index])
+    }
+
+    function normalizedSelectedTileIds(tileIds: string[]) {
+      const selectedTileIdSet = new Set(tileIds)
+
+      return stateRef.current.tiles
+        .filter((tile) => selectedTileIdSet.has(tile.id))
+        .map((tile) => tile.id)
+    }
+
+    function setTileSelection(
+      tileIds: string[],
+      options?: { preserveFocusedTerminal?: boolean; primaryTileId?: string | null }
+    ) {
+      const nextSelectedTileIds = normalizedSelectedTileIds(tileIds)
+      const nextPrimaryTileId =
+        nextSelectedTileIds.length === 1
+          ? nextSelectedTileIds[0]
+          : options?.primaryTileId && nextSelectedTileIds.includes(options.primaryTileId)
+            ? options.primaryTileId
+            : null
+
+      setSelectedTileIds((current) =>
+        sameTileIdList(current, nextSelectedTileIds) ? current : nextSelectedTileIds
+      )
+      setSelectedTileId((current) => (current === nextPrimaryTileId ? current : nextPrimaryTileId))
+
+      if (!options?.preserveFocusedTerminal) {
+        setFocusedTerminal((current) =>
+          current && nextPrimaryTileId === current.tileId && nextSelectedTileIds.length === 1 ? current : null
+        )
+      }
+    }
+
+    function clearTileSelection(options?: { preserveFocusedTerminal?: boolean }) {
+      setTileSelection([], options)
+    }
+
+    function toggleTileSelection(tileId: string) {
+      setTileSelection(
+        selectedTileIds.includes(tileId)
+          ? selectedTileIds.filter((selectedId) => selectedId !== tileId)
+          : [...selectedTileIds, tileId],
+        {
+          primaryTileId: tileId
+        }
+      )
+    }
+
+    function selectionBoxBounds(selectionBox: TileSelectionBox) {
+      return {
+        left: Math.min(selectionBox.startX, selectionBox.currentX),
+        top: Math.min(selectionBox.startY, selectionBox.currentY),
+        right: Math.max(selectionBox.startX, selectionBox.currentX),
+        bottom: Math.max(selectionBox.startY, selectionBox.currentY)
+      }
+    }
+
+    function tileIdsForSelectionBox(selectionBox: TileSelectionBox) {
+      const bounds = selectionBoxBounds(selectionBox)
+
+      return stateRef.current.tiles
+        .filter((tile) => {
+          const tileRight = tile.x + tile.width
+          const tileBottom = tile.y + tile.height
+
+          return tile.x < bounds.right && tileRight > bounds.left && tile.y < bounds.bottom && tileBottom > bounds.top
+        })
+        .map((tile) => tile.id)
+    }
+
+    function bringTilesToFront(tileIds: string[]) {
+      const tileIdSet = new Set(tileIds)
+      const orderedTileIds = stateRef.current.tiles
+        .filter((tile) => tileIdSet.has(tile.id))
+        .sort((left, right) => left.zIndex - right.zIndex)
+        .map((tile) => tile.id)
+
+      if (orderedTileIds.length === 0) {
+        return
+      }
+
+      const nextZIndexStart = nextZIndex(stateRef.current.tiles)
+      const nextZIndexByTileId = new Map(orderedTileIds.map((tileId, index) => [tileId, nextZIndexStart + index]))
+
+      updateState({
+        ...stateRef.current,
+        tiles: stateRef.current.tiles.map((tile) =>
+          nextZIndexByTileId.has(tile.id)
+            ? {
+                ...tile,
+                zIndex: nextZIndexByTileId.get(tile.id) as number
+              }
+            : tile
+        )
+      })
+    }
+
+    function beginTileSelection(event: ReactPointerEvent<HTMLDivElement>) {
+      if (event.button !== 0) {
+        return
+      }
+
+      const point = pagePointFromClient(event.clientX, event.clientY)
+      const nextSelectionBox = {
+        startX: point.x,
+        startY: point.y,
+        currentX: point.x,
+        currentY: point.y
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      interactionRef.current = {
+        type: 'tile-select',
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startX: point.x,
+        startY: point.y
+      }
+      setTileSelectionBox(nextSelectionBox)
+      clearTileSelection()
+      setLinkSourceTileId(null)
     }
 
     function beginTileRename(tile: CanvasTile) {
@@ -1156,7 +1302,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
 
     function focusTerminal(tileId: string, mode: TerminalUiMode) {
-      setSelectedTileId(tileId)
+      setTileSelection([tileId], {
+        preserveFocusedTerminal: true
+      })
       setFocusedTerminal({ tileId, mode })
       bringTileToFront(tileId)
     }
@@ -1545,7 +1693,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         return
       }
 
-      setSelectedTileId(tileId)
+      setTileSelection([tileId])
       setLinkSourceTileId((current) => (current === tileId ? null : tileId))
     }
 
@@ -1559,7 +1707,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       const { x, y } = connectorCenterForTile(tile)
 
       event.stopPropagation()
-      setSelectedTileId(tileId)
+      setTileSelection([tileId])
       setLinkSourceTileId(tileId)
       setActiveDragConnection({
         sourceKind: 'tile',
@@ -1579,8 +1727,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       const { x, y } = connectorCenterForGroup(group)
 
       event.stopPropagation()
-      setSelectedTileId(null)
-      setFocusedTerminal(null)
+      clearTileSelection()
       setLinkSourceTileId(null)
       setActiveDragConnection({
         sourceKind: 'group',
@@ -1600,8 +1747,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       event.preventDefault()
       event.stopPropagation()
-      setSelectedTileId(null)
-      setFocusedTerminal(null)
+      clearTileSelection()
       setLinkSourceTileId(null)
 
       interactionRef.current = {
@@ -1798,8 +1944,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         { immediate: true }
       )
 
-      setSelectedTileId(terminalTileId)
-      setFocusedTerminal(null)
+      setTileSelection([terminalTileId])
       setLinkSourceTileId(null)
     }
 
@@ -1832,8 +1977,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         { immediate: true }
       )
 
-      setSelectedTileId(terminalTileId)
-      setFocusedTerminal(null)
+      setTileSelection([terminalTileId])
       setLinkSourceTileId(null)
     }
 
@@ -1896,8 +2040,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       appendTile(createdTile, { immediate: true })
-      setSelectedTileId(createdTile.id)
-      setFocusedTerminal(null)
+      setTileSelection([createdTile.id])
     }
 
     function detachContextTile(terminalTileId: string, sourceTileId: string) {
@@ -2431,8 +2574,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         },
         { immediate: true }
       )
-      setSelectedTileId(tileId)
-      setFocusedTerminal(null)
+      setTileSelection([tileId])
     }
 
     function importDiagramSet(envelope: CanvasDiagramEnvelope) {
@@ -2540,8 +2682,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         tile,
         { immediate: true }
       )
-      setSelectedTileId(tile.id)
-      setFocusedTerminal(null)
+      setTileSelection([tile.id])
     }
 
     function spawnEmbedTile(url: string) {
@@ -2558,8 +2699,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       appendTile(tile, { immediate: true })
-      setSelectedTileId(tile.id)
-      setFocusedTerminal(null)
+      setTileSelection([tile.id])
     }
 
     function spawnFileTileAtClientPoint(file: FileTreeNode, clientX: number, clientY: number) {
@@ -2577,8 +2717,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       )
 
       appendTile(tile, { immediate: true })
-      setSelectedTileId(tile.id)
-      setFocusedTerminal(null)
+      setTileSelection([tile.id])
     }
 
     function spawnEmbedTileAtClientPoint(url: string, clientX: number, clientY: number) {
@@ -2595,8 +2734,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       appendTile(tile, { immediate: true })
-      setSelectedTileId(tile.id)
-      setFocusedTerminal(null)
+      setTileSelection([tile.id])
     }
 
     function applyBoardTool(nextTool: BoardTool) {
@@ -2734,8 +2872,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       if (action === 'text') {
-        setSelectedTileId(null)
-        setFocusedTerminal(null)
+        clearTileSelection()
 
         if (!startEditingSelectedRichTextShape({ selectAll: true })) {
           createEditableTextAtViewportCenter()
@@ -2743,8 +2880,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         return
       }
 
-      setSelectedTileId(null)
-      setFocusedTerminal(null)
+      clearTileSelection()
       applyBoardTool(action)
     }
 
@@ -2784,8 +2920,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         appendTile(replacementTile, { immediate: true })
         editor.deleteShapes([selectedNote.shape.id])
         setLinkSourceTileId(null)
-        setSelectedTileId(replacementTile.id)
-        setFocusedTerminal(null)
+        setTileSelection([replacementTile.id])
       } finally {
         setConvertingStickyNote(false)
       }
@@ -3116,6 +3251,30 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }, [focusedTerminal, selectedTileId, state.tiles])
 
     useEffect(() => {
+      const existingTileIdSet = new Set(state.tiles.map((tile) => tile.id))
+      const nextSelectedTileIds = selectedTileIds.filter((tileId) => existingTileIdSet.has(tileId))
+
+      if (!sameTileIdList(selectedTileIds, nextSelectedTileIds)) {
+        setSelectedTileIds(nextSelectedTileIds)
+      }
+
+      const nextPrimaryTileId =
+        selectedTileId && nextSelectedTileIds.includes(selectedTileId)
+          ? selectedTileId
+          : nextSelectedTileIds.length === 1
+            ? nextSelectedTileIds[0]
+            : null
+
+      if (selectedTileId !== nextPrimaryTileId) {
+        setSelectedTileId(nextPrimaryTileId)
+      }
+
+      if (hoveredTileId && !existingTileIdSet.has(hoveredTileId)) {
+        setHoveredTileId(null)
+      }
+    }, [hoveredTileId, selectedTileId, selectedTileIds, state.tiles])
+
+    useEffect(() => {
       if (activeBoardTool !== 'draw') {
         return
       }
@@ -3356,10 +3515,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             return
           }
 
-          if (selectedTileId) {
+          if (selectedTileIds.length > 0) {
             event.preventDefault()
             event.stopPropagation()
-            setSelectedTileId(null)
+            clearTileSelection()
           }
 
           return
@@ -3368,10 +3527,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         if (event.key === 'Backspace' || event.key === 'Delete') {
           const selectedShapeIds = editorRef.current?.getSelectedShapeIds() ?? []
 
-          if (selectedTileId) {
+          if (selectedTileIds.length > 0) {
             event.preventDefault()
             event.stopPropagation()
-            deleteTile(selectedTileId)
+            deleteTiles(selectedTileIds)
             return
           }
 
@@ -3406,7 +3565,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           return
         }
 
-        if (lowerKey === 'l' && selectedTileId) {
+        if (lowerKey === 'l' && selectedTileId && selectedTileIds.length === 1) {
           const selectedTile = tileById(selectedTileId)
 
           if (isContextSourceTile(selectedTile)) {
@@ -3435,7 +3594,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         window.removeEventListener('focusin', handleFocusIn, true)
         window.removeEventListener('keydown', handleKeyDown, true)
       }
-    }, [focusedTerminal, linkSourceTileId, selectedTileId, shortcutsSuspended])
+    }, [focusedTerminal, linkSourceTileId, selectedTileId, selectedTileIds, shortcutsSuspended])
 
     useEffect(() => {
       function cancelActiveCanvasInteraction() {
@@ -3445,6 +3604,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         }
 
         interactionRef.current = null
+        setTileSelectionBox(null)
       }
 
       function handlePointerMove(event: PointerEvent) {
@@ -3476,6 +3636,20 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           return
         }
 
+        if (interaction.type === 'tile-select') {
+          const point = pagePointFromClient(event.clientX, event.clientY)
+          const nextSelectionBox = {
+            startX: interaction.startX,
+            startY: interaction.startY,
+            currentX: point.x,
+            currentY: point.y
+          }
+
+          setTileSelectionBox(nextSelectionBox)
+          setTileSelection(tileIdsForSelectionBox(nextSelectionBox))
+          return
+        }
+
         const deltaX = (event.clientX - interaction.startClientX) / stateRef.current.viewport.zoom
         const deltaY = (event.clientY - interaction.startClientY) / stateRef.current.viewport.zoom
 
@@ -3483,12 +3657,20 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           updateState({
             ...stateRef.current,
             tiles: stateRef.current.tiles.map((tile) =>
-              tile.id === interaction.tileId
-                ? {
-                    ...tile,
-                    x: interaction.startX + deltaX,
-                    y: interaction.startY + deltaY
-                  }
+              interaction.tileStarts.some((start) => start.id === tile.id)
+                ? (() => {
+                    const start = interaction.tileStarts.find((candidate) => candidate.id === tile.id) as {
+                      id: string
+                      x: number
+                      y: number
+                    }
+
+                    return {
+                      ...tile,
+                      x: start.x + deltaX,
+                      y: start.y + deltaY
+                    }
+                  })()
                 : tile
             )
           })
@@ -3591,7 +3773,36 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           return
         }
 
-        if (interaction.type === 'drag' || interaction.type === 'resize') {
+        if (interaction.type === 'tile-select') {
+          setTileSelectionBox(null)
+          return
+        }
+
+        if (interaction.type === 'drag') {
+          const draggedTileIds = interaction.tileStarts.map((tile) => tile.id)
+
+          updateState(
+            {
+              ...stateRef.current,
+              tiles: stateRef.current.tiles.map((tile) =>
+                draggedTileIds.includes(tile.id)
+                  ? {
+                      ...tile,
+                      x: snap(tile.x),
+                      y: snap(tile.y)
+                    }
+                  : tile
+              )
+            },
+            {
+              immediate: true
+            }
+          )
+          expandGroupsForTileIds(draggedTileIds)
+          return
+        }
+
+        if (interaction.type === 'resize') {
           updateState(
             {
               ...stateRef.current,
@@ -3637,14 +3848,21 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }, [onStateChange])
 
     function beginTileDrag(tile: CanvasTile, event: ReactPointerEvent<HTMLDivElement>) {
-      bringTileToFront(tile.id)
+      const draggedTileIds =
+        selectedTileIds.includes(tile.id) && selectedTileIds.length > 1 ? selectedTileIds : [tile.id]
+
+      bringTilesToFront(draggedTileIds)
       interactionRef.current = {
         type: 'drag',
-        tileId: tile.id,
         startClientX: event.clientX,
         startClientY: event.clientY,
-        startX: tile.x,
-        startY: tile.y
+        tileStarts: stateRef.current.tiles
+          .filter((candidate) => draggedTileIds.includes(candidate.id))
+          .map((candidate) => ({
+            id: candidate.id,
+            x: candidate.x,
+            y: candidate.y
+          }))
       }
     }
 
@@ -3663,18 +3881,26 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
     }
 
-    function deleteTile(tileId: string) {
+    function deleteTiles(tileIds: string[]) {
+      const normalizedTileIds = normalizedSelectedTileIds(tileIds)
+
+      if (normalizedTileIds.length === 0) {
+        return
+      }
+
+      const deletedTileIdSet = new Set(normalizedTileIds)
+
       updateState(
         {
           ...stateRef.current,
           tiles: stateRef.current.tiles
-            .filter((tile) => tile.id !== tileId)
+            .filter((tile) => !deletedTileIdSet.has(tile.id))
             .map((tile) =>
               tile.type === 'term'
                 ? {
                     ...tile,
                     contextTileIds: (tile.contextTileIds ?? []).filter(
-                      (contextTileId) => contextTileId !== tileId
+                      (contextTileId) => !deletedTileIdSet.has(contextTileId)
                     )
                   }
                 : tile
@@ -3683,42 +3909,44 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         { immediate: true }
       )
 
-      if (selectedTileId === tileId) {
-        setSelectedTileId(null)
-      }
+      clearTileSelection()
 
-      if (focusedTerminal?.tileId === tileId) {
-        setFocusedTerminal(null)
-      }
-
-      if (linkSourceTileId === tileId) {
+      if (linkSourceTileId && deletedTileIdSet.has(linkSourceTileId)) {
         setLinkSourceTileId(null)
       }
 
       if (
         dragConnectionRef.current?.sourceKind === 'tile' &&
-        dragConnectionRef.current.sourceTileId === tileId
+        deletedTileIdSet.has(dragConnectionRef.current.sourceTileId)
       ) {
         setActiveDragConnection(null)
       }
 
       setTileRefreshTokens((current) => {
-        if (!(tileId in current)) {
+        if (!normalizedTileIds.some((tileId) => tileId in current)) {
           return current
         }
 
         const next = { ...current }
-        delete next[tileId]
+        normalizedTileIds.forEach((tileId) => {
+          delete next[tileId]
+        })
         return next
       })
 
       setHoveredConnection((current) =>
         current &&
-        (current.terminalTileId === tileId ||
-          (current.sourceKind === 'tile' && current.sourceTileId === tileId))
+        (deletedTileIdSet.has(current.terminalTileId) ||
+          (current.sourceKind === 'tile' && deletedTileIdSet.has(current.sourceTileId)))
           ? null
           : current
       )
+
+      setHoveredTileId((current) => (current && deletedTileIdSet.has(current) ? null : current))
+    }
+
+    function deleteTile(tileId: string) {
+      deleteTiles([tileId])
     }
 
     function createTerminalAt(clientX: number, clientY: number, provider: TerminalProvider = 'claude') {
@@ -3745,8 +3973,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         },
         { immediate: true }
       )
-      setSelectedTileId(tileId)
-      setFocusedTerminal(null)
+      setTileSelection([tileId])
     }
 
     function handleDragOverCapture(event: ReactDragEvent<HTMLDivElement>) {
@@ -3821,8 +4048,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         const tile = createTileFromFile(parsed, point.x, point.y, nextZIndex(stateRef.current.tiles))
 
         appendTile(tile, { immediate: true })
-        setSelectedTileId(tile.id)
-        setFocusedTerminal(null)
+        setTileSelection([tile.id])
         return
       }
 
@@ -3863,8 +4089,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           )
 
           appendTile(tile, { immediate: true })
-          setSelectedTileId(tile.id)
-          setFocusedTerminal(null)
+          setTileSelection([tile.id])
         })()
         return
       }
@@ -4006,6 +4231,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         ? frameGroups.find((group) => group.id === hoveredConnection.sourceGroupId) ?? null
         : null
     const hoveredConnectionTerminalTile = hoveredConnection ? tileById(hoveredConnection.terminalTileId) : null
+    const selectedTileIdSet = new Set(selectedTileIds)
+    const multiSelectedTiles = selectedTileIds.length > 1
+    const activeTileSelectionBounds = tileSelectionBox ? selectionBoxBounds(tileSelectionBox) : null
 
     return (
       <div
@@ -4020,8 +4248,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             return
           }
 
-          setSelectedTileId(null)
-          setFocusedTerminal(null)
+          if (activeBoardTool === 'select' && isTileSelectionBackgroundTarget(target)) {
+            beginTileSelection(event)
+            return
+          }
+
+          clearTileSelection()
         }}
         onDoubleClick={(event: ReactMouseEvent<HTMLDivElement>) => {
           const target = event.target as HTMLElement
@@ -4181,6 +4413,18 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             transform: `translate(${state.viewport.panX}px, ${state.viewport.panY}px) scale(${state.viewport.zoom})`
           }}
         >
+          {activeTileSelectionBounds ? (
+            <div
+              className="absolute rounded-[10px] border border-[color:rgba(100,181,246,0.72)] bg-[color:rgba(100,181,246,0.12)] shadow-[0_0_0_1px_rgba(100,181,246,0.18)]"
+              style={{
+                left: activeTileSelectionBounds.left,
+                top: activeTileSelectionBounds.top,
+                width: Math.max(1, activeTileSelectionBounds.right - activeTileSelectionBounds.left),
+                height: Math.max(1, activeTileSelectionBounds.bottom - activeTileSelectionBounds.top)
+              }}
+            />
+          ) : null}
+
           <svg className="absolute inset-0 h-full w-full" style={{ overflow: 'visible' }}>
             {terminalConnections.map((connection) => {
               const start =
@@ -4414,6 +4658,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 const isMarkdownTile = tileFileKind === 'note' && isMarkdownNotePath(tile.filePath)
                 const isRenamingThisTile = renamingTileId === tile.id
                 const renameExtension = tile.filePath ? splitFileName(fileNameFromPath(tile.filePath)).extension : ''
+                const isTileSelected = selectedTileIdSet.has(tile.id)
+                const isTilePrimarySelected = isTileSelected && !multiSelectedTiles && selectedTileId === tile.id
+                const isTileGroupSelected = isTileSelected && multiSelectedTiles
+                const isTileHovered = hoveredTileId === tile.id && !isTileSelected
                 const connectorLabel =
                   tile.type === 'term'
                     ? dragConnection?.sourceKind === 'group'
@@ -4434,9 +4682,15 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       'pointer-events-auto absolute overflow-visible rounded-[4px] border bg-[var(--surface-0)] shadow-[0_8px_18px_rgba(0,0,0,0.22)]',
                       selectedTileId === tile.id && focusedTerminal?.tileId === tile.id
                         ? 'border-[color:var(--accent)] shadow-[0_0_0_1px_var(--accent-soft),0_10px_22px_rgba(0,0,0,0.22)]'
-                        : selectedTileId === tile.id
-                          ? 'border-[color:var(--line-strong)] shadow-[0_0_0_1px_rgba(148,163,184,0.22),0_8px_18px_rgba(0,0,0,0.24)]'
-                        : 'border-[color:var(--line)]',
+                        : isTilePrimarySelected
+                          ? darkMode
+                            ? 'border-[color:rgba(255,255,255,0.72)] shadow-[0_0_0_1px_rgba(255,255,255,0.48),0_8px_18px_rgba(0,0,0,0.24)]'
+                            : 'border-[color:rgba(31,33,29,0.46)] shadow-[0_0_0_1px_rgba(31,33,29,0.18),0_8px_18px_rgba(0,0,0,0.18)]'
+                          : isTileGroupSelected
+                            ? 'border-[color:rgba(100,181,246,0.82)] shadow-[0_0_0_1px_rgba(100,181,246,0.58),0_8px_18px_rgba(0,0,0,0.24)]'
+                            : isTileHovered
+                              ? 'border-[color:rgba(100,181,246,0.42)] shadow-[0_0_0_1px_rgba(100,181,246,0.26),0_8px_18px_rgba(0,0,0,0.22)]'
+                              : 'border-[color:var(--line)]',
                       isPendingLinkSource && 'border-[color:var(--link-line)]'
                     )}
                     style={{
@@ -4446,8 +4700,35 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       height: tile.height,
                       zIndex: tile.zIndex
                     }}
-                    onPointerDownCapture={() => {
-                      setSelectedTileId(tile.id)
+                    onPointerEnter={() => {
+                      setHoveredTileId(tile.id)
+                    }}
+                    onPointerLeave={() => {
+                      setHoveredTileId((current) => (current === tile.id ? null : current))
+                    }}
+                    onPointerDownCapture={(event) => {
+                      if (event.button !== 0) {
+                        return
+                      }
+
+                      if (event.metaKey || event.ctrlKey || event.shiftKey) {
+                        toggleTileSelection(tile.id)
+                        if (tile.type !== 'term') {
+                          setFocusedTerminal(null)
+                        }
+                        return
+                      }
+
+                      if (selectedTileIdSet.has(tile.id)) {
+                        if (tile.type !== 'term') {
+                          setFocusedTerminal(null)
+                        }
+                        return
+                      }
+
+                      setTileSelection([tile.id], {
+                        preserveFocusedTerminal: tile.type === 'term' && focusedTerminal?.tileId === tile.id
+                      })
                       if (tile.type !== 'term') {
                         setFocusedTerminal(null)
                       }
@@ -4749,7 +5030,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                               ? focusedTerminal.mode
                               : null
                           }
-                          isSelected={selectedTileId === tile.id}
+                          isSelected={selectedTileIdSet.has(tile.id)}
                           notifyOnComplete={Boolean(tile.terminalNotifyOnComplete)}
                           onCreateMarkdownCard={(options) => createMarkdownCardForTerminal(tile.id, options)}
                           onFocusModeChange={(mode) => {
