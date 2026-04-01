@@ -2,6 +2,23 @@
 
 Electron + React foundation for Open Canvas, a spatial whiteboard workspace for development.
 
+## Install the macOS app
+
+If you want the release build in `Applications` so Spotlight can find it, use the installer script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Samin12/opencanvas/main/install.sh | bash
+```
+
+You can also pass a specific GitHub release page or direct DMG link:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Samin12/opencanvas/main/install.sh | bash -s -- \
+  "https://github.com/Samin12/opencanvas/releases/tag/v0.1.0"
+```
+
+The script downloads the matching DMG and copies `Open Canvas.app` into `/Applications`.
+
 ## What is implemented
 
 - Electron desktop shell with persisted window state
@@ -93,6 +110,12 @@ Environment overrides:
 ```bash
 npm install
 npm run dev
+```
+
+If you want to install the packaged macOS app from this repo instead of running the dev build:
+
+```bash
+bash ./install.sh
 ```
 
 Useful CLI examples inside an Open Canvas terminal:

@@ -13,6 +13,7 @@
     "control:server": "node scripts/open-canvas-control-server.mjs",
     "dev": "node scripts/prepare-dev-electron.mjs && env -u ELECTRON_RUN_AS_NODE electron-vite dev",
     "build": "electron-vite build",
+    "install:mac-app": "bash ./install.sh",
     "check:diagram-fixtures": "node scripts/check-diagram-fixtures.mjs",
     "dist:mac": "node scripts/build-mac-icon.mjs && npm run build && electron-builder --mac dmg",
     "office:up": "docker compose -f docker-compose.onlyoffice.yml up -d",

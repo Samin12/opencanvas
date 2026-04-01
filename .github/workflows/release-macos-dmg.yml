@@ -47,4 +47,10 @@ jobs:
             release/*.blockmap \
             --repo "$GITHUB_REPOSITORY" \
             --title "$GITHUB_REF_NAME" \
-            --notes "Unsigned macOS DMG build for Open Canvas."
+            --notes "$(cat <<EOF
+Unsigned macOS DMG build for Open Canvas.
+
+Install from Terminal:
+curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_REF_NAME}/install.sh | bash -s -- "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}"
+EOF
+)"
