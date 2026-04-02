@@ -652,9 +652,9 @@ function RichNoteEditor({
   const editorHostRef = useRef<HTMLDivElement | null>(null)
   const slashMenuRef = useRef<HTMLDivElement | null>(null)
   const slashMenuListRef = useRef<HTMLDivElement | null>(null)
+  const slashMenuIndexRef = useRef(0)
   const slashMenuStateRef = useRef<SlashMenuState | null>(null)
   const slashMenuItemsRef = useRef(MARKDOWN_SLASH_COMMAND_OPTIONS)
-  const activeSlashMenuItemRef = useRef<(typeof MARKDOWN_SLASH_COMMAND_OPTIONS)[number] | null>(null)
   const measureFrameRef = useRef<number | null>(null)
   const saveRequestIdRef = useRef(0)
   const saveTimerRef = useRef<number | null>(null)
@@ -670,12 +670,35 @@ function RichNoteEditor({
     slashMenuItems[slashMenuItems.length === 0 ? -1 : Math.min(slashMenuIndex, slashMenuItems.length - 1)] ??
     null
   slashMenuStateRef.current = slashMenuState
+  slashMenuIndexRef.current = slashMenuIndex
   slashMenuItemsRef.current = slashMenuItems
-  activeSlashMenuItemRef.current = activeSlashMenuItem
 
   function closeSlashMenu() {
+    slashMenuIndexRef.current = 0
     setSlashMenuState(null)
     setSlashMenuIndex(0)
+  }
+
+  function setSlashMenuIndexImmediate(nextIndex: number) {
+    const itemCount = slashMenuItemsRef.current.length
+    const resolvedIndex =
+      itemCount === 0
+        ? 0
+        : ((nextIndex % itemCount) + itemCount) % itemCount
+
+    slashMenuIndexRef.current = resolvedIndex
+    setSlashMenuIndex(resolvedIndex)
+  }
+
+  function currentSlashMenuItem() {
+    const items = slashMenuItemsRef.current
+
+    if (items.length === 0) {
+      return null
+    }
+
+    const resolvedIndex = Math.max(0, Math.min(slashMenuIndexRef.current, items.length - 1))
+    return items[resolvedIndex] ?? null
   }
 
   function syncSlashMenu(activeEditor: TiptapEditor | null | undefined) {
@@ -717,12 +740,12 @@ function RichNoteEditor({
       query: slashQuery.query,
       range: slashQuery.range
     })
-    setSlashMenuIndex((current) =>
+    setSlashMenuIndexImmediate(
       previousSlashMenuState &&
-      previousSlashMenuState.query === slashQuery.query &&
-      previousSlashMenuState.range.from === slashQuery.range.from &&
-      previousSlashMenuState.range.to === slashQuery.range.to
-        ? current
+        previousSlashMenuState.query === slashQuery.query &&
+        previousSlashMenuState.range.from === slashQuery.range.from &&
+        previousSlashMenuState.range.to === slashQuery.range.to
+        ? slashMenuIndexRef.current
         : 0
     )
   }
@@ -1105,25 +1128,21 @@ function RichNoteEditor({
             if (slashMenuStateRef.current) {
               if (event.key === 'ArrowDown') {
                 event.preventDefault()
-                setSlashMenuIndex((current) =>
-                  slashMenuItemsRef.current.length === 0 ? 0 : (current + 1) % slashMenuItemsRef.current.length
-                )
+                setSlashMenuIndexImmediate(slashMenuIndexRef.current + 1)
                 return true
               }
 
               if (event.key === 'ArrowUp') {
                 event.preventDefault()
-                setSlashMenuIndex((current) =>
-                  slashMenuItemsRef.current.length === 0
-                    ? 0
-                    : (current - 1 + slashMenuItemsRef.current.length) % slashMenuItemsRef.current.length
-                )
+                setSlashMenuIndexImmediate(slashMenuIndexRef.current - 1)
                 return true
               }
 
-              if ((event.key === 'Enter' || event.key === 'Tab') && activeSlashMenuItemRef.current) {
+              const highlightedSlashMenuItem = currentSlashMenuItem()
+
+              if ((event.key === 'Enter' || event.key === 'Tab') && highlightedSlashMenuItem) {
                 event.preventDefault()
-                return applySlashMenuCommand(activeSlashMenuItemRef.current.command)
+                return applySlashMenuCommand(highlightedSlashMenuItem.command)
               }
 
               if (event.key === 'Escape') {
@@ -1266,9 +1285,9 @@ function RichNoteEditor({
       return
     }
 
-    setSlashMenuIndex((current) =>
-      slashMenuItems.length === 0 ? 0 : Math.min(current, slashMenuItems.length - 1)
-    )
+    const resolvedIndex = slashMenuItems.length === 0 ? 0 : Math.min(slashMenuIndexRef.current, slashMenuItems.length - 1)
+    slashMenuIndexRef.current = resolvedIndex
+    setSlashMenuIndex(resolvedIndex)
   }, [slashMenuItems.length, slashMenuState])
 
   useEffect(() => {
@@ -1506,11 +1525,11 @@ function RichNoteEditor({
                         onMouseDown={(event) => {
                           event.preventDefault()
                           event.stopPropagation()
-                          setSlashMenuIndex(index)
+                          setSlashMenuIndexImmediate(index)
                           applySlashMenuCommand(item.command)
                         }}
                         onPointerEnter={() => {
-                          setSlashMenuIndex(index)
+                          setSlashMenuIndexImmediate(index)
                         }}
                       >
                         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-white/8 bg-white/8 text-[12px] font-semibold tracking-[-0.02em] text-[var(--text)]">
