@@ -46,8 +46,10 @@ const NOTE_TILE_BASE_FONT_SIZE_PX = 17
 const NOTE_TILE_MIN_VIEW_SCALE = 0.85
 const NOTE_TILE_MAX_VIEW_SCALE = 1.45
 const SLASH_MENU_EDGE_PADDING = 12
-const SLASH_MENU_MAX_WIDTH = 296
-const SLASH_MENU_OFFSET = 12
+const SLASH_MENU_MAX_HEIGHT = 248
+const SLASH_MENU_MAX_WIDTH = 264
+const SLASH_MENU_MIN_FLIP_SPACE = 172
+const SLASH_MENU_OFFSET = 10
 
 function emptyNoteEditorContent() {
   return {
@@ -163,6 +165,8 @@ function clampNoteViewScale(value: number | undefined) {
 interface SlashMenuState {
   anchorLeft: number
   anchorTop: number
+  maxHeight: number
+  placement: 'top' | 'bottom'
   query: string
   range: Range
 }
@@ -685,11 +689,23 @@ function RichNoteEditor({
       SLASH_MENU_EDGE_PADDING,
       window.innerWidth - SLASH_MENU_MAX_WIDTH - SLASH_MENU_EDGE_PADDING
     )
-    const maxTop = Math.max(SLASH_MENU_EDGE_PADDING, window.innerHeight - 360)
+    const availableBelow = Math.max(
+      96,
+      window.innerHeight - caretRect.bottom - SLASH_MENU_EDGE_PADDING - SLASH_MENU_OFFSET
+    )
+    const availableAbove = Math.max(96, caretRect.top - SLASH_MENU_EDGE_PADDING - SLASH_MENU_OFFSET)
+    const placement =
+      availableBelow < SLASH_MENU_MIN_FLIP_SPACE && availableAbove > availableBelow ? 'top' : 'bottom'
+    const availableHeight = placement === 'bottom' ? availableBelow : availableAbove
 
     setSlashMenuState({
       anchorLeft: Math.min(Math.max(caretRect.left, SLASH_MENU_EDGE_PADDING), maxLeft),
-      anchorTop: Math.min(Math.max(caretRect.bottom + SLASH_MENU_OFFSET, SLASH_MENU_EDGE_PADDING), maxTop),
+      anchorTop:
+        placement === 'bottom'
+          ? caretRect.bottom + SLASH_MENU_OFFSET
+          : caretRect.top - SLASH_MENU_OFFSET,
+      maxHeight: Math.min(SLASH_MENU_MAX_HEIGHT, availableHeight),
+      placement,
       query: slashQuery.query,
       range: slashQuery.range
     })
@@ -1288,6 +1304,8 @@ function RichNoteEditor({
     }
 
     const updateSlashMenuPosition = () => syncSlashMenu(editor)
+    const contentElement = editor.view.dom as HTMLElement | null
+    const hostElement = editorHostRef.current
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target
 
@@ -1302,11 +1320,15 @@ function RichNoteEditor({
 
     window.addEventListener('resize', updateSlashMenuPosition)
     window.addEventListener('scroll', updateSlashMenuPosition, true)
+    contentElement?.addEventListener('scroll', updateSlashMenuPosition, { passive: true })
+    hostElement?.addEventListener('scroll', updateSlashMenuPosition, { passive: true })
     document.addEventListener('mousedown', handlePointerDown, true)
 
     return () => {
       window.removeEventListener('resize', updateSlashMenuPosition)
       window.removeEventListener('scroll', updateSlashMenuPosition, true)
+      contentElement?.removeEventListener('scroll', updateSlashMenuPosition)
+      hostElement?.removeEventListener('scroll', updateSlashMenuPosition)
       document.removeEventListener('mousedown', handlePointerDown, true)
     }
   }, [editor, slashMenuState])
@@ -1408,16 +1430,18 @@ function RichNoteEditor({
         ? createPortal(
             <div
               ref={slashMenuRef}
-              className="fixed z-[420] w-[min(296px,calc(100vw-24px))] overflow-hidden rounded-[18px] border border-black/8 bg-[color:color-mix(in_srgb,var(--surface-overlay)_96%,transparent)] p-2 shadow-[0_20px_48px_rgba(0,0,0,0.26)] backdrop-blur-xl"
+              className="fixed z-[420] w-[min(264px,calc(100vw-24px))] overflow-hidden rounded-[16px] border border-black/8 bg-[color:color-mix(in_srgb,var(--surface-overlay)_96%,transparent)] p-1.5 shadow-[0_16px_36px_rgba(0,0,0,0.22)] backdrop-blur-xl"
               style={{
                 left: slashMenuState.anchorLeft,
-                top: slashMenuState.anchorTop
+                top: slashMenuState.anchorTop,
+                transform:
+                  slashMenuState.placement === 'top' ? 'translateY(calc(-100% - 2px))' : undefined
               }}
             >
-              <div className="px-2 pb-2 pt-1 text-[11px] font-medium text-[var(--text-faint)]">
+              <div className="px-2 pb-1.5 pt-1 text-[10px] font-medium text-[var(--text-faint)]">
                 {slashMenuState.query ? `Filter: ${slashMenuState.query}` : 'Type to filter'}
               </div>
-              <div className="max-h-[320px] overflow-y-auto pr-1">
+              <div className="overflow-y-auto pr-0.5" style={{ maxHeight: slashMenuState.maxHeight }}>
                 {slashMenuItems.length > 0 ? (
                   slashMenuItems.map((item, index) => {
                     const isActive = index === (activeSlashMenuItem ? slashMenuItems.indexOf(activeSlashMenuItem) : -1)
@@ -1427,7 +1451,7 @@ function RichNoteEditor({
                         key={item.command}
                         type="button"
                         className={clsx(
-                          'flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 text-left transition',
+                          'flex w-full items-center gap-2.5 rounded-[12px] px-2.5 py-2 text-left transition',
                           isActive
                             ? 'bg-[color:color-mix(in_srgb,var(--text)_10%,transparent)] text-[var(--text)]'
                             : 'text-[var(--text-dim)] hover:bg-[color:color-mix(in_srgb,var(--text)_6%,transparent)] hover:text-[var(--text)]'
@@ -1442,14 +1466,14 @@ function RichNoteEditor({
                           setSlashMenuIndex(index)
                         }}
                       >
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] border border-white/8 bg-white/8 text-[13px] font-semibold tracking-[-0.02em] text-[var(--text)]">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-white/8 bg-white/8 text-[12px] font-semibold tracking-[-0.02em] text-[var(--text)]">
                           {item.badge}
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[15px] font-semibold text-[inherit]">
+                          <span className="block truncate text-[14px] font-semibold text-[inherit]">
                             {item.title}
                           </span>
-                          <span className="block truncate text-[11px] text-[var(--text-faint)]">
+                          <span className="block truncate text-[10px] text-[var(--text-faint)]">
                             /{item.aliases[0]}
                           </span>
                         </span>
@@ -1457,7 +1481,7 @@ function RichNoteEditor({
                     )
                   })
                 ) : (
-                  <div className="rounded-[14px] px-3 py-3 text-[13px] text-[var(--text-dim)]">
+                  <div className="rounded-[12px] px-2.5 py-2.5 text-[12px] text-[var(--text-dim)]">
                     No markdown actions match “{slashMenuState.query}”.
                   </div>
                 )}
