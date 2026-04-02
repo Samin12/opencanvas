@@ -3,6 +3,7 @@ import {
   type ClipboardEvent as ReactClipboardEvent,
   useEffect,
   useLayoutEffect,
+  type PointerEvent as ReactPointerEvent,
   useRef,
   useState,
   type DragEvent as ReactDragEvent,
@@ -34,6 +35,7 @@ import {
   currentSlashCommandQuery,
   currentOutlineItem,
   indentCurrentOutlineItem,
+  isOutlineBlockNodeName,
   MARKDOWN_SLASH_COMMAND_OPTIONS,
   MarkdownListItem,
   runSlashCommand,
@@ -56,6 +58,8 @@ const SLASH_MENU_MAX_HEIGHT = 248
 const SLASH_MENU_MAX_WIDTH = 264
 const SLASH_MENU_MIN_FLIP_SPACE = 172
 const SLASH_MENU_OFFSET = 10
+const OUTLINE_HANDLE_SIZE_PX = 16
+const OUTLINE_HANDLE_LEFT_PX = 7
 
 function emptyNoteEditorContent() {
   return {
@@ -175,6 +179,18 @@ interface SlashMenuState {
   placement: 'top' | 'bottom'
   query: string
   range: Range
+}
+
+interface OutlineHandleLayout {
+  height: number
+  targetPos: number
+  top: number
+}
+
+interface OutlineDragState {
+  draggedPos: number
+  dropIndex: number
+  indicatorTop: number | null
 }
 
 function matchingSlashCommands(query: string) {
@@ -665,9 +681,12 @@ function RichNoteEditor({
   const saveRequestIdRef = useRef(0)
   const saveTimerRef = useRef<number | null>(null)
   const lastPublishedHeadingRef = useRef<string | null>(null)
+  const outlineHandleFrameRef = useRef<number | null>(null)
   const [slashMenuState, setSlashMenuState] = useState<SlashMenuState | null>(null)
   const [slashMenuIndex, setSlashMenuIndex] = useState(0)
   const [outlineNavigationPos, setOutlineNavigationPos] = useState<number | null>(null)
+  const [outlineHandleLayouts, setOutlineHandleLayouts] = useState<OutlineHandleLayout[]>([])
+  const [outlineDragState, setOutlineDragState] = useState<OutlineDragState | null>(null)
   const outlineNavigationPosRef = useRef<number | null>(null)
   const autoSizeEnabled =
     variant === 'tile' && noteSizingMode === 'auto' && Boolean(onNoteContentHeightChange)
@@ -863,6 +882,18 @@ function RichNoteEditor({
     setOutlineNavigationPos(null)
   }
 
+  function outlineNavigationTargetElement(activeEditor: TiptapEditor, targetPos: number) {
+    const targetNode = activeEditor.view.nodeDOM(targetPos)
+
+    if (!(targetNode instanceof HTMLElement)) {
+      return null
+    }
+
+    return targetNode.matches('li')
+      ? targetNode.querySelector<HTMLElement>(':scope > div > p:first-child, :scope > p:first-child') ?? targetNode
+      : targetNode
+  }
+
   function collectOutlineNavigationTargets(activeEditor: TiptapEditor) {
     const targets: number[] = []
 
@@ -872,11 +903,7 @@ function RichNoteEditor({
         return !Boolean(node.attrs.collapsed)
       }
 
-      if (
-        (node.type.name === 'paragraph' || node.type.name === 'heading' || node.type.name === 'codeBlock') &&
-        parent?.type.name !== 'listItem' &&
-        parent?.type.name !== 'taskItem'
-      ) {
+      if (isOutlineBlockNodeName(node.type.name) && parent?.type.name !== 'listItem' && parent?.type.name !== 'taskItem') {
         targets.push(pos)
       }
 
@@ -899,11 +926,7 @@ function RichNoteEditor({
       const node = $from.node(depth)
       const parentNode = depth > 0 ? $from.node(depth - 1) : null
 
-      if (
-        (node.type.name === 'paragraph' || node.type.name === 'heading' || node.type.name === 'codeBlock') &&
-        parentNode?.type.name !== 'listItem' &&
-        parentNode?.type.name !== 'taskItem'
-      ) {
+      if (isOutlineBlockNodeName(node.type.name) && parentNode?.type.name !== 'listItem' && parentNode?.type.name !== 'taskItem') {
         return $from.before(depth)
       }
     }
@@ -984,20 +1007,191 @@ function RichNoteEditor({
       return
     }
 
-    const targetNode = activeEditor.view.nodeDOM(targetPos)
+    const highlightTarget = outlineNavigationTargetElement(activeEditor, targetPos)
 
-    if (!(targetNode instanceof HTMLElement)) {
+    if (!highlightTarget) {
       return
     }
-
-    const highlightTarget =
-      targetNode.matches('li')
-        ? targetNode.querySelector<HTMLElement>(':scope > div > p:first-child, :scope > p:first-child') ?? targetNode
-        : targetNode
 
     highlightTarget.setAttribute('data-outline-selected', 'true')
     highlightTarget.scrollIntoView({
       block: 'nearest'
+    })
+  }
+
+  function measureOutlineHandles(activeEditor: TiptapEditor) {
+    const hostElement = editorHostRef.current
+
+    if (!hostElement) {
+      setOutlineHandleLayouts([])
+      return
+    }
+
+    const activeTargetPos = outlineDragState?.draggedPos ?? (activeEditor.isFocused ? currentOutlineNavigationTargetPos(activeEditor) : null)
+
+    if (activeTargetPos === null) {
+      setOutlineHandleLayouts([])
+      return
+    }
+
+    const hostRect = hostElement.getBoundingClientRect()
+    const targetElement = outlineNavigationTargetElement(activeEditor, activeTargetPos)
+
+    if (!targetElement) {
+      setOutlineHandleLayouts([])
+      return
+    }
+
+    const targetRect = targetElement.getBoundingClientRect()
+
+    if (targetRect.bottom < hostRect.top || targetRect.top > hostRect.bottom) {
+      setOutlineHandleLayouts([])
+      return
+    }
+
+    setOutlineHandleLayouts([
+      {
+        height: targetRect.height,
+        targetPos: activeTargetPos,
+        top: Math.max(
+          0,
+          Math.min(
+            hostRect.height - OUTLINE_HANDLE_SIZE_PX,
+            targetRect.top - hostRect.top + Math.max(0, (targetRect.height - OUTLINE_HANDLE_SIZE_PX) / 2)
+          )
+        )
+      }
+    ])
+  }
+
+  function scheduleOutlineHandleMeasurement(activeEditor: TiptapEditor | null | undefined = editor) {
+    if (!activeEditor) {
+      setOutlineHandleLayouts([])
+      return
+    }
+
+    if (outlineHandleFrameRef.current !== null) {
+      window.cancelAnimationFrame(outlineHandleFrameRef.current)
+    }
+
+    outlineHandleFrameRef.current = window.requestAnimationFrame(() => {
+      outlineHandleFrameRef.current = null
+      measureOutlineHandles(activeEditor)
+    })
+  }
+
+  function dropIndicatorForPointer(activeEditor: TiptapEditor, clientY: number, draggedPos: number) {
+    const hostElement = editorHostRef.current
+
+    if (!hostElement) {
+      return null
+    }
+
+    const hostRect = hostElement.getBoundingClientRect()
+    const visibleTargets = collectOutlineNavigationTargets(activeEditor)
+      .filter((targetPos) => targetPos !== draggedPos)
+      .map((targetPos) => {
+        const targetElement = outlineNavigationTargetElement(activeEditor, targetPos)
+
+        if (!targetElement) {
+          return null
+        }
+
+        const targetRect = targetElement.getBoundingClientRect()
+
+        return {
+          rect: targetRect,
+          targetPos
+        }
+      })
+      .filter(
+        (target): target is { rect: DOMRect; targetPos: number } =>
+          target !== null && target.rect.bottom >= hostRect.top && target.rect.top <= hostRect.bottom
+      )
+
+    if (visibleTargets.length === 0) {
+      return {
+        dropIndex: 0,
+        indicatorTop: null
+      }
+    }
+
+    for (let index = 0; index < visibleTargets.length; index += 1) {
+      const target = visibleTargets[index]
+
+      if (clientY < target.rect.top + target.rect.height / 2) {
+        return {
+          dropIndex: index,
+          indicatorTop: Math.max(0, target.rect.top - hostRect.top)
+        }
+      }
+    }
+
+    const lastTarget = visibleTargets[visibleTargets.length - 1]
+
+    return {
+      dropIndex: visibleTargets.length,
+      indicatorTop: Math.max(0, Math.min(hostRect.height, lastTarget.rect.bottom - hostRect.top))
+    }
+  }
+
+  function moveOutlineTargetByDrag(activeEditor: TiptapEditor, draggedPos: number, dropIndex: number) {
+    if (!focusOutlineNavigationTarget(activeEditor, draggedPos)) {
+      return false
+    }
+
+    const initialTargets = collectOutlineNavigationTargets(activeEditor)
+    const desiredIndex = Math.max(0, Math.min(dropIndex, Math.max(0, initialTargets.length - 1)))
+    let attemptsRemaining = initialTargets.length + 2
+
+    while (attemptsRemaining > 0) {
+      attemptsRemaining -= 1
+      const currentTargets = collectOutlineNavigationTargets(activeEditor)
+      const activeTargetPos = currentOutlineNavigationTargetPos(activeEditor)
+
+      if (activeTargetPos === null) {
+        return false
+      }
+
+      const currentIndex = currentTargets.indexOf(activeTargetPos)
+
+      if (currentIndex === -1) {
+        return false
+      }
+
+      if (currentIndex === desiredIndex) {
+        return true
+      }
+
+      const moved = moveCurrentOutlineItem(
+        activeEditor,
+        currentIndex < desiredIndex ? 'down' : 'up'
+      )
+
+      if (!moved) {
+        return false
+      }
+    }
+
+    return false
+  }
+
+  function beginOutlineHandleDrag(targetPos: number, event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!editor) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    focusOutlineNavigationTarget(editor, targetPos)
+
+    const dropIndicator = dropIndicatorForPointer(editor, event.clientY, targetPos)
+
+    setOutlineDragState({
+      draggedPos: targetPos,
+      dropIndex: dropIndicator?.dropIndex ?? 0,
+      indicatorTop: dropIndicator?.indicatorTop ?? null
     })
   }
 
@@ -1265,6 +1459,10 @@ function RichNoteEditor({
       if (measureFrameRef.current !== null) {
         window.cancelAnimationFrame(measureFrameRef.current)
       }
+
+      if (outlineHandleFrameRef.current !== null) {
+        window.cancelAnimationFrame(outlineHandleFrameRef.current)
+      }
     }
   }, [])
 
@@ -1389,10 +1587,12 @@ function RichNoteEditor({
         handleDOMEvents: {
           blur: () => {
             flushSave()
+            scheduleOutlineHandleMeasurement(editor)
             return false
           },
           focus: (_view: unknown, event: FocusEvent) => {
             event.stopPropagation()
+            scheduleOutlineHandleMeasurement(editor)
             return false
           },
           keydown: (_view: unknown, event: KeyboardEvent) => {
@@ -1455,10 +1655,12 @@ function RichNoteEditor({
       onUpdate: ({ editor: activeEditor }: { editor: TiptapEditor }) => {
         queueSave(isEditorSemanticallyEmpty(activeEditor) ? '' : activeEditor.getMarkdown())
         scheduleContentMeasurement()
+        scheduleOutlineHandleMeasurement(activeEditor)
         syncSlashMenu(activeEditor)
       },
       onSelectionUpdate: ({ editor: activeEditor }: { editor: TiptapEditor }) => {
         syncSlashMenu(activeEditor)
+        scheduleOutlineHandleMeasurement(activeEditor)
 
         if (outlineNavigationPosRef.current !== null) {
           setOutlineNavigationPos(currentOutlineNavigationTargetPos(activeEditor))
@@ -1492,6 +1694,8 @@ function RichNoteEditor({
       latestSavedRef.current = normalizedInitialContent
       lastPublishedHeadingRef.current = null
       setOutlineNavigationPos(null)
+      setOutlineHandleLayouts([])
+      setOutlineDragState(null)
       closeSlashMenu()
       return
     }
@@ -1505,6 +1709,7 @@ function RichNoteEditor({
       onStatusChange('idle')
       lastPublishedHeadingRef.current = primaryHeadingFromEditor(editor)
       scheduleContentMeasurement()
+      scheduleOutlineHandleMeasurement(editor)
       syncSlashMenu(editor)
       return
     }
@@ -1513,6 +1718,7 @@ function RichNoteEditor({
       onStatusChange('idle')
       lastPublishedHeadingRef.current = primaryHeadingFromEditor(editor)
       scheduleContentMeasurement()
+      scheduleOutlineHandleMeasurement(editor)
       syncSlashMenu(editor)
       return
     }
@@ -1522,6 +1728,7 @@ function RichNoteEditor({
       onStatusChange('idle')
       lastPublishedHeadingRef.current = primaryHeadingFromEditor(editor)
       scheduleContentMeasurement()
+      scheduleOutlineHandleMeasurement(editor)
       syncSlashMenu(editor)
       return
     }
@@ -1541,6 +1748,7 @@ function RichNoteEditor({
       onStatusChange('idle')
       lastPublishedHeadingRef.current = primaryHeadingFromEditor(editor)
       scheduleContentMeasurement()
+      scheduleOutlineHandleMeasurement(editor)
       syncSlashMenu(editor)
       return
     }
@@ -1548,6 +1756,7 @@ function RichNoteEditor({
     onStatusChange('saving')
     lastPublishedHeadingRef.current = primaryHeadingFromEditor(editor)
     scheduleContentMeasurement()
+    scheduleOutlineHandleMeasurement(editor)
     syncSlashMenu(editor)
   }, [editor, initialContent, normalizedInitialContent, onStatusChange])
 
@@ -1603,6 +1812,37 @@ function RichNoteEditor({
   }, [editor])
 
   useEffect(() => {
+    if (!editor) {
+      return
+    }
+
+    scheduleOutlineHandleMeasurement(editor)
+
+    const contentElement = editor.view.dom as HTMLElement | null
+    const hostElement = editorHostRef.current
+    const handleLayoutChange = () => scheduleOutlineHandleMeasurement(editor)
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => {
+            scheduleOutlineHandleMeasurement(editor)
+          })
+
+    window.addEventListener('resize', handleLayoutChange)
+    contentElement?.addEventListener('scroll', handleLayoutChange, { passive: true })
+    hostElement?.addEventListener('scroll', handleLayoutChange, { passive: true })
+    contentElement && resizeObserver?.observe(contentElement)
+    hostElement && resizeObserver?.observe(hostElement)
+
+    return () => {
+      window.removeEventListener('resize', handleLayoutChange)
+      contentElement?.removeEventListener('scroll', handleLayoutChange)
+      hostElement?.removeEventListener('scroll', handleLayoutChange)
+      resizeObserver?.disconnect()
+    }
+  }, [editor, resolvedNoteViewScale, variant])
+
+  useEffect(() => {
     if (!autoSizeEnabled || !editor) {
       return
     }
@@ -1652,7 +1892,68 @@ function RichNoteEditor({
     }
 
     syncOutlineNavigationHighlight(editor, outlineNavigationPos)
+    scheduleOutlineHandleMeasurement(editor)
   }, [editor, outlineNavigationPos])
+
+  useEffect(() => {
+    if (!editor || !outlineDragState) {
+      return
+    }
+
+    const updateDropIndicator = (clientY: number) => {
+      const dropIndicator = dropIndicatorForPointer(editor, clientY, outlineDragState.draggedPos)
+
+      setOutlineDragState((current) =>
+        current
+          ? {
+              ...current,
+              dropIndex: dropIndicator?.dropIndex ?? current.dropIndex,
+              indicatorTop: dropIndicator?.indicatorTop ?? current.indicatorTop
+            }
+          : current
+      )
+    }
+
+    const finishDrag = (clientY: number) => {
+      const dropIndicator = dropIndicatorForPointer(editor, clientY, outlineDragState.draggedPos)
+      const moved = moveOutlineTargetByDrag(
+        editor,
+        outlineDragState.draggedPos,
+        dropIndicator?.dropIndex ?? outlineDragState.dropIndex
+      )
+
+      setOutlineDragState(null)
+      scheduleOutlineHandleMeasurement(editor)
+
+      if (moved) {
+        activateOutlineNavigation(editor)
+      } else {
+        focusOutlineNavigationTarget(editor, outlineDragState.draggedPos)
+      }
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      updateDropIndicator(event.clientY)
+    }
+
+    const handlePointerUp = (event: PointerEvent) => {
+      event.preventDefault()
+      finishDrag(event.clientY)
+    }
+
+    const previousUserSelect = document.body.style.userSelect
+    document.body.style.userSelect = 'none'
+    document.addEventListener('pointermove', handlePointerMove)
+    document.addEventListener('pointerup', handlePointerUp, true)
+    document.addEventListener('pointercancel', handlePointerUp, true)
+
+    return () => {
+      document.body.style.userSelect = previousUserSelect
+      document.removeEventListener('pointermove', handlePointerMove)
+      document.removeEventListener('pointerup', handlePointerUp, true)
+      document.removeEventListener('pointercancel', handlePointerUp, true)
+    }
+  }, [editor, outlineDragState])
 
   useEffect(() => {
     if (!editor || !slashMenuState) {

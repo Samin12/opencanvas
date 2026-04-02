@@ -2,6 +2,7 @@ import '@tiptap/extension-horizontal-rule'
 
 import { Extension, InputRule, type ChainedCommands, type Editor, type Range } from '@tiptap/core'
 import { ListItem, TaskItem, listHelpers } from '@tiptap/extension-list'
+import { type Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
 
 export type SlashCommand =
@@ -76,8 +77,13 @@ const HORIZONTAL_RULE_MARKER_PATTERN = /^(?:---|___|\*\*\*)$/
 const TASK_LINE_ENTER_PATTERN = /^\s*(?:[-+*]\s+)?\[\s*(x|X)?\]\s+(.+)$/
 const OUTLINE_PARENT_NODE_NAMES = new Set(['bulletList', 'orderedList', 'taskList'])
 const OUTLINE_ITEM_TYPES = ['taskItem', 'listItem'] as const
+const OUTLINE_BLOCK_NODE_NAMES = new Set(['paragraph', 'heading', 'codeBlock', 'blockquote'])
 
 type OutlineItemType = (typeof OUTLINE_ITEM_TYPES)[number]
+
+export function isOutlineBlockNodeName(nodeName: string) {
+  return OUTLINE_BLOCK_NODE_NAMES.has(nodeName)
+}
 
 export const MARKDOWN_SLASH_COMMAND_OPTIONS: MarkdownSlashCommandOption[] = [
   {
@@ -375,6 +381,46 @@ export function currentOutlineItem(editor: Editor) {
   }
 }
 
+function currentTopLevelOutlineBlock(editor: Editor) {
+  const { $from } = editor.state.selection
+
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    const node = $from.node(depth)
+    const parentNode = depth > 0 ? $from.node(depth - 1) : null
+
+    if (parentNode?.type.name !== 'doc' || !isOutlineBlockNodeName(node.type.name)) {
+      continue
+    }
+
+    return {
+      node,
+      pos: $from.before(depth)
+    }
+  }
+
+  return null
+}
+
+function collectTopLevelOutlineBlocks(editor: Editor) {
+  const blocks: Array<{
+    node: ProseMirrorNode
+    pos: number
+  }> = []
+
+  editor.state.doc.forEach((node, offset) => {
+    if (!isOutlineBlockNodeName(node.type.name)) {
+      return
+    }
+
+    blocks.push({
+      node,
+      pos: offset
+    })
+  })
+
+  return blocks
+}
+
 function outlineItemHasNestedList(itemNode: { childCount: number; child: (index: number) => { type: { name: string } } }) {
   for (let index = 0; index < itemNode.childCount; index += 1) {
     if (OUTLINE_PARENT_NODE_NAMES.has(itemNode.child(index).type.name)) {
@@ -497,13 +543,11 @@ function collectVisibleOutlineItems(editor: Editor) {
   return items
 }
 
-export function moveCurrentOutlineItem(editor: Editor, direction: 'up' | 'down') {
-  const outlineItem = currentOutlineItem(editor)
-
-  if (!outlineItem) {
-    return false
-  }
-
+function moveCurrentListOutlineItem(
+  editor: Editor,
+  outlineItem: NonNullable<ReturnType<typeof currentOutlineItem>>,
+  direction: 'up' | 'down'
+) {
   const visibleItems = collectVisibleOutlineItems(editor)
   const currentIndex = visibleItems.findIndex((candidate) => candidate.itemPos === outlineItem.itemPos)
 
@@ -565,6 +609,56 @@ export function moveCurrentOutlineItem(editor: Editor, direction: 'up' | 'down')
 
   editor.view.dispatch(tr.scrollIntoView())
   return true
+}
+
+function moveCurrentTopLevelOutlineBlock(editor: Editor, direction: 'up' | 'down') {
+  const currentBlock = currentTopLevelOutlineBlock(editor)
+
+  if (!currentBlock) {
+    return false
+  }
+
+  const blocks = collectTopLevelOutlineBlocks(editor)
+  const currentIndex = blocks.findIndex((candidate) => candidate.pos === currentBlock.pos)
+
+  if (currentIndex === -1) {
+    return false
+  }
+
+  const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+
+  if (targetIndex < 0 || targetIndex >= blocks.length) {
+    return false
+  }
+
+  const targetBlock = blocks[targetIndex]
+  const maxOffset = Math.max(1, currentBlock.node.nodeSize - 2)
+  const anchorOffset = Math.max(
+    1,
+    Math.min(editor.state.selection.from - currentBlock.pos, maxOffset)
+  )
+  const desiredInsertPos =
+    direction === 'up' ? targetBlock.pos : targetBlock.pos + targetBlock.node.nodeSize
+  const tr = editor.state.tr.delete(currentBlock.pos, currentBlock.pos + currentBlock.node.nodeSize)
+  const insertPos = tr.mapping.map(desiredInsertPos, -1)
+
+  tr.insert(insertPos, currentBlock.node)
+  tr.setSelection(
+    TextSelection.near(tr.doc.resolve(Math.max(insertPos + 1, Math.min(insertPos + anchorOffset, insertPos + maxOffset))))
+  )
+
+  editor.view.dispatch(tr.scrollIntoView())
+  return true
+}
+
+export function moveCurrentOutlineItem(editor: Editor, direction: 'up' | 'down') {
+  const outlineItem = currentOutlineItem(editor)
+
+  if (outlineItem) {
+    return moveCurrentListOutlineItem(editor, outlineItem, direction)
+  }
+
+  return moveCurrentTopLevelOutlineBlock(editor, direction)
 }
 
 export function setCurrentOutlineItemCollapsed(editor: Editor, collapsed: boolean) {
