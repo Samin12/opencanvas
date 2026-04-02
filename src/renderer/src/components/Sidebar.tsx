@@ -96,22 +96,6 @@ function CollapseTreeIcon() {
   )
 }
 
-function RecentFilesIcon() {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      className="h-3 w-3 fill-none stroke-current stroke-[1.25] [stroke-linecap:round] [stroke-linejoin:round]"
-    >
-      <path d="M4 2.5H8.9L12.5 6.05V12A1.5 1.5 0 0 1 11 13.5H4A1.5 1.5 0 0 1 2.5 12V4A1.5 1.5 0 0 1 4 2.5Z" />
-      <path d="M8.7 2.75V6H12" />
-      <path d="M5.1 8H9.9" />
-      <path d="M5.1 10.1H9.9" />
-      <path d="M5.1 12.2H8.1" />
-    </svg>
-  )
-}
-
 function ClockIcon() {
   return (
     <svg viewBox="0 0 16 16" aria-hidden="true" className="h-[0.7rem] w-[0.7rem] fill-none stroke-current stroke-[1.3]">
@@ -876,21 +860,6 @@ function SidebarComponent({
           <div className="grid grid-cols-[auto_minmax(0,1fr)] items-stretch gap-1.5">
             <div className="flex items-stretch gap-1">
               <div className="flex h-9 items-center gap-0.5 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] p-0.5">
-                <HoverTooltip label="Show recent files">
-                  <button
-                    aria-label="Show recent files"
-                    data-managed-tooltip="custom"
-                    className={clsx(
-                      'flex h-8 w-8 items-center justify-center rounded-[7px] transition',
-                      fileBrowserMode === 'recent'
-                        ? 'bg-[var(--nav-surface-hover)] text-[var(--text)]'
-                        : 'text-[var(--text-faint)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]'
-                    )}
-                    onClick={() => setFileBrowserMode('recent')}
-                  >
-                    <RecentFilesIcon />
-                  </button>
-                </HoverTooltip>
                 <HoverTooltip label="Show folder tree">
                   <button
                     aria-label="Show folder tree"
@@ -910,7 +879,7 @@ function SidebarComponent({
                   label={
                     fileBrowserMode === 'recent'
                       ? 'Toggle recent-file sort order'
-                      : 'Open recent files sorted by date'
+                      : 'Show recent files'
                   }
                 >
                   <button
