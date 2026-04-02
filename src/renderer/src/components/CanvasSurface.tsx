@@ -1075,7 +1075,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const activeScrollCaptureElementRef = useRef<HTMLElement | null>(null)
     const lastPointerScrollActivationAtRef = useRef(0)
     const renamingInputRef = useRef<HTMLInputElement | null>(null)
-    const renameCancelRef = useRef(false)
     const headingRenameRequestRef = useRef<Map<string, string>>(new Map())
     const frameBoundsRef = useRef<Map<string, FrameBoundsSnapshot>>(new Map())
     const stateRef = useRef(state)
@@ -1244,13 +1243,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       const { stem } = splitFileName(fileNameFromPath(tile.filePath))
-      renameCancelRef.current = false
       setRenamingTileId(tile.id)
       setRenamingValue(stem)
     }
 
     function cancelTileRename() {
-      renameCancelRef.current = true
       setRenamingTileId(null)
       setRenamingValue('')
     }
@@ -4976,14 +4973,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                                 setRenamingValue(event.target.value)
                               }}
                               className="min-w-0 flex-1 rounded-[8px] border border-[color:var(--accent)] bg-[var(--surface-0)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--text)] outline-none"
-                              onBlur={() => {
-                                if (renameCancelRef.current) {
-                                  renameCancelRef.current = false
-                                  return
-                                }
-
-                                commitTileRename(tile)
-                              }}
+                              onBlur={cancelTileRename}
                               onKeyDown={(event) => {
                                 event.stopPropagation()
 
