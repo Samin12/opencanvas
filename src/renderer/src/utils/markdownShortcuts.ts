@@ -352,6 +352,12 @@ export function currentOutlineItem(editor: Editor) {
   const parentListDepth = itemDepth - 1
   const parentListNode = listItemPos.$pos.node(parentListDepth)
   const parentListPos = listItemPos.$pos.before(parentListDepth)
+  const parentItemDepth = parentListDepth - 1
+  const parentItemNode = parentItemDepth > 0 ? listItemPos.$pos.node(parentItemDepth) : null
+  const parentItemType =
+    parentItemNode && OUTLINE_ITEM_TYPES.includes(parentItemNode.type.name as OutlineItemType)
+      ? (parentItemNode.type.name as OutlineItemType)
+      : null
   const indexInParent = listItemPos.$pos.index(parentListDepth)
 
   return {
@@ -360,6 +366,9 @@ export function currentOutlineItem(editor: Editor) {
     itemNode,
     itemPos,
     itemType,
+    parentItemDepth,
+    parentItemNode,
+    parentItemType,
     parentListDepth,
     parentListNode,
     parentListPos
@@ -376,14 +385,116 @@ function outlineItemHasNestedList(itemNode: { childCount: number; child: (index:
   return false
 }
 
-function outlineSiblingPos(parentListPos: number, parentListNode: { child: (index: number) => { nodeSize: number } }, targetIndex: number) {
-  let offset = parentListPos + 1
-
-  for (let index = 0; index < targetIndex; index += 1) {
-    offset += parentListNode.child(index).nodeSize
+function outlineListItemType(listTypeName: string): OutlineItemType | null {
+  if (listTypeName === 'taskList') {
+    return 'taskItem'
   }
 
-  return offset
+  if (listTypeName === 'bulletList' || listTypeName === 'orderedList') {
+    return 'listItem'
+  }
+
+  return null
+}
+
+function resolveOutlineItemAtPos(editor: Editor, itemPos: number) {
+  const $pos = editor.state.doc.resolve(itemPos + 1)
+
+  for (let depth = $pos.depth; depth > 0; depth -= 1) {
+    const candidateNode = $pos.node(depth)
+    const candidatePos = $pos.before(depth)
+
+    if (candidatePos !== itemPos) {
+      continue
+    }
+
+    const candidateType = OUTLINE_ITEM_TYPES.find((type) => type === candidateNode.type.name)
+
+    if (!candidateType) {
+      continue
+    }
+
+    const parentListDepth = depth - 1
+    const parentListNode = $pos.node(parentListDepth)
+    const parentListPos = $pos.before(parentListDepth)
+    const parentItemDepth = parentListDepth - 1
+    const parentItemNode = parentItemDepth > 0 ? $pos.node(parentItemDepth) : null
+    const parentItemType =
+      parentItemNode && OUTLINE_ITEM_TYPES.includes(parentItemNode.type.name as OutlineItemType)
+        ? (parentItemNode.type.name as OutlineItemType)
+        : null
+
+    return {
+      indexInParent: $pos.index(parentListDepth),
+      itemDepth: depth,
+      itemNode: candidateNode,
+      itemPos,
+      itemType: candidateType,
+      parentItemDepth,
+      parentItemNode,
+      parentItemType,
+      parentListDepth,
+      parentListNode,
+      parentListPos
+    }
+  }
+
+  return null
+}
+
+function outlineChildList(itemPos: number, itemNode: { childCount: number; child: (index: number) => { nodeSize: number; type: { name: string } } }) {
+  let childPos = itemPos + 1
+
+  for (let index = 0; index < itemNode.childCount; index += 1) {
+    const childNode = itemNode.child(index)
+
+    if (OUTLINE_PARENT_NODE_NAMES.has(childNode.type.name)) {
+      return {
+        listNode: childNode,
+        listPos: childPos
+      }
+    }
+
+    childPos += childNode.nodeSize
+  }
+
+  return null
+}
+
+function collectVisibleOutlineItems(editor: Editor) {
+  const items: Array<
+    NonNullable<ReturnType<typeof resolveOutlineItemAtPos>> & {
+      childListNode: { nodeSize: number; type: { name: string } } | null
+      childListPos: number | null
+      hasExpandedChildren: boolean
+    }
+  > = []
+
+  editor.state.doc.descendants((node, pos) => {
+    if (!OUTLINE_ITEM_TYPES.includes(node.type.name as OutlineItemType)) {
+      return true
+    }
+
+    const outlineItem = resolveOutlineItemAtPos(editor, pos)
+
+    if (!outlineItem) {
+      return !Boolean(node.attrs.collapsed)
+    }
+
+    const childList = outlineChildList(outlineItem.itemPos, outlineItem.itemNode)
+    const hasExpandedChildren = Boolean(childList) && !Boolean(outlineItem.itemNode.attrs.collapsed)
+
+    items.push({
+      ...outlineItem,
+      childListNode: childList?.listNode ?? null,
+      childListPos: childList?.listPos ?? null,
+      hasExpandedChildren
+    })
+
+    return !Boolean(node.attrs.collapsed)
+  })
+
+  return items
 }
 
 export function moveCurrentOutlineItem(editor: Editor, direction: 'up' | 'down') {
@@ -393,38 +504,64 @@ export function moveCurrentOutlineItem(editor: Editor, direction: 'up' | 'down')
     return false
   }
 
-  const { indexInParent, itemNode, itemPos, parentListNode, parentListPos } = outlineItem
-  const targetIndex = direction === 'up' ? indexInParent - 1 : indexInParent + 1
+  const visibleItems = collectVisibleOutlineItems(editor)
+  const currentIndex = visibleItems.findIndex((candidate) => candidate.itemPos === outlineItem.itemPos)
 
-  if (targetIndex < 0 || targetIndex >= parentListNode.childCount) {
+  if (currentIndex === -1) {
+    return false
+  }
+
+  let subtreeEndIndex = currentIndex
+
+  while (
+    subtreeEndIndex + 1 < visibleItems.length &&
+    visibleItems[subtreeEndIndex + 1].itemDepth > outlineItem.itemDepth
+  ) {
+    subtreeEndIndex += 1
+  }
+
+  const targetIndex = direction === 'up' ? currentIndex - 1 : subtreeEndIndex + 1
+
+  if (targetIndex < 0 || targetIndex >= visibleItems.length) {
     return false
   }
 
   const anchorOffset = Math.max(
     1,
-    Math.min(editor.state.selection.from - itemPos, Math.max(1, itemNode.nodeSize - 2))
+    Math.min(editor.state.selection.from - outlineItem.itemPos, Math.max(1, outlineItem.itemNode.nodeSize - 2))
   )
+  const targetItem = visibleItems[targetIndex]
+  const canInsertIntoTargetParent =
+    outlineListItemType(targetItem.parentListNode.type.name) === outlineItem.itemType
 
-  const siblingNode = parentListNode.child(targetIndex)
-  const siblingPos = outlineSiblingPos(parentListPos, parentListNode, targetIndex)
-  const tr = editor.state.tr.delete(itemPos, itemPos + itemNode.nodeSize)
-
-  if (direction === 'up') {
-    tr.insert(siblingPos, itemNode)
-    tr.setSelection(
-      TextSelection.near(
-        tr.doc.resolve(Math.min(siblingPos + anchorOffset, siblingPos + itemNode.nodeSize - 1))
-      )
-    )
-  } else {
-    const insertPos = itemPos + siblingNode.nodeSize
-    tr.insert(insertPos, itemNode)
-    tr.setSelection(
-      TextSelection.near(
-        tr.doc.resolve(Math.min(insertPos + anchorOffset, insertPos + itemNode.nodeSize - 1))
-      )
-    )
+  if (!canInsertIntoTargetParent) {
+    return false
   }
+
+  const shouldDescendIntoTarget =
+    direction === 'down' &&
+    targetItem.hasExpandedChildren &&
+    targetItem.childListNode !== null &&
+    targetItem.childListPos !== null &&
+    outlineListItemType(targetItem.childListNode.type.name) === outlineItem.itemType
+
+  const desiredInsertPos = shouldDescendIntoTarget
+    ? (targetItem.childListPos ?? targetItem.itemPos) + 1
+    : direction === 'up'
+      ? targetItem.itemPos
+      : targetItem.itemPos + targetItem.itemNode.nodeSize
+  const tr = editor.state.tr.delete(
+    outlineItem.itemPos,
+    outlineItem.itemPos + outlineItem.itemNode.nodeSize
+  )
+  const insertPos = tr.mapping.map(desiredInsertPos, -1)
+
+  tr.insert(insertPos, outlineItem.itemNode)
+  tr.setSelection(
+    TextSelection.near(
+      tr.doc.resolve(Math.min(insertPos + anchorOffset, insertPos + outlineItem.itemNode.nodeSize - 1))
+    )
+  )
 
   editor.view.dispatch(tr.scrollIntoView())
   return true

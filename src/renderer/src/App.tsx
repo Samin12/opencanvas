@@ -42,6 +42,7 @@ const SIDEBAR_RIGHT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2192' : null
 const TOGGLE_DARK_MODE_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+Shift+D' : 'Ctrl+Shift+D'
 const INTERACTIVE_SHORTCUT_TARGET_SELECTOR =
   'button, [role="button"], a[href], input:not([type="hidden"]), select, textarea, summary'
+type KeyboardSurface = 'canvas' | 'navigator'
 
 function terminalProviderLabel(provider: TerminalProvider) {
   if (provider === 'codex') {
@@ -327,6 +328,7 @@ export default function App() {
   const [bootError, setBootError] = useState<string | null>(null)
   const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState<string | null>(null)
   const [focusNavigatorVersion, setFocusNavigatorVersion] = useState(0)
+  const [activeKeyboardSurface, setActiveKeyboardSurface] = useState<KeyboardSurface>('canvas')
   const [officeViewer, setOfficeViewer] = useState<OfficeViewerBootstrap | null>(null)
   const [terminalDependencies, setTerminalDependencies] = useState<TerminalDependencyState | null>(null)
   const [diagramTools, setDiagramTools] = useState<EnsureWorkspaceDiagramToolsResult | null>(null)
@@ -368,6 +370,16 @@ export default function App() {
 
     return findDirectoryPathForNode(workspaceTree, selectedTreePath) ?? activeWorkspace
   }, [activeWorkspace, selectedTreeNode, selectedTreePath, workspaceTree])
+
+  function activateNavigatorSurface() {
+    setActiveKeyboardSurface('navigator')
+  }
+
+  function focusCanvasSurface() {
+    setActiveKeyboardSurface('canvas')
+    canvasRef.current?.focusCanvas()
+  }
+
   useEffect(() => {
     return installButtonTooltipSync(document)
   }, [])
@@ -945,7 +957,7 @@ export default function App() {
           }
 
           window.requestAnimationFrame(() => {
-            canvasRef.current?.focusCanvas()
+            focusCanvasSurface()
             canvasRef.current?.cycleBoardSelection(boardTraversalStep as 1 | -1)
           })
         }
@@ -975,6 +987,7 @@ export default function App() {
             setSidebarPlacement(sidebarSide, false)
           }
 
+          setActiveKeyboardSurface('navigator')
           setFocusNavigatorVersion((current) => current + 1)
           return
         }
@@ -984,7 +997,7 @@ export default function App() {
           setViewerFile(null)
 
           window.requestAnimationFrame(() => {
-            canvasRef.current?.focusCanvas()
+            focusCanvasSurface()
           })
           return
         }
@@ -1066,7 +1079,7 @@ export default function App() {
           setViewerFile(null)
 
           window.requestAnimationFrame(() => {
-            canvasRef.current?.focusCanvas()
+            focusCanvasSurface()
           })
         }
 
@@ -1371,6 +1384,7 @@ export default function App() {
     setViewerFile(null)
 
     if (options?.focusNavigator) {
+      setActiveKeyboardSurface('navigator')
       window.requestAnimationFrame(() => {
         setFocusNavigatorVersion((current) => current + 1)
       })
@@ -1918,10 +1932,11 @@ export default function App() {
 
     window.requestAnimationFrame(() => {
       if (focusEditableTile && canvasRef.current?.focusSelectedTileEditor()) {
+        setActiveKeyboardSurface('canvas')
         return
       }
 
-      canvasRef.current?.focusCanvas()
+      focusCanvasSurface()
     })
   }
 
@@ -2100,7 +2115,9 @@ export default function App() {
               darkMode={darkMode}
               focusNavigatorVersion={focusNavigatorVersion}
               loadingWorkspace={loadingWorkspace}
+              navigatorSelected={activeKeyboardSurface === 'navigator'}
               onAddWorkspace={() => void addWorkspace()}
+              onActivateNavigator={activateNavigatorSurface}
               onCopyWorkspacePath={() => void copyActiveWorkspacePath()}
               onCreateNote={() => void createMarkdownNote()}
               onCreateWorkspaceDirectory={(targetDirectoryPath, directoryName) =>
@@ -2179,7 +2196,18 @@ export default function App() {
           />
         )}
 
-        <main className="relative min-h-0 min-w-0 flex-1">
+        <main
+          className={clsx(
+            'relative min-h-0 min-w-0 flex-1',
+            activeKeyboardSurface === 'canvas' && 'shadow-[inset_0_0_0_1px_var(--accent)]'
+          )}
+          onFocusCapture={() => {
+            setActiveKeyboardSurface('canvas')
+          }}
+          onPointerDownCapture={() => {
+            setActiveKeyboardSurface('canvas')
+          }}
+        >
           {showAppUpdateBanner ? (
             <div className="glass-panel absolute left-1/2 top-3 z-[265] w-[min(44rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-[var(--radius-surface)] border border-[color:var(--line-strong)] bg-[var(--surface-overlay)] px-4 py-3 shadow-[0_20px_44px_rgba(15,23,42,0.18)]">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -2308,7 +2336,7 @@ export default function App() {
               setViewerFile(null)
 
               window.requestAnimationFrame(() => {
-                canvasRef.current?.focusCanvas()
+                focusCanvasSurface()
               })
             }}
           />
@@ -2348,7 +2376,9 @@ export default function App() {
               darkMode={darkMode}
               focusNavigatorVersion={focusNavigatorVersion}
               loadingWorkspace={loadingWorkspace}
+              navigatorSelected={activeKeyboardSurface === 'navigator'}
               onAddWorkspace={() => void addWorkspace()}
+              onActivateNavigator={activateNavigatorSurface}
               onCopyWorkspacePath={() => void copyActiveWorkspacePath()}
               onCreateNote={() => void createMarkdownNote()}
               onCreateWorkspaceDirectory={(targetDirectoryPath, directoryName) =>

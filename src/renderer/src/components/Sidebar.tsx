@@ -494,6 +494,7 @@ interface SidebarProps {
   focusNavigatorVersion: number
   loadingWorkspace: boolean
   onAddWorkspace: () => void
+  onActivateNavigator: () => void
   onCopyWorkspacePath: () => void
   onCreateNote: () => void
   onCreateWorkspaceDirectory: (targetDirectoryPath: string, directoryName: string) => void
@@ -523,6 +524,7 @@ interface SidebarProps {
   sidebarCollapsed: boolean
   sidebarSide: SidebarSide
   sidebarWidth: number
+  navigatorSelected: boolean
   workspaceRootPath: string | null
   workspaceTree: FileTreeNode[]
 }
@@ -534,6 +536,7 @@ function SidebarComponent({
   focusNavigatorVersion,
   loadingWorkspace,
   onAddWorkspace,
+  onActivateNavigator,
   onCopyWorkspacePath,
   onCreateNote,
   onCreateWorkspaceDirectory,
@@ -560,6 +563,7 @@ function SidebarComponent({
   sidebarCollapsed,
   sidebarSide,
   sidebarWidth,
+  navigatorSelected,
   workspaceRootPath,
   workspaceTree
 }: SidebarProps) {
@@ -942,7 +946,14 @@ function SidebarComponent({
             </div>
           ) : null}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[var(--nav-panel)] px-2.5 pb-2 pt-2.5">
+        <div
+          className={clsx(
+            'min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-[var(--radius-surface)] bg-[var(--nav-panel)] px-2.5 pb-2 pt-2.5',
+            navigatorSelected && 'shadow-[inset_0_0_0_1px_var(--accent)]'
+          )}
+          onFocusCapture={onActivateNavigator}
+          onPointerDownCapture={onActivateNavigator}
+        >
           {activeWorkspacePath ? (
             fileBrowserMode === 'recent' ? (
               workspaceFiles.length === 0 ? (
@@ -1008,6 +1019,7 @@ function SidebarComponent({
                 darkMode={darkMode}
                 expandAllVersion={expandAllVersion}
                 focusVersion={treeFocusVersion}
+                keyboardActive={navigatorSelected}
                 nodes={workspaceTree}
                 onCreateWorkspaceDirectory={onCreateWorkspaceDirectory}
                 onCreateWorkspaceFile={onCreateWorkspaceFile}
@@ -1088,6 +1100,7 @@ export const Sidebar = memo(SidebarComponent, (previous, next) => {
     previous.darkMode === next.darkMode &&
     previous.focusNavigatorVersion === next.focusNavigatorVersion &&
     previous.loadingWorkspace === next.loadingWorkspace &&
+    previous.navigatorSelected === next.navigatorSelected &&
     previous.sidebarCollapsed === next.sidebarCollapsed &&
     previous.sidebarSide === next.sidebarSide &&
     previous.sidebarWidth === next.sidebarWidth &&

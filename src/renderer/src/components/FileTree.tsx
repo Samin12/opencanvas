@@ -31,6 +31,7 @@ interface FileTreeProps {
   darkMode: boolean
   expandAllVersion?: number
   focusVersion?: number
+  keyboardActive?: boolean
   nodes: FileTreeNode[]
   onCreateWorkspaceDirectory: (targetDirectoryPath: string, directoryName: string) => void
   onCreateWorkspaceFile: (targetDirectoryPath: string, fileName: string) => void
@@ -476,6 +477,7 @@ export function FileTree({
   darkMode,
   expandAllVersion = 0,
   focusVersion = 0,
+  keyboardActive = false,
   nodes,
   onCreateWorkspaceDirectory,
   onCreateWorkspaceFile,
@@ -554,6 +556,18 @@ export function FileTree({
       return changed ? nextExpanded : current
     })
   }, [activePath, nodes])
+
+  useEffect(() => {
+    if (keyboardActive) {
+      return
+    }
+
+    const activeElement = document.activeElement
+
+    if (activeElement instanceof HTMLElement && treeRootRef.current?.contains(activeElement)) {
+      activeElement.blur()
+    }
+  }, [keyboardActive])
 
   useEffect(() => {
     if (focusVersion === 0) {
@@ -804,7 +818,7 @@ export function FileTree({
   }
 
   function handleTreeKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
-    if (inputDialog || deleteTarget) {
+    if (!keyboardActive || inputDialog || deleteTarget) {
       return
     }
 
@@ -1347,7 +1361,7 @@ export function FileTree({
               role="treeitem"
               aria-expanded={isExpanded}
               aria-selected={activePath === node.path}
-              tabIndex={isFocused ? 0 : -1}
+              tabIndex={keyboardActive && isFocused ? 0 : -1}
               className={clsx(
                 'flex w-full cursor-grab items-center gap-1.5 px-1.5 py-[2px] text-left text-[11px] font-medium leading-[1.15rem] transition active:cursor-grabbing focus-visible:outline-none',
                 'rounded-[var(--radius-control)] border border-transparent hover:bg-[var(--nav-surface-hover)]',
@@ -1442,7 +1456,7 @@ export function FileTree({
           data-file-tree-drop-path={parentDirectoryPath(node.path) ?? rootDirectoryPath ?? undefined}
           role="treeitem"
           aria-selected={activePath === node.path}
-          tabIndex={isFocused ? 0 : -1}
+          tabIndex={keyboardActive && isFocused ? 0 : -1}
           className={clsx(
             'flex w-full cursor-grab items-center gap-1.5 px-1.5 py-[2px] text-left text-[11px] font-medium leading-[1.15rem] transition active:cursor-grabbing focus-visible:outline-none',
             'rounded-[var(--radius-control)] border border-transparent',
@@ -1502,7 +1516,7 @@ export function FileTree({
     return (
       <div
         ref={treeRootRef}
-        tabIndex={0}
+        tabIndex={keyboardActive ? 0 : -1}
         className="rounded-[var(--radius-surface)] border border-dashed border-[color:var(--line-strong)] bg-[var(--nav-surface)] p-4 text-[11px] text-[var(--text-dim)] outline-none"
         data-file-tree-root-drop={rootDirectoryPath ? 'true' : undefined}
         onDragEnterCapture={handleExternalDragEnter}
@@ -1529,7 +1543,7 @@ export function FileTree({
     return (
       <div
         ref={treeRootRef}
-        tabIndex={0}
+        tabIndex={keyboardActive ? 0 : -1}
         className="rounded-[var(--radius-surface)] border border-dashed border-[color:var(--line-strong)] bg-[var(--nav-surface)] p-4 text-[11px] text-[var(--text-dim)] outline-none"
         data-file-tree-root-drop={rootDirectoryPath ? 'true' : undefined}
         onDragEnterCapture={handleExternalDragEnter}

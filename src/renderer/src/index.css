@@ -246,7 +246,14 @@ textarea {
 
 .markdown-preview {
   font-family: var(--font-ui);
-  line-height: 1.72;
+  --outline-indent: 1.22em;
+  --outline-row-height: 1.34em;
+  --outline-row-padding-y: 0.08em;
+  --outline-bullet-size: 0.34em;
+  --outline-ring-size: 0.32em;
+  --outline-task-marker-size: 0.92em;
+  --outline-task-core-size: 0.14em;
+  line-height: 1.34;
   overflow-wrap: break-word;
   word-break: normal;
   text-rendering: optimizeLegibility;
@@ -323,6 +330,7 @@ textarea {
 .markdown-preview li,
 .markdown-preview blockquote {
   text-wrap: pretty;
+  line-height: 1.34;
 }
 
 .markdown-preview .markdown-image-node {
@@ -346,25 +354,13 @@ textarea {
 
 .markdown-preview ul,
 .markdown-preview ol {
-  padding-left: 1.5em;
-}
-
-.markdown-preview ul {
-  list-style-position: outside;
-  list-style-type: disc;
-}
-
-.markdown-preview ul ul {
-  list-style-type: circle;
-}
-
-.markdown-preview ul ul ul {
-  list-style-type: square;
+  margin: 0.16em 0 0.46em;
 }
 
 .markdown-preview ol {
   list-style-position: outside;
   list-style-type: decimal;
+  padding-left: 1.55em;
 }
 
 .markdown-preview ol ol {
@@ -375,20 +371,11 @@ textarea {
   list-style-type: lower-roman;
 }
 
-.markdown-preview li:not([data-type='taskItem']) {
-  display: list-item;
-}
-
-.markdown-preview li:not([data-type='taskItem'])::marker {
-  color: var(--text-dim);
-  font-size: 0.92em;
-}
-
 .markdown-preview li > ul,
 .markdown-preview li > ol {
   position: relative;
-  margin: 0.42em 0 0.08em 0.32em;
-  padding-left: 1.34em;
+  margin: 0.04em 0 0.04em 0.12em;
+  padding-left: calc(var(--outline-indent) + 0.04em);
   border-left: none;
 }
 
@@ -396,11 +383,57 @@ textarea {
 .markdown-preview li > ol::before {
   content: '';
   position: absolute;
-  left: -0.82em;
-  top: 0.18em;
+  left: calc(var(--outline-indent) * -0.42);
+  top: 0.08em;
   bottom: 0.18em;
   width: 1px;
-  background: color-mix(in srgb, var(--line-strong) 78%, transparent);
+  background: color-mix(in srgb, var(--line-strong) 56%, transparent);
+}
+
+.markdown-preview ul:not([data-type='taskList']) {
+  list-style: none;
+  padding-left: 0;
+}
+
+.markdown-preview ul:not([data-type='taskList']) > li {
+  position: relative;
+  min-height: var(--outline-row-height);
+  padding-left: calc(var(--outline-indent) + 0.02em);
+  list-style: none;
+}
+
+.markdown-preview ul:not([data-type='taskList']) > li > p:first-child,
+.markdown-preview ol > li > p:first-child {
+  display: flex;
+  min-height: var(--outline-row-height);
+  align-items: center;
+  margin: 0;
+  padding: var(--outline-row-padding-y) 0;
+}
+
+.markdown-preview ul:not([data-type='taskList']) > li::before {
+  content: '';
+  position: absolute;
+  left: 0.2em;
+  top: calc(var(--outline-row-padding-y) + ((var(--outline-row-height) - var(--outline-bullet-size)) / 2));
+  width: var(--outline-bullet-size);
+  height: var(--outline-bullet-size);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 84%, transparent);
+}
+
+.markdown-preview ul:not([data-type='taskList']) ul:not([data-type='taskList']) > li::before {
+  width: var(--outline-ring-size);
+  height: var(--outline-ring-size);
+  top: calc(var(--outline-row-padding-y) + ((var(--outline-row-height) - var(--outline-ring-size)) / 2));
+  left: 0.22em;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.15px color-mix(in srgb, var(--text-dim) 90%, transparent);
+}
+
+.markdown-preview ol > li {
+  min-height: var(--outline-row-height);
+  padding-left: 0.08em;
 }
 
 .markdown-preview ul[data-type='taskList'] {
@@ -412,7 +445,8 @@ textarea {
 .markdown-preview ul[data-type='taskList'] > li {
   display: flex;
   align-items: flex-start;
-  gap: 0.65em;
+  min-height: var(--outline-row-height);
+  gap: 0.55em;
   list-style: none;
 }
 
@@ -421,15 +455,47 @@ textarea {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  margin-top: 0.18em;
+  min-height: var(--outline-row-height);
+  margin-top: 0;
 }
 
 .markdown-preview li[data-type='taskItem'] > label input[type='checkbox'],
 .markdown-preview ul[data-type='taskList'] > li > label input[type='checkbox'] {
-  height: 1rem;
-  width: 1rem;
+  appearance: none;
+  -webkit-appearance: none;
+  height: var(--outline-task-marker-size);
+  width: var(--outline-task-marker-size);
   margin: 0;
-  accent-color: var(--accent);
+  border: none;
+  border-radius: 999px;
+  background: radial-gradient(
+    circle at center,
+    color-mix(in srgb, var(--surface-0) 98%, white 2%) 0 var(--outline-task-core-size),
+    color-mix(in srgb, var(--text-dim) 74%, var(--surface-1) 26%)
+      calc(var(--outline-task-core-size) + 0.02em)
+      100%
+  );
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--line-strong) 48%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--surface-0) 24%, transparent);
+}
+
+.markdown-preview li[data-type='taskItem'] > label input[type='checkbox']:checked,
+.markdown-preview ul[data-type='taskList'] > li > label input[type='checkbox']:checked {
+  background: radial-gradient(
+    circle at center,
+    color-mix(in srgb, var(--surface-0) 98%, white 2%) 0 calc(var(--outline-task-core-size) - 0.01em),
+    color-mix(in srgb, var(--accent) 80%, white 6%) calc(var(--outline-task-core-size) + 0.01em) 100%
+  );
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 44%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--surface-0) 24%, transparent);
+}
+
+.markdown-preview li[data-type='taskItem'] > label input[type='checkbox']:focus-visible,
+.markdown-preview ul[data-type='taskList'] > li > label input[type='checkbox']:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  outline-offset: 2px;
 }
 
 .markdown-preview li[data-type='taskItem'] > label span,
@@ -445,6 +511,9 @@ textarea {
 
 .markdown-preview li[data-type='taskItem'] > div > p,
 .markdown-preview ul[data-type='taskList'] > li > div > p {
+  display: flex;
+  min-height: var(--outline-row-height);
+  align-items: center;
   margin: 0;
 }
 
@@ -476,42 +545,25 @@ textarea {
 .markdown-preview li[data-type='taskItem']:has(> div > ul) > div > p:first-child,
 .markdown-preview li[data-type='taskItem']:has(> div > ol) > div > p:first-child {
   position: relative;
-  padding-left: 0.3em;
+  padding-left: 0;
 }
 
 .markdown-preview ul > li:has(> ul) > p:first-child::before,
 .markdown-preview ul > li:has(> ol) > p:first-child::before,
 .markdown-preview li[data-type='taskItem']:has(> div > ul) > div > p:first-child::before,
 .markdown-preview li[data-type='taskItem']:has(> div > ol) > div > p:first-child::before {
-  content: '';
-  position: absolute;
-  left: -1.55em;
-  top: 0.47em;
-  width: 0.72rem;
-  height: 0.72rem;
-  border-radius: 999px;
-  background: var(--surface-0);
-  box-shadow:
-    inset 0 0 0 1.5px color-mix(in srgb, var(--text-dim) 82%, var(--line-strong) 18%),
-    0 0 0 4px var(--surface-0);
-  transition:
-    background 140ms ease,
-    box-shadow 140ms ease,
-    opacity 140ms ease;
+  content: none;
 }
 
 .markdown-preview ul > li[data-collapsed='true']:has(> ul) > p:first-child::before,
 .markdown-preview ul > li[data-collapsed='true']:has(> ol) > p:first-child::before,
 .markdown-preview li[data-type='taskItem'][data-collapsed='true']:has(> div > ul) > div > p:first-child::before,
 .markdown-preview li[data-type='taskItem'][data-collapsed='true']:has(> div > ol) > div > p:first-child::before {
-  background: color-mix(in srgb, var(--text-dim) 84%, var(--surface-0) 16%);
-  box-shadow:
-    inset 0 0 0 1.5px color-mix(in srgb, var(--text-dim) 88%, var(--line-strong) 12%),
-    0 0 0 4px var(--surface-0);
+  content: none;
 }
 
 .markdown-preview li + li {
-  margin-top: 0.25em;
+  margin-top: 0.02em;
 }
 
 .markdown-preview a {
