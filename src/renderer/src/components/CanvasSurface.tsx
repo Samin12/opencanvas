@@ -4082,6 +4082,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           if (selectedTileIds.length > 0) {
             event.preventDefault()
             event.stopPropagation()
+            deleteTiles(selectedTileIds)
             return
           }
 
