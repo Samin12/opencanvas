@@ -531,6 +531,11 @@ interface SidebarProps {
   onCopyWorkspacePath: () => void
   onCreateNote: () => void
   onCreateWorkspaceDirectory: (targetDirectoryPath: string, directoryName: string) => void
+  onCreateWorkspaceDirectoryWithSelection: (
+    sourcePaths: string[],
+    targetDirectoryPath: string,
+    directoryName: string
+  ) => void
   onCreateWorkspaceFile: (targetDirectoryPath: string, fileName: string) => void
   onImportExternalDownload: (
     download: { fileName?: string; mimeType?: string | null; url: string },
@@ -540,7 +545,9 @@ interface SidebarProps {
   onCreateTerminal: (provider: TerminalProvider) => void
   onCopyNodePath: (targetPath: string) => void
   onDeleteNode: (targetPath: string) => void
+  onDeleteNodes: (targetPaths: string[]) => void
   onMoveFile: (sourcePath: string, targetDirectoryPath: string) => void
+  onMoveNodes: (sourcePaths: string[], targetDirectoryPath: string) => void
   onRevealNodeInFinder: (targetPath: string) => void
   onRenameNode: (targetPath: string, nextName: string) => void
   onMoveSidebar: (side: SidebarSide) => void
@@ -576,13 +583,16 @@ function SidebarComponent({
   onCopyWorkspacePath,
   onCreateNote,
   onCreateWorkspaceDirectory,
+  onCreateWorkspaceDirectoryWithSelection,
   onCreateWorkspaceFile,
   onImportExternalDownload,
   onImportExternalPaths,
   onCreateTerminal,
   onCopyNodePath,
   onDeleteNode,
+  onDeleteNodes,
   onMoveFile,
+  onMoveNodes,
   onRevealNodeInFinder,
   onRenameNode,
   onMoveSidebar,
@@ -1071,13 +1081,16 @@ function SidebarComponent({
                 keyboardActive={navigatorSelected}
                 nodes={workspaceTree}
                 onCreateWorkspaceDirectory={onCreateWorkspaceDirectory}
+                onCreateWorkspaceDirectoryWithSelection={onCreateWorkspaceDirectoryWithSelection}
                 onCreateWorkspaceFile={onCreateWorkspaceFile}
                 onCopyNodePath={onCopyNodePath}
                 onDeleteNode={onDeleteNode}
+                onDeleteNodes={onDeleteNodes}
                 onImportExternalDownload={onImportExternalDownload}
                 onImportExternalPaths={onImportExternalPaths}
                 query={fileQuery}
                 onMoveFile={onMoveFile}
+                onMoveNodes={onMoveNodes}
                 onPlaceFile={onPlaceFile}
                 onPlaceFileAtPoint={onPlaceFileAtPoint}
                 onRevealNodeInFinder={onRevealNodeInFinder}

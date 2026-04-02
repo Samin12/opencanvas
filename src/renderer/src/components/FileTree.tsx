@@ -69,15 +69,22 @@ interface FileTreeProps {
   keyboardActive?: boolean
   nodes: FileTreeNode[]
   onCreateWorkspaceDirectory: (targetDirectoryPath: string, directoryName: string) => void
+  onCreateWorkspaceDirectoryWithSelection: (
+    sourcePaths: string[],
+    targetDirectoryPath: string,
+    directoryName: string
+  ) => void
   onCreateWorkspaceFile: (targetDirectoryPath: string, fileName: string) => void
   onCopyNodePath: (targetPath: string) => void
   onDeleteNode: (targetPath: string) => void
+  onDeleteNodes: (targetPaths: string[]) => void
   onImportExternalDownload: (
     download: { fileName?: string; mimeType?: string | null; url: string },
     targetDirectoryPath: string | null
   ) => void
   onImportExternalPaths: (sourcePaths: string[], targetDirectoryPath: string | null) => void
   onMoveFile: (sourcePath: string, targetDirectoryPath: string) => void
+  onMoveNodes: (sourcePaths: string[], targetDirectoryPath: string) => void
   onPlaceFile: (node: FileTreeNode) => void
   onPlaceFileAtPoint: (node: FileTreeNode, clientX: number, clientY: number) => void
   onRevealNodeInFinder: (targetPath: string) => void
@@ -279,6 +286,32 @@ function canMoveNodeIntoDirectory(sourcePath: string, targetDirectoryPath: strin
   return !normalizedTargetDirectoryPath.startsWith(`${normalizedSourcePath}/`)
 }
 
+function dedupeNestedSelectionPaths(paths: string[]) {
+  const uniquePaths = Array.from(new Set(paths.filter(Boolean)))
+  const sortedPaths = [...uniquePaths].sort(
+    (left, right) => normalizeFsPath(left).length - normalizeFsPath(right).length
+  )
+  const acceptedPaths: string[] = []
+
+  for (const candidatePath of sortedPaths) {
+    if (
+      acceptedPaths.some((acceptedPath) =>
+        normalizeFsPath(candidatePath).startsWith(`${normalizeFsPath(acceptedPath)}/`)
+      )
+    ) {
+      continue
+    }
+
+    acceptedPaths.push(candidatePath)
+  }
+
+  return acceptedPaths
+}
+
+function canMoveSelectionIntoDirectory(sourcePaths: string[], targetDirectoryPath: string) {
+  return sourcePaths.every((sourcePath) => canMoveNodeIntoDirectory(sourcePath, targetDirectoryPath))
+}
+
 function parentDirectoryPath(nodePath: string) {
   const separatorIndex = Math.max(nodePath.lastIndexOf('/'), nodePath.lastIndexOf('\\'))
   return separatorIndex <= 0 ? null : nodePath.slice(0, separatorIndex)
@@ -380,9 +413,85 @@ function visibleTreeEntries(
   })
 }
 
+function findTreeNodeByPath(nodes: FileTreeNode[], targetPath: string): FileTreeNode | null {
+  for (const node of nodes) {
+    if (node.path === targetPath) {
+      return node
+    }
+
+    if (node.children?.length) {
+      const nestedMatch = findTreeNodeByPath(node.children, targetPath)
+
+      if (nestedMatch) {
+        return nestedMatch
+      }
+    }
+  }
+
+  return null
+}
+
+function rangeSelectionPaths(
+  entries: VisibleTreeEntry[],
+  startPath: string | null,
+  endPath: string
+) {
+  if (!startPath) {
+    return [endPath]
+  }
+
+  const startIndex = entries.findIndex((entry) => entry.node.path === startPath)
+  const endIndex = entries.findIndex((entry) => entry.node.path === endPath)
+
+  if (startIndex < 0 || endIndex < 0) {
+    return [endPath]
+  }
+
+  const [fromIndex, toIndex] = startIndex <= endIndex ? [startIndex, endIndex] : [endIndex, startIndex]
+  return entries.slice(fromIndex, toIndex + 1).map((entry) => entry.node.path)
+}
+
+function selectionBaseDirectoryPath(paths: string[], rootDirectoryPath: string | null) {
+  if (paths.length === 0) {
+    return rootDirectoryPath
+  }
+
+  const directorySegments = paths
+    .map((path) => parentDirectoryPath(path) ?? rootDirectoryPath)
+    .filter((path): path is string => Boolean(path))
+    .map((path) => normalizeFsPath(path).split('/').filter(Boolean))
+
+  if (directorySegments.length === 0) {
+    return rootDirectoryPath
+  }
+
+  let sharedSegments = [...directorySegments[0]]
+
+  for (const candidateSegments of directorySegments.slice(1)) {
+    let sharedLength = 0
+
+    while (
+      sharedLength < sharedSegments.length &&
+      sharedLength < candidateSegments.length &&
+      sharedSegments[sharedLength] === candidateSegments[sharedLength]
+    ) {
+      sharedLength += 1
+    }
+
+    sharedSegments = sharedSegments.slice(0, sharedLength)
+  }
+
+  if (sharedSegments.length === 0) {
+    return rootDirectoryPath
+  }
+
+  return `${paths[0].startsWith('/') ? '/' : ''}${sharedSegments.join('/')}`
+}
+
 interface TreeContextMenuState {
   directoryPath: string
   node: FileTreeNode | null
+  selectionPaths: string[]
   x: number
   y: number
 }
@@ -390,20 +499,30 @@ interface TreeContextMenuState {
 interface TreeInputDialogState {
   confirmLabel: string
   directoryPath?: string
-  mode: 'create-file' | 'create-folder' | 'rename'
+  mode: 'create-file' | 'create-folder' | 'rename' | 'group-selection'
   node?: FileTreeNode
+  selectionPaths?: string[]
   title: string
   value: string
+}
+
+interface TreeDeleteDialogState {
+  paths: string[]
+  targets: FileTreeNode[]
+}
+
+interface DragSelectionNode {
+  fileKind?: FileTreeNode['fileKind']
+  kind: FileTreeNode['kind']
+  name: string
+  path: string
 }
 
 interface PointerDragState {
   active: boolean
   currentX: number
   currentY: number
-  sourceFileKind?: FileTreeNode['fileKind']
-  sourceKind: FileTreeNode['kind']
-  sourceName: string
-  sourcePath: string
+  sourceNodes: DragSelectionNode[]
   startX: number
   startY: number
 }
@@ -531,12 +650,15 @@ export function FileTree({
   keyboardActive = false,
   nodes,
   onCreateWorkspaceDirectory,
+  onCreateWorkspaceDirectoryWithSelection,
   onCreateWorkspaceFile,
   onCopyNodePath,
   onDeleteNode,
+  onDeleteNodes,
   onImportExternalDownload,
   onImportExternalPaths,
   onMoveFile,
+  onMoveNodes,
   onPlaceFile,
   onPlaceFileAtPoint,
   onRevealNodeInFinder,
@@ -546,13 +668,15 @@ export function FileTree({
   rootDirectoryPath
 }: FileTreeProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [selectedPaths, setSelectedPaths] = useState<string[]>(activePath ? [activePath] : [])
+  const [selectionAnchorPath, setSelectionAnchorPath] = useState<string | null>(activePath)
   const [dragState, setDragState] = useState<PointerDragState | null>(null)
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null)
   const [externalDragActive, setExternalDragActive] = useState(false)
   const [externalDropTargetPath, setExternalDropTargetPath] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<TreeContextMenuState | null>(null)
   const [inputDialog, setInputDialog] = useState<TreeInputDialogState | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<FileTreeNode | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<TreeDeleteDialogState | null>(null)
   const [focusedPath, setFocusedPath] = useState<string | null>(activePath)
   const dragStateRef = useRef<PointerDragState | null>(null)
   const externalDragDepthRef = useRef(0)
@@ -566,6 +690,7 @@ export function FileTree({
   const trimmedQuery = query.trim().toLowerCase()
   const visibleNodes = trimmedQuery ? filterNodes(nodes, trimmedQuery) : nodes
   const queryActive = trimmedQuery.length > 0
+  const selectedPathSet = useMemo(() => new Set(selectedPaths), [selectedPaths])
   const flatVisibleEntries = useMemo(
     () => visibleTreeEntries(visibleNodes, expanded, queryActive),
     [expanded, queryActive, visibleNodes]
@@ -573,6 +698,13 @@ export function FileTree({
 
   useEffect(() => {
     setExpanded((current) => ({ ...collectDirectoryPaths(nodes), ...current }))
+  }, [nodes])
+
+  useEffect(() => {
+    setSelectedPaths((current) => current.filter((path) => Boolean(findTreeNodeByPath(nodes, path))))
+    setSelectionAnchorPath((current) =>
+      current && findTreeNodeByPath(nodes, current) ? current : null
+    )
   }, [nodes])
 
   useEffect(() => {
@@ -608,6 +740,15 @@ export function FileTree({
       return changed ? nextExpanded : current
     })
   }, [activePath, nodes])
+
+  useEffect(() => {
+    if (!keyboardActive || !activePath) {
+      return
+    }
+
+    setSelectedPaths((current) => (current.includes(activePath) ? current : [activePath]))
+    setSelectionAnchorPath((current) => current ?? activePath)
+  }, [activePath, keyboardActive])
 
   useEffect(() => {
     if (keyboardActive) {
@@ -870,6 +1011,30 @@ export function FileTree({
     rowRefs.current.delete(path)
   }
 
+  function resolvedSelectionPaths(candidatePaths: string[]) {
+    return dedupeNestedSelectionPaths(candidatePaths).filter((path) => Boolean(findTreeNodeByPath(nodes, path)))
+  }
+
+  function resolvedSelectionNodes(candidatePaths: string[]) {
+    return resolvedSelectionPaths(candidatePaths)
+      .map((path) => findTreeNodeByPath(nodes, path))
+      .filter((node): node is FileTreeNode => Boolean(node))
+  }
+
+  function setSelectionState(nextPaths: string[], nextAnchorPath: string | null = null) {
+    const resolvedPaths = Array.from(new Set(nextPaths))
+
+    setSelectedPaths(resolvedPaths)
+    setSelectionAnchorPath(nextAnchorPath ?? resolvedPaths[resolvedPaths.length - 1] ?? null)
+  }
+
+  function selectOnlyNode(node: FileTreeNode, options?: { preview?: boolean }) {
+    setSelectionState([node.path], node.path)
+    onSelectNode(node, {
+      preview: options?.preview ?? true
+    })
+  }
+
   function focusNodePath(targetPath: string | null, options?: { preview?: boolean }) {
     if (!targetPath) {
       treeRootRef.current?.focus()
@@ -883,6 +1048,7 @@ export function FileTree({
     }
 
     setFocusedPath(entry.node.path)
+    setSelectionState([entry.node.path], entry.node.path)
     onSelectNode(entry.node, {
       preview: options?.preview ?? false
     })
@@ -901,12 +1067,59 @@ export function FileTree({
     })
   }
 
+  function openDeleteDialogForPaths(paths: string[]) {
+    const targets = resolvedSelectionNodes(paths)
+
+    if (targets.length === 0) {
+      return
+    }
+
+    setContextMenu(null)
+    setDeleteTarget({
+      paths: targets.map((target) => target.path),
+      targets
+    })
+  }
+
+  function openGroupSelectionDialog(paths: string[]) {
+    const resolvedPaths = resolvedSelectionPaths(paths)
+
+    if (resolvedPaths.length === 0) {
+      return
+    }
+
+    setContextMenu(null)
+    setInputDialog({
+      confirmLabel: 'Create Folder',
+      directoryPath: selectionBaseDirectoryPath(resolvedPaths, rootDirectoryPath) ?? rootDirectoryPath ?? undefined,
+      mode: 'group-selection',
+      selectionPaths: resolvedPaths,
+      title: `Create a folder for ${resolvedPaths.length} selected item${resolvedPaths.length === 1 ? '' : 's'}`,
+      value: 'New Folder'
+    })
+  }
+
   function handleTreeKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (!keyboardActive || inputDialog || deleteTarget) {
       return
     }
 
     if (!flatVisibleEntries.length) {
+      return
+    }
+
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+      event.preventDefault()
+      event.stopPropagation()
+      const allVisiblePaths = flatVisibleEntries.map((entry) => entry.node.path)
+      setSelectionState(allVisiblePaths, allVisiblePaths[0] ?? null)
+      return
+    }
+
+    if ((event.key === 'Backspace' || event.key === 'Delete') && selectedPaths.length > 0) {
+      event.preventDefault()
+      event.stopPropagation()
+      openDeleteDialogForPaths(selectedPaths)
       return
     }
 
@@ -1047,7 +1260,7 @@ export function FileTree({
     return pathParts[pathParts.length - 1] ?? targetPath
   }
 
-  function resolveDropTargetFromPoint(clientX: number, clientY: number, sourcePath: string) {
+  function resolveDropTargetFromPoint(clientX: number, clientY: number, sourcePaths: string[]) {
     if (typeof document === 'undefined') {
       return null
     }
@@ -1064,7 +1277,7 @@ export function FileTree({
       dropElement.dataset.fileTreeDropPath ??
       (dropElement.dataset.fileTreeRootDrop === 'true' ? rootDirectoryPath : null)
 
-    if (!candidatePath || !canMoveNodeIntoDirectory(sourcePath, candidatePath)) {
+    if (!candidatePath || !canMoveSelectionIntoDirectory(sourcePaths, candidatePath)) {
       clearPendingExpand()
       return null
     }
@@ -1187,18 +1400,23 @@ export function FileTree({
     event.preventDefault()
     event.stopPropagation()
 
+    const nextSelectionPaths =
+      node && selectedPathSet.has(node.path) ? selectedPaths : node ? [node.path] : selectedPaths
+
     if (node) {
+      setSelectionState(nextSelectionPaths, node.path)
       onSelectNode(node, { preview: false })
     }
 
     const menuWidth = 220
-    const menuHeight = node ? 304 : 132
+    const menuHeight = node || nextSelectionPaths.length > 0 ? 332 : 132
     const nextX = Math.min(event.clientX, Math.max(8, window.innerWidth - menuWidth - 12))
     const nextY = Math.min(event.clientY, Math.max(8, window.innerHeight - menuHeight - 12))
 
     setContextMenu({
       directoryPath,
       node,
+      selectionPaths: resolvedSelectionPaths(nextSelectionPaths),
       x: nextX,
       y: nextY
     })
@@ -1227,8 +1445,7 @@ export function FileTree({
   }
 
   function openDeleteDialog(node: FileTreeNode) {
-    setContextMenu(null)
-    setDeleteTarget(node)
+    openDeleteDialogForPaths([node.path])
   }
 
   function openRenameDialog(node: FileTreeNode) {
@@ -1265,6 +1482,20 @@ export function FileTree({
       return
     }
 
+    if (
+      inputDialog.mode === 'group-selection' &&
+      inputDialog.directoryPath &&
+      inputDialog.selectionPaths?.length
+    ) {
+      onCreateWorkspaceDirectoryWithSelection(
+        inputDialog.selectionPaths,
+        inputDialog.directoryPath,
+        nextValue
+      )
+      setInputDialog(null)
+      return
+    }
+
     if (inputDialog.mode === 'rename' && inputDialog.node && nextValue !== inputDialog.node.name) {
       onRenameNode(inputDialog.node.path, nextValue)
     }
@@ -1287,15 +1518,27 @@ export function FileTree({
       return
     }
 
+    const nextSelectionNodes = (
+      selectedPathSet.has(node.path)
+        ? resolvedSelectionNodes(selectedPaths)
+        : [
+            {
+              ...node
+            }
+          ]
+    ).map((selectedNode) => ({
+      fileKind: selectedNode.kind === 'file' ? selectedNode.fileKind : undefined,
+      kind: selectedNode.kind,
+      name: selectedNode.name,
+      path: selectedNode.path
+    }))
+
     clearPendingExpand()
     const nextDragState: PointerDragState = {
       active: false,
       currentX: event.clientX,
       currentY: event.clientY,
-      sourceFileKind: node.kind === 'file' ? node.fileKind : undefined,
-      sourceKind: node.kind,
-      sourceName: node.name,
-      sourcePath: node.path,
+      sourceNodes: nextSelectionNodes,
       startX: event.clientX,
       startY: event.clientY
     }
@@ -1350,7 +1593,7 @@ export function FileTree({
       const nextDropTargetPath = resolveDropTargetFromPoint(
         event.clientX,
         event.clientY,
-        currentDragState.sourcePath
+        currentDragState.sourceNodes.map((sourceNode) => sourceNode.path)
       )
 
       setDropTargetPath((currentPath) => (currentPath === nextDropTargetPath ? currentPath : nextDropTargetPath))
@@ -1365,11 +1608,16 @@ export function FileTree({
       }
 
       const nextDropTargetPath = currentDragState.active
-        ? resolveDropTargetFromPoint(event.clientX, event.clientY, currentDragState.sourcePath)
+        ? resolveDropTargetFromPoint(
+            event.clientX,
+            event.clientY,
+            currentDragState.sourceNodes.map((sourceNode) => sourceNode.path)
+          )
         : null
       const shouldPlaceOnCanvas =
         currentDragState.active &&
-        currentDragState.sourceKind === 'file' &&
+        currentDragState.sourceNodes.length === 1 &&
+        currentDragState.sourceNodes[0]?.kind === 'file' &&
         !nextDropTargetPath &&
         isCanvasDropTarget(event.clientX, event.clientY)
 
@@ -1387,12 +1635,18 @@ export function FileTree({
       }
 
       if (shouldPlaceOnCanvas) {
+        const sourceNode = currentDragState.sourceNodes[0]
+
+        if (!sourceNode || sourceNode.kind !== 'file') {
+          return
+        }
+
         onPlaceFileAtPoint(
           {
-            fileKind: currentDragState.sourceFileKind,
+            fileKind: sourceNode.fileKind,
             kind: 'file',
-            name: currentDragState.sourceName,
-            path: currentDragState.sourcePath
+            name: sourceNode.name,
+            path: sourceNode.path
           },
           event.clientX,
           event.clientY
@@ -1404,7 +1658,15 @@ export function FileTree({
         return
       }
 
-      onMoveFile(currentDragState.sourcePath, nextDropTargetPath)
+      if (currentDragState.sourceNodes.length === 1) {
+        onMoveFile(currentDragState.sourceNodes[0].path, nextDropTargetPath)
+        return
+      }
+
+      onMoveNodes(
+        currentDragState.sourceNodes.map((sourceNode) => sourceNode.path),
+        nextDropTargetPath
+      )
     }
 
     window.addEventListener('pointermove', handlePointerMove)
@@ -1418,7 +1680,7 @@ export function FileTree({
       window.removeEventListener('pointercancel', clearDragState)
       window.removeEventListener('blur', clearDragState)
     }
-  }, [dragState, expanded, onMoveFile, rootDirectoryPath, trimmedQuery])
+  }, [dragState, onMoveFile, onMoveNodes, trimmedQuery])
 
   function renderTreeGuides(depth: number) {
     return Array.from({ length: depth }, (_, index) => (
@@ -1448,9 +1710,63 @@ export function FileTree({
     )
   }
 
+  function selectNodeFromPointer(
+    event: ReactMouseEvent<HTMLButtonElement>,
+    node: FileTreeNode,
+    options?: { toggleDirectory?: boolean }
+  ) {
+    if (consumeSuppressedClick()) {
+      return
+    }
+
+    if (event.shiftKey) {
+      const nextRangePaths = rangeSelectionPaths(flatVisibleEntries, selectionAnchorPath, node.path)
+      setSelectionState(nextRangePaths, node.path)
+      onSelectNode(node, {
+        preview: false
+      })
+      return
+    }
+
+    if (event.metaKey || event.ctrlKey) {
+      const isCurrentlySelected = selectedPathSet.has(node.path)
+      const nextPaths = isCurrentlySelected
+        ? selectedPaths.filter((path) => path !== node.path)
+        : [...selectedPaths, node.path]
+
+      if (nextPaths.length === 0) {
+        setSelectionState([node.path], node.path)
+        onSelectNode(node, {
+          preview: false
+        })
+        return
+      }
+
+      setSelectionState(nextPaths, node.path)
+
+      if (!isCurrentlySelected) {
+        onSelectNode(node, {
+          preview: false
+        })
+      }
+
+      return
+    }
+
+    selectOnlyNode(node, {
+      preview: node.kind === 'file'
+    })
+
+    if (options?.toggleDirectory && node.kind === 'directory') {
+      toggleDirectory(node.path)
+    }
+  }
+
   function renderEntry(entry: VisibleTreeEntry) {
     const { depth, node, parentPath } = entry
     const isFocused = focusedPath === node.path
+    const isSelected = selectedPathSet.has(node.path)
+    const isActive = activePath === node.path
     const rowPaddingLeft = depth * TREE_INDENT_STEP + TREE_ROW_START_PADDING
 
     if (node.kind === 'directory') {
@@ -1470,16 +1786,19 @@ export function FileTree({
             role="treeitem"
             aria-expanded={isExpanded}
             aria-level={depth + 1}
-            aria-selected={activePath === node.path}
+            aria-selected={isSelected || isActive}
             tabIndex={keyboardActive && isFocused ? 0 : -1}
             className={clsx(
               'flex w-full cursor-grab items-center gap-1.5 rounded-[var(--radius-control)] border border-transparent py-[3px] pr-1.5 text-left text-[11px] font-medium leading-[1.2rem] transition active:cursor-grabbing focus-visible:outline-none',
               'hover:bg-[var(--nav-surface-hover)]',
-              activePath === node.path &&
+              isSelected &&
                 'border-[color:color-mix(in_srgb,var(--accent)_24%,var(--line-strong))] bg-[color:color-mix(in_srgb,var(--accent-soft)_52%,var(--surface-selected))] text-[var(--text)]',
+              !isSelected &&
+                isActive &&
+                'border-[color:var(--line-strong)] bg-[color:color-mix(in_srgb,var(--surface-selected)_84%,transparent)] text-[var(--text)]',
               isFocused &&
                 'border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent-soft)_62%,transparent)] text-[var(--text)]',
-              dragState?.sourcePath === node.path && 'opacity-55',
+              dragState?.sourceNodes.some((sourceNode) => sourceNode.path === node.path) && 'opacity-55',
               isDropTarget && 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
             )}
             style={{ paddingLeft: `${rowPaddingLeft}px` }}
@@ -1489,14 +1808,7 @@ export function FileTree({
                 event.stopPropagation()
               }
             }}
-            onClick={() => {
-              if (consumeSuppressedClick()) {
-                return
-              }
-
-              onSelectNode(node)
-              toggleDirectory(node.path)
-            }}
+            onClick={(event) => selectNodeFromPointer(event, node, { toggleDirectory: true })}
             onFocus={() => setFocusedPath(node.path)}
             onDragEnterCapture={handleExternalDragEnter}
             onDragLeaveCapture={handleExternalDragLeave}
@@ -1520,7 +1832,7 @@ export function FileTree({
             <span
               className={clsx(
                 'ml-2 shrink-0 rounded-full border px-1.5 py-[1px] text-center text-[9px] font-medium leading-none',
-                activePath === node.path || dropTargetPath === node.path
+                isSelected || isActive || dropTargetPath === node.path
                   ? 'border-current/24 bg-white/12 text-current'
                   : 'border-[color:var(--line)] bg-[var(--nav-badge)] text-[var(--text-faint)]'
               )}
@@ -1551,13 +1863,15 @@ export function FileTree({
           data-file-tree-drop-path={parentDropTargetPath ?? undefined}
           role="treeitem"
           aria-level={depth + 1}
-          aria-selected={activePath === node.path}
+          aria-selected={isSelected || isActive}
           tabIndex={keyboardActive && isFocused ? 0 : -1}
           className={clsx(
             'flex w-full cursor-grab items-center gap-1.5 rounded-[var(--radius-control)] border border-transparent py-[3px] pr-1.5 text-left text-[11px] font-medium leading-[1.2rem] transition active:cursor-grabbing focus-visible:outline-none',
-            dragState?.sourcePath === node.path && 'opacity-55',
-            activePath === node.path
+            dragState?.sourceNodes.some((sourceNode) => sourceNode.path === node.path) && 'opacity-55',
+            isSelected
               ? 'border-[color:color-mix(in_srgb,var(--accent)_24%,var(--line-strong))] bg-[color:color-mix(in_srgb,var(--accent-soft)_52%,var(--surface-selected))] text-[var(--text)]'
+              : isActive
+                ? 'border-[color:var(--line-strong)] bg-[color:color-mix(in_srgb,var(--surface-selected)_84%,transparent)] text-[var(--text)]'
               : 'text-[var(--text-dim)] hover:bg-[var(--nav-surface-hover)]',
             isFocused &&
               'border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent-soft)_62%,transparent)] text-[var(--text)]',
@@ -1572,13 +1886,7 @@ export function FileTree({
               event.stopPropagation()
             }
           }}
-          onClick={() => {
-            if (consumeSuppressedClick()) {
-              return
-            }
-
-            onSelectNode(node)
-          }}
+          onClick={(event) => selectNodeFromPointer(event, node)}
           onFocus={() => setFocusedPath(node.path)}
           onDragEnterCapture={handleExternalDragEnter}
           onDragLeaveCapture={handleExternalDragLeave}
@@ -1677,7 +1985,7 @@ export function FileTree({
       aria-label="Workspace file tree"
       tabIndex={-1}
       className={clsx(
-        'space-y-px font-[var(--font-ui)] text-[11px] outline-none',
+        'min-h-full space-y-px font-[var(--font-ui)] text-[11px] outline-none',
         dragState?.active && 'select-none'
       )}
       data-file-tree-root-drop={rootDirectoryPath ? 'true' : undefined}
@@ -1741,18 +2049,22 @@ export function FileTree({
               }}
             >
               <span className="shrink-0 text-[var(--text-faint)]">
-                {dragState.sourceKind === 'directory' ? (
+                {dragState.sourceNodes[0]?.kind === 'directory' ? (
                   <FolderIcon />
                 ) : (
                   <FileKindIcon
                     darkMode={darkMode}
-                    fileKind={dragState.sourceFileKind}
-                    fileName={dragState.sourceName}
+                    fileKind={dragState.sourceNodes[0]?.fileKind}
+                    fileName={dragState.sourceNodes[0]?.name}
                   />
                 )}
               </span>
               <div className="min-w-0">
-                <div className="truncate font-medium text-[var(--text)]">{dragState.sourceName}</div>
+                <div className="truncate font-medium text-[var(--text)]">
+                  {dragState.sourceNodes.length > 1
+                    ? `${dragState.sourceNodes.length} selected items`
+                    : dragState.sourceNodes[0]?.name}
+                </div>
                 <div className="truncate text-[10px] text-[var(--text-faint)]">
                   {dropTargetPath ? `Move to ${dropTargetLabel(dropTargetPath)}` : 'Drag into a folder or back to root'}
                 </div>
@@ -1783,7 +2095,28 @@ export function FileTree({
             <span>New Folder</span>
             <span className="text-[var(--text-faint)]">+</span>
           </button>
-          {contextMenu.node ? (
+          {contextMenu.selectionPaths.length > 1 ? (
+            <>
+              <div className="my-1 h-px bg-[var(--line)]" />
+              <button
+                className="flex w-full items-center justify-between rounded-[var(--radius-control)] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
+                onClick={() => openGroupSelectionDialog(contextMenu.selectionPaths)}
+              >
+                <span>
+                  New Folder From Selection
+                </span>
+                <span className="text-[var(--text-faint)]">↘</span>
+              </button>
+              <button
+                className="flex w-full items-center justify-between rounded-[var(--radius-control)] px-3 py-2 text-left text-[12px] font-medium text-[var(--danger,#b95151)] transition hover:bg-[var(--surface-0)]"
+                onClick={() => openDeleteDialogForPaths(contextMenu.selectionPaths)}
+              >
+                <span>{contextMenu.selectionPaths.length > 1 ? 'Delete Selected' : 'Delete'}</span>
+                <span className="text-[var(--text-faint)]">⌫</span>
+              </button>
+            </>
+          ) : null}
+          {contextMenu.node && contextMenu.selectionPaths.length === 1 ? (
             <>
               <div className="my-1 h-px bg-[var(--line)]" />
               <button
@@ -1834,6 +2167,8 @@ export function FileTree({
                 <div className="mt-1 text-[12px] text-[var(--text-dim)]">
                   {inputDialog.mode === 'rename'
                     ? 'Enter the new name for this workspace item.'
+                    : inputDialog.mode === 'group-selection'
+                      ? 'This creates a folder, then moves the selected items into it.'
                     : 'This will be created in the selected folder.'}
                 </div>
                 <form
@@ -1890,12 +2225,14 @@ export function FileTree({
                 onMouseDown={(event) => event.stopPropagation()}
               >
                 <div className="text-[13px] font-semibold text-[var(--text)]">
-                  Delete {deleteTarget.kind === 'directory' ? 'folder' : 'file'}?
+                  Delete {deleteTarget.targets.length > 1 ? 'selected items' : deleteTarget.targets[0]?.kind === 'directory' ? 'folder' : 'file'}?
                 </div>
                 <div className="mt-2 text-[12px] leading-5 text-[var(--text-dim)]">
-                  {deleteTarget.kind === 'directory'
-                    ? `Delete “${deleteTarget.name}” and everything inside it?`
-                    : `Delete “${deleteTarget.name}”?`}
+                  {deleteTarget.targets.length > 1
+                    ? `Delete ${deleteTarget.targets.length} selected items? Any folders in the selection will be deleted with everything inside them.`
+                    : deleteTarget.targets[0]?.kind === 'directory'
+                      ? `Delete “${deleteTarget.targets[0].name}” and everything inside it?`
+                      : `Delete “${deleteTarget.targets[0]?.name}”?`}
                 </div>
                 <div className="mt-4 flex items-center justify-end gap-2">
                   <button
@@ -1909,7 +2246,11 @@ export function FileTree({
                     type="button"
                     className="rounded-[var(--radius-control)] border border-[color:var(--error-line)] bg-[var(--error-bg)] px-3 py-2 text-[12px] font-medium text-[var(--error-text)] transition hover:brightness-[0.98]"
                     onClick={() => {
-                      onDeleteNode(deleteTarget.path)
+                      if (deleteTarget.paths.length > 1) {
+                        onDeleteNodes(deleteTarget.paths)
+                      } else if (deleteTarget.paths[0]) {
+                        onDeleteNode(deleteTarget.paths[0])
+                      }
                       setDeleteTarget(null)
                     }}
                   >

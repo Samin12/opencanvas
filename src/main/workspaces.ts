@@ -42,6 +42,7 @@ const IGNORED_DIRECTORIES = new Set([
 ])
 const WORKSPACE_METADATA_DIRECTORY = '.claude-canvas'
 const WORKSPACE_ASSETS_DIRECTORY = 'assets'
+const WORKSPACE_CANVAS_FILES_DIRECTORY = 'canvas-files'
 const watchedFiles = new Map<string, Set<() => void>>()
 const ASSET_MIME_EXTENSIONS = new Map<string, string>([
   ['image/gif', '.gif'],
@@ -112,6 +113,22 @@ function isWithinWorkspace(workspacePath: string, targetPath: string) {
   const relativePath = relative(workspaceRoot, candidatePath)
 
   return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath))
+}
+
+function isSameOrDescendantPath(candidatePath: string, targetPath: string) {
+  const resolvedCandidatePath = resolve(candidatePath)
+  const resolvedTargetPath = resolve(targetPath)
+  const relativePath = relative(resolvedTargetPath, resolvedCandidatePath)
+
+  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath))
+}
+
+function workspaceMetadataPath(workspacePath: string) {
+  return join(resolve(workspacePath), WORKSPACE_METADATA_DIRECTORY)
+}
+
+function workspaceCanvasFilesPath(workspacePath: string) {
+  return join(workspaceMetadataPath(workspacePath), WORKSPACE_CANVAS_FILES_DIRECTORY)
 }
 
 function normalizeNameSegment(input: string, fallback: string) {
@@ -489,7 +506,18 @@ export async function createWorkspaceNote(
     throw new Error('Note target is outside the active workspace')
   }
 
-  const targetDirectoryStats = await stat(resolvedTargetDirectoryPath)
+  let targetDirectoryStats
+
+  try {
+    targetDirectoryStats = await stat(resolvedTargetDirectoryPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error
+    }
+
+    await mkdir(resolvedTargetDirectoryPath, { recursive: true })
+    targetDirectoryStats = await stat(resolvedTargetDirectoryPath)
+  }
 
   if (!targetDirectoryStats.isDirectory()) {
     throw new Error('Note target must be a directory')
@@ -517,7 +545,18 @@ export async function createWorkspaceFile(
     throw new Error('File target is outside the active workspace')
   }
 
-  const targetDirectoryStats = await stat(resolvedTargetDirectoryPath)
+  let targetDirectoryStats
+
+  try {
+    targetDirectoryStats = await stat(resolvedTargetDirectoryPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error
+    }
+
+    await mkdir(resolvedTargetDirectoryPath, { recursive: true })
+    targetDirectoryStats = await stat(resolvedTargetDirectoryPath)
+  }
 
   if (!targetDirectoryStats.isDirectory()) {
     throw new Error('File target must be a directory')

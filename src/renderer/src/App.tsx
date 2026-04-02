@@ -94,8 +94,22 @@ function workspaceMetadataPath(workspacePath: string): string {
   return `${workspacePath}/.claude-canvas`
 }
 
+function workspaceCanvasFilesPath(workspacePath: string): string {
+  return `${workspaceMetadataPath(workspacePath)}/canvas-files`
+}
+
 function workspaceCanvasStatePath(workspacePath: string): string {
   return `${workspaceMetadataPath(workspacePath)}/canvas.json`
+}
+
+function defaultWorkspaceContentPath(workspacePath: string, preferredTargetPath?: string | null) {
+  if (!preferredTargetPath) {
+    return workspaceCanvasFilesPath(workspacePath)
+  }
+
+  return normalizeFsPath(preferredTargetPath) === normalizeFsPath(workspacePath)
+    ? workspaceCanvasFilesPath(workspacePath)
+    : preferredTargetPath
 }
 
 function findNodeByPath(nodes: FileTreeNode[], targetPath: string): FileTreeNode | null {
@@ -178,6 +192,46 @@ function replacePathPrefix(candidatePath: string, fromPath: string, toPath: stri
   }
 
   return `${normalizedToPath}${normalizedCandidatePath.slice(normalizedFromPath.length)}`
+}
+
+function dedupeNestedPaths(paths: string[]) {
+  const uniquePaths = Array.from(new Set(paths.filter(Boolean)))
+  const sortedPaths = [...uniquePaths].sort(
+    (left, right) => normalizeFsPath(left).length - normalizeFsPath(right).length
+  )
+  const acceptedPaths: string[] = []
+
+  for (const candidatePath of sortedPaths) {
+    if (acceptedPaths.some((acceptedPath) => isSameOrDescendantPath(candidatePath, acceptedPath))) {
+      continue
+    }
+
+    acceptedPaths.push(candidatePath)
+  }
+
+  return acceptedPaths
+}
+
+interface PathMoveOperation {
+  fromPath: string
+  toPath: string
+}
+
+function rebasePathThroughOperations(
+  candidatePath: string | null | undefined,
+  operations: PathMoveOperation[]
+) {
+  if (!candidatePath) {
+    return null
+  }
+
+  for (const operation of operations) {
+    if (isSameOrDescendantPath(candidatePath, operation.fromPath)) {
+      return replacePathPrefix(candidatePath, operation.fromPath, operation.toPath)
+    }
+  }
+
+  return candidatePath
 }
 
 function fileNameFromPath(targetPath: string) {
@@ -365,14 +419,17 @@ export default function App() {
     }
 
     if (!selectedTreePath) {
-      return activeWorkspace
+      return defaultWorkspaceContentPath(activeWorkspace)
     }
 
     if (selectedTreeNode?.kind === 'directory') {
-      return selectedTreeNode.path
+      return defaultWorkspaceContentPath(activeWorkspace, selectedTreeNode.path)
     }
 
-    return findDirectoryPathForNode(workspaceTree, selectedTreePath) ?? activeWorkspace
+    return defaultWorkspaceContentPath(
+      activeWorkspace,
+      findDirectoryPathForNode(workspaceTree, selectedTreePath) ?? activeWorkspace
+    )
   }, [activeWorkspace, selectedTreeNode, selectedTreePath, workspaceTree])
 
   function activateNavigatorSurface() {
@@ -1491,9 +1548,10 @@ export default function App() {
     initialContent?: string
     targetDirectoryPath?: string
   }): Promise<FileTreeNode | null> {
-    const workspaceRoot = activeWorkspace ?? options?.targetDirectoryPath ?? null
+    const workspaceRoot = activeWorkspace
 
     if (!workspaceRoot) {
+      setWorkspaceError('Open a workspace before creating a markdown note.')
       return null
     }
 
@@ -1501,7 +1559,10 @@ export default function App() {
       const createdNode = await window.collaborator.createWorkspaceNote(workspaceRoot, {
         baseName: options?.baseName,
         initialContent: options?.initialContent,
-        targetDirectoryPath: options?.targetDirectoryPath ?? noteTargetPath ?? workspaceRoot
+        targetDirectoryPath: defaultWorkspaceContentPath(
+          workspaceRoot,
+          options?.targetDirectoryPath ?? noteTargetPath ?? workspaceRoot
+        )
       })
 
       if (!activeWorkspace) {
@@ -1774,6 +1835,9 @@ export default function App() {
       const rebasedSelectedPath = isSameOrDescendantPath(selectedTreePath, sourcePath)
         ? replacePathPrefix(selectedTreePath ?? '', sourcePath, movedNode.path)
         : null
+      const rebasedCanvasSelectedPath = isSameOrDescendantPath(canvasSelectedFilePath, sourcePath)
+        ? replacePathPrefix(canvasSelectedFilePath ?? '', sourcePath, movedNode.path)
+        : null
 
       if (rebasedViewerPath) {
         const nextViewerNode = findNodeByPath(nextTree, rebasedViewerPath)
@@ -1783,6 +1847,11 @@ export default function App() {
       if (rebasedSelectedPath) {
         const nextSelectedNode = findNodeByPath(nextTree, rebasedSelectedPath)
         setSelectedTreePath(nextSelectedNode?.path ?? null)
+      }
+
+      if (rebasedCanvasSelectedPath) {
+        const nextCanvasSelectedNode = findNodeByPath(nextTree, rebasedCanvasSelectedPath)
+        setCanvasSelectedFilePath(nextCanvasSelectedNode?.kind === 'file' ? nextCanvasSelectedNode.path : null)
       }
 
       const currentCanvasState = canvasStateRef.current
@@ -1836,6 +1905,9 @@ export default function App() {
       const rebasedSelectedPath = isSameOrDescendantPath(selectedTreePath, targetPath)
         ? replacePathPrefix(selectedTreePath ?? '', targetPath, renamedNode.path)
         : null
+      const rebasedCanvasSelectedPath = isSameOrDescendantPath(canvasSelectedFilePath, targetPath)
+        ? replacePathPrefix(canvasSelectedFilePath ?? '', targetPath, renamedNode.path)
+        : null
 
       if (rebasedViewerPath) {
         const nextViewerNode = findNodeByPath(nextTree, rebasedViewerPath)
@@ -1845,6 +1917,11 @@ export default function App() {
       if (rebasedSelectedPath) {
         const nextSelectedNode = findNodeByPath(nextTree, rebasedSelectedPath)
         setSelectedTreePath(nextSelectedNode?.path ?? null)
+      }
+
+      if (rebasedCanvasSelectedPath) {
+        const nextCanvasSelectedNode = findNodeByPath(nextTree, rebasedCanvasSelectedPath)
+        setCanvasSelectedFilePath(nextCanvasSelectedNode?.kind === 'file' ? nextCanvasSelectedNode.path : null)
       }
 
       const currentCanvasState = canvasStateRef.current
@@ -1892,7 +1969,7 @@ export default function App() {
     try {
       const createdNode = await window.collaborator.createWorkspaceFile(activeWorkspace, {
         fileName,
-        targetDirectoryPath
+        targetDirectoryPath: defaultWorkspaceContentPath(activeWorkspace, targetDirectoryPath)
       })
       const nextTree = await refreshWorkspaceTree(activeWorkspace)
       const nextNode = findNodeByPath(nextTree, createdNode.path) ?? createdNode
@@ -1951,6 +2028,10 @@ export default function App() {
         setSelectedTreePath(null)
       }
 
+      if (isSameOrDescendantPath(canvasSelectedFilePath, targetPath)) {
+        setCanvasSelectedFilePath(null)
+      }
+
       const currentCanvasState = canvasStateRef.current
 
       if (currentCanvasState) {
@@ -1987,6 +2068,277 @@ export default function App() {
         error instanceof Error && error.message
           ? `That item could not be deleted: ${error.message}`
           : 'That item could not be deleted.'
+      )
+    }
+  }
+
+  async function moveWorkspaceNodes(sourcePaths: string[], targetDirectoryPath: string) {
+    if (!activeWorkspace) {
+      return
+    }
+
+    const normalizedSourcePaths = dedupeNestedPaths(sourcePaths).filter(
+      (sourcePath) =>
+        normalizeFsPath(sourcePath) !== normalizeFsPath(targetDirectoryPath) &&
+        normalizeFsPath(findDirectoryPathForNode(workspaceTree, sourcePath) ?? '') !==
+          normalizeFsPath(targetDirectoryPath)
+    )
+
+    if (normalizedSourcePaths.length === 0) {
+      return
+    }
+
+    try {
+      const moveOperations: PathMoveOperation[] = []
+
+      for (const sourcePath of normalizedSourcePaths) {
+        const movedNode = await window.collaborator.moveWorkspaceNode(
+          activeWorkspace,
+          sourcePath,
+          targetDirectoryPath
+        )
+
+        moveOperations.push({
+          fromPath: sourcePath,
+          toPath: movedNode.path
+        })
+      }
+
+      const nextTree = await refreshWorkspaceTree(activeWorkspace)
+      const rebasedViewerPath = rebasePathThroughOperations(viewerFile?.path, moveOperations)
+      const rebasedSelectedPath = rebasePathThroughOperations(selectedTreePath, moveOperations)
+      const rebasedCanvasSelectedPath = rebasePathThroughOperations(
+        canvasSelectedFilePath,
+        moveOperations
+      )
+
+      if (rebasedViewerPath) {
+        const nextViewerNode = findNodeByPath(nextTree, rebasedViewerPath)
+        setViewerFile(nextViewerNode?.kind === 'file' ? nextViewerNode : null)
+      }
+
+      if (rebasedSelectedPath) {
+        const nextSelectedNode = findNodeByPath(nextTree, rebasedSelectedPath)
+        setSelectedTreePath(nextSelectedNode?.path ?? null)
+      }
+
+      if (rebasedCanvasSelectedPath) {
+        const nextCanvasSelectedNode = findNodeByPath(nextTree, rebasedCanvasSelectedPath)
+        setCanvasSelectedFilePath(nextCanvasSelectedNode?.kind === 'file' ? nextCanvasSelectedNode.path : null)
+      }
+
+      const currentCanvasState = canvasStateRef.current
+
+      if (currentCanvasState) {
+        const nextCanvasState: CanvasState = {
+          ...currentCanvasState,
+          tiles: currentCanvasState.tiles.map((tile) => {
+            const matchingMove = moveOperations.find((operation) =>
+              isSameOrDescendantPath(tile.filePath, operation.fromPath)
+            )
+
+            if (!matchingMove) {
+              return tile
+            }
+
+            const nextTilePath = replacePathPrefix(
+              tile.filePath ?? '',
+              matchingMove.fromPath,
+              matchingMove.toPath
+            )
+
+            return {
+              ...tile,
+              filePath: nextTilePath,
+              title:
+                tile.filePath === matchingMove.fromPath
+                  ? fileNameFromPath(matchingMove.toPath)
+                  : fileNameFromPath(nextTilePath)
+            }
+          })
+        }
+
+        handleCanvasStateChange(nextCanvasState, { immediate: true })
+      }
+
+      setWorkspaceError(null)
+    } catch (error) {
+      setWorkspaceError(
+        error instanceof Error && error.message
+          ? `Those items could not be moved: ${error.message}`
+          : 'Those items could not be moved.'
+      )
+    }
+  }
+
+  async function deleteWorkspaceNodes(targetPaths: string[]) {
+    if (!activeWorkspace) {
+      return
+    }
+
+    const normalizedTargetPaths = dedupeNestedPaths(targetPaths)
+
+    if (normalizedTargetPaths.length === 0) {
+      return
+    }
+
+    try {
+      for (const targetPath of normalizedTargetPaths) {
+        await window.collaborator.deleteWorkspaceNode(activeWorkspace, targetPath)
+      }
+
+      await refreshWorkspaceTree(activeWorkspace)
+
+      if (normalizedTargetPaths.some((targetPath) => isSameOrDescendantPath(viewerFile?.path, targetPath))) {
+        setViewerFile(null)
+      }
+
+      if (normalizedTargetPaths.some((targetPath) => isSameOrDescendantPath(selectedTreePath, targetPath))) {
+        setSelectedTreePath(null)
+      }
+
+      if (
+        normalizedTargetPaths.some((targetPath) =>
+          isSameOrDescendantPath(canvasSelectedFilePath, targetPath)
+        )
+      ) {
+        setCanvasSelectedFilePath(null)
+      }
+
+      const currentCanvasState = canvasStateRef.current
+
+      if (currentCanvasState) {
+        const removedTileIds = new Set(
+          currentCanvasState.tiles
+            .filter((tile) =>
+              normalizedTargetPaths.some((targetPath) => isSameOrDescendantPath(tile.filePath, targetPath))
+            )
+            .map((tile) => tile.id)
+        )
+
+        if (removedTileIds.size > 0) {
+          const nextCanvasState: CanvasState = {
+            ...currentCanvasState,
+            tiles: currentCanvasState.tiles
+              .filter((tile) => !removedTileIds.has(tile.id))
+              .map((tile) =>
+                tile.type === 'term'
+                  ? {
+                      ...tile,
+                      contextTileIds: (tile.contextTileIds ?? []).filter(
+                        (contextTileId) => !removedTileIds.has(contextTileId)
+                      )
+                    }
+                  : tile
+              )
+          }
+
+          handleCanvasStateChange(nextCanvasState, { immediate: true })
+        }
+      }
+
+      setWorkspaceError(null)
+    } catch (error) {
+      setWorkspaceError(
+        error instanceof Error && error.message
+          ? `Those items could not be deleted: ${error.message}`
+          : 'Those items could not be deleted.'
+      )
+    }
+  }
+
+  async function createWorkspaceDirectoryWithSelection(
+    sourcePaths: string[],
+    targetDirectoryPath: string,
+    directoryName: string
+  ) {
+    if (!activeWorkspace) {
+      return
+    }
+
+    const normalizedSourcePaths = dedupeNestedPaths(sourcePaths)
+
+    if (normalizedSourcePaths.length === 0) {
+      return
+    }
+
+    try {
+      const createdDirectory = await window.collaborator.createWorkspaceDirectory(activeWorkspace, {
+        directoryName,
+        targetDirectoryPath
+      })
+
+      const moveOperations: PathMoveOperation[] = []
+
+      for (const sourcePath of normalizedSourcePaths) {
+        const movedNode = await window.collaborator.moveWorkspaceNode(
+          activeWorkspace,
+          sourcePath,
+          createdDirectory.path
+        )
+
+        moveOperations.push({
+          fromPath: sourcePath,
+          toPath: movedNode.path
+        })
+      }
+
+      const nextTree = await refreshWorkspaceTree(activeWorkspace)
+      const nextDirectoryNode = findNodeByPath(nextTree, createdDirectory.path)
+
+      setSelectedTreePath(nextDirectoryNode?.path ?? createdDirectory.path)
+      setViewerFile(null)
+
+      const rebasedCanvasSelectedPath = rebasePathThroughOperations(
+        canvasSelectedFilePath,
+        moveOperations
+      )
+
+      if (rebasedCanvasSelectedPath) {
+        const nextCanvasSelectedNode = findNodeByPath(nextTree, rebasedCanvasSelectedPath)
+        setCanvasSelectedFilePath(nextCanvasSelectedNode?.kind === 'file' ? nextCanvasSelectedNode.path : null)
+      }
+
+      const currentCanvasState = canvasStateRef.current
+
+      if (currentCanvasState) {
+        const nextCanvasState: CanvasState = {
+          ...currentCanvasState,
+          tiles: currentCanvasState.tiles.map((tile) => {
+            const matchingMove = moveOperations.find((operation) =>
+              isSameOrDescendantPath(tile.filePath, operation.fromPath)
+            )
+
+            if (!matchingMove) {
+              return tile
+            }
+
+            const nextTilePath = replacePathPrefix(
+              tile.filePath ?? '',
+              matchingMove.fromPath,
+              matchingMove.toPath
+            )
+
+            return {
+              ...tile,
+              filePath: nextTilePath,
+              title:
+                tile.filePath === matchingMove.fromPath
+                  ? fileNameFromPath(matchingMove.toPath)
+                  : fileNameFromPath(nextTilePath)
+            }
+          })
+        }
+
+        handleCanvasStateChange(nextCanvasState, { immediate: true })
+      }
+
+      setWorkspaceError(null)
+    } catch (error) {
+      setWorkspaceError(
+        error instanceof Error && error.message
+          ? `That folder could not be created from the selection: ${error.message}`
+          : 'That folder could not be created from the selection.'
       )
     }
   }
@@ -2196,6 +2548,9 @@ export default function App() {
               onCreateWorkspaceDirectory={(targetDirectoryPath, directoryName) =>
                 void createWorkspaceDirectory(targetDirectoryPath, directoryName)
               }
+              onCreateWorkspaceDirectoryWithSelection={(sourcePaths, targetDirectoryPath, directoryName) =>
+                void createWorkspaceDirectoryWithSelection(sourcePaths, targetDirectoryPath, directoryName)
+              }
               onCreateWorkspaceFile={(targetDirectoryPath, fileName) =>
                 void createWorkspaceFile(targetDirectoryPath, fileName)
               }
@@ -2212,8 +2567,12 @@ export default function App() {
               onCreateTerminal={createTerminal}
               onCopyNodePath={(targetPath) => void copyWorkspaceNodePath(targetPath)}
               onDeleteNode={(targetPath) => void deleteWorkspaceNode(targetPath)}
+              onDeleteNodes={(targetPaths) => void deleteWorkspaceNodes(targetPaths)}
               onMoveFile={(sourcePath, targetDirectoryPath) =>
                 void moveFileIntoDirectory(sourcePath, targetDirectoryPath)
+              }
+              onMoveNodes={(sourcePaths, targetDirectoryPath) =>
+                void moveWorkspaceNodes(sourcePaths, targetDirectoryPath)
               }
               onRevealNodeInFinder={(targetPath) => void revealWorkspaceNodeInFinder(targetPath)}
               onRenameNode={renameWorkspaceNode}
@@ -2461,6 +2820,9 @@ export default function App() {
               onCreateWorkspaceDirectory={(targetDirectoryPath, directoryName) =>
                 void createWorkspaceDirectory(targetDirectoryPath, directoryName)
               }
+              onCreateWorkspaceDirectoryWithSelection={(sourcePaths, targetDirectoryPath, directoryName) =>
+                void createWorkspaceDirectoryWithSelection(sourcePaths, targetDirectoryPath, directoryName)
+              }
               onCreateWorkspaceFile={(targetDirectoryPath, fileName) =>
                 void createWorkspaceFile(targetDirectoryPath, fileName)
               }
@@ -2477,8 +2839,12 @@ export default function App() {
               onCreateTerminal={createTerminal}
               onCopyNodePath={(targetPath) => void copyWorkspaceNodePath(targetPath)}
               onDeleteNode={(targetPath) => void deleteWorkspaceNode(targetPath)}
+              onDeleteNodes={(targetPaths) => void deleteWorkspaceNodes(targetPaths)}
               onMoveFile={(sourcePath, targetDirectoryPath) =>
                 void moveFileIntoDirectory(sourcePath, targetDirectoryPath)
+              }
+              onMoveNodes={(sourcePaths, targetDirectoryPath) =>
+                void moveWorkspaceNodes(sourcePaths, targetDirectoryPath)
               }
               onRevealNodeInFinder={(targetPath) => void revealWorkspaceNodeInFinder(targetPath)}
               onRenameNode={renameWorkspaceNode}
