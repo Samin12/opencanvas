@@ -2032,7 +2032,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       setLinkSourceTileId((current) => (current === tileId ? null : tileId))
     }
 
-    function beginConnectionDrag(tileId: string, event: ReactPointerEvent<HTMLDivElement>) {
+    function beginConnectionDrag(tileId: string, event: ReactPointerEvent<HTMLElement>) {
       const tile = tileById(tileId)
 
       if (!isContextSourceTile(tile)) {
@@ -4410,7 +4410,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
     }, [onStateChange])
 
-    function beginTileDrag(tile: CanvasTile, event: ReactPointerEvent<HTMLDivElement>) {
+    function beginTileDrag(tile: CanvasTile, event: ReactPointerEvent<HTMLElement>) {
       const draggedTileIds =
         selectedTileIds.includes(tile.id) && selectedTileIds.length > 1 ? selectedTileIds : [tile.id]
 
@@ -4429,7 +4429,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
     }
 
-    function beginTileResize(tile: CanvasTile, handle: ResizeHandle, event: ReactPointerEvent<HTMLDivElement>) {
+    function beginTileResize(tile: CanvasTile, handle: ResizeHandle, event: ReactPointerEvent<HTMLElement>) {
       bringTileToFront(tile.id)
       interactionRef.current = {
         type: 'resize',
@@ -4818,6 +4818,325 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const selectedTileIdSet = new Set(selectedTileIds)
     const multiSelectedTiles = selectedTileIds.length > 1
     const activeTileSelectionBounds = tileSelectionBox ? selectionBoxBounds(tileSelectionBox) : null
+    const sortedTiles = state.tiles.slice().sort((left, right) => left.zIndex - right.zIndex)
+    const contentTiles = sortedTiles.filter((tile) => tile.type !== 'term')
+    const terminalTiles = sortedTiles.filter((tile) => tile.type === 'term')
+
+    function terminalTileScreenMetrics(tile: CanvasTile) {
+      const zoom = state.viewport.zoom
+
+      return {
+        borderRadius: 12 * zoom,
+        connectorInset: -11 * zoom,
+        connectorSize: 20 * zoom,
+        controlFontSize: 11 * zoom,
+        controlGap: 4 * zoom,
+        controlSize: 20 * zoom,
+        headerPaddingX: 10 * zoom,
+        headerPaddingY: 6 * zoom,
+        left: tile.x * zoom + state.viewport.panX,
+        resizeInset: 8 * zoom,
+        resizeSize: 12 * zoom,
+        shadowBlur: 40 * zoom,
+        shadowLift: 18 * zoom,
+        subtitleFontSize: 10 * zoom,
+        top: tile.y * zoom + state.viewport.panY,
+        titleFontSize: 12 * zoom,
+        width: tile.width * zoom,
+        height: tile.height * zoom
+      }
+    }
+
+    function renderTerminalTile(tile: CanvasTile) {
+      const metrics = terminalTileScreenMetrics(tile)
+      const contextTiles = contextTilesForTerminal(tile)
+      const contextGroups = contextGroupsForTerminal(tile)
+      const hasLinkedContext = contextGroups.length > 0 || contextTiles.length > 0
+      const terminalContextPrompt = buildTerminalContextPrompt(tile, terminalProviderForTile(tile))
+      const tileFileKind = fileKindForTile(tile)
+      const hasFileDocument = Boolean(tile.filePath)
+      const isTileSelected = selectedTileIdSet.has(tile.id)
+      const isTilePrimarySelected = isTileSelected && !multiSelectedTiles && selectedTileId === tile.id
+      const isTileGroupSelected = isTileSelected && multiSelectedTiles
+      const isTileHovered = hoveredTileId === tile.id && !isTileSelected
+      const connectorLabel =
+        dragConnection?.sourceKind === 'group'
+          ? `Attach ${frameGroups.find((group) => group.id === dragConnection.sourceGroupId)?.label ?? 'group'} to ${tile.title}`
+          : linkSourceTile && linkSourceTile.id !== tile.id
+            ? `Attach ${linkSourceTile.title} to ${tile.title}`
+            : hasLinkedContext
+              ? `${tile.title} has linked context`
+              : `${tile.title} terminal connector`
+
+      return (
+        <div
+          key={tile.id}
+          data-tile-root="true"
+          data-tile-id={tile.id}
+          data-terminal-connector-id={tile.id}
+          className={clsx(
+            'pointer-events-auto absolute flex flex-col overflow-visible border bg-[var(--surface-0)]',
+            selectedTileId === tile.id && focusedTerminal?.tileId === tile.id
+              ? 'border-[color:var(--accent)]'
+              : isTilePrimarySelected
+                ? darkMode
+                  ? 'border-[color:rgba(255,255,255,0.72)]'
+                  : 'border-[color:rgba(31,33,29,0.46)]'
+                : isTileGroupSelected
+                  ? 'border-[color:rgba(100,181,246,0.82)]'
+                  : isTileHovered
+                    ? 'border-[color:rgba(100,181,246,0.42)]'
+                    : 'border-[color:var(--line)]',
+            linkSourceTile && linkSourceTile.id !== tile.id && 'cursor-copy'
+          )}
+          style={{
+            borderRadius: metrics.borderRadius,
+            boxShadow:
+              selectedTileId === tile.id && focusedTerminal?.tileId === tile.id
+                ? `0 0 0 1px var(--accent-soft), 0 ${10 * state.viewport.zoom}px ${22 * state.viewport.zoom}px rgba(0, 0, 0, 0.22)`
+                : isTilePrimarySelected
+                  ? darkMode
+                    ? `0 0 0 1px rgba(255,255,255,0.48), 0 ${8 * state.viewport.zoom}px ${18 * state.viewport.zoom}px rgba(0, 0, 0, 0.24)`
+                    : `0 0 0 1px rgba(31,33,29,0.18), 0 ${8 * state.viewport.zoom}px ${18 * state.viewport.zoom}px rgba(0, 0, 0, 0.18)`
+                  : isTileGroupSelected
+                    ? `0 0 0 1px rgba(100,181,246,0.58), 0 ${8 * state.viewport.zoom}px ${18 * state.viewport.zoom}px rgba(0, 0, 0, 0.24)`
+                    : isTileHovered
+                      ? `0 0 0 1px rgba(100,181,246,0.26), 0 ${8 * state.viewport.zoom}px ${18 * state.viewport.zoom}px rgba(0, 0, 0, 0.22)`
+                      : `0 ${metrics.shadowLift}px ${metrics.shadowBlur}px rgba(0, 0, 0, 0.22)`,
+            height: metrics.height,
+            left: metrics.left,
+            top: metrics.top,
+            width: metrics.width,
+            zIndex: tile.zIndex
+          }}
+          onPointerEnter={() => {
+            setHoveredTileId(tile.id)
+          }}
+          onPointerLeave={() => {
+            setHoveredTileId((current) => (current === tile.id ? null : current))
+          }}
+          onPointerDownCapture={(event) => {
+            if (event.button !== 0) {
+              return
+            }
+
+            if (event.metaKey || event.ctrlKey || event.shiftKey) {
+              toggleTileSelection(tile.id)
+              return
+            }
+
+            if (selectedTileIdSet.has(tile.id)) {
+              return
+            }
+
+            setTileSelection([tile.id], {
+              preserveFocusedTerminal: focusedTerminal?.tileId === tile.id
+            })
+            bringTileToFront(tile.id)
+          }}
+        >
+          <div
+            data-terminal-connector-id={tile.id}
+            className={clsx(
+              'absolute top-1/2 z-20 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_4px_10px_rgba(56,189,248,0.28)] transition',
+              linkSourceTile && linkSourceTile.id !== tile.id ? 'bg-[color:var(--link-line)] scale-110' : 'bg-[color:var(--link-line)]'
+            )}
+            style={{
+              height: metrics.connectorSize,
+              left: metrics.connectorInset,
+              width: metrics.connectorSize
+            }}
+            title={connectorLabel}
+            onClick={(event) => {
+              event.stopPropagation()
+
+              if (linkSourceTile && linkSourceTile.id !== tile.id) {
+                attachContextTile(linkSourceTile.id, tile.id)
+              } else if (dragConnection?.sourceKind === 'group') {
+                attachContextGroup(dragConnection.sourceGroupId, tile.id)
+                setActiveDragConnection(null)
+              }
+            }}
+          >
+            <span
+              className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/95"
+              style={{
+                height: metrics.connectorSize * 0.42,
+                width: metrics.connectorSize * 0.42
+              }}
+            />
+          </div>
+
+          <div
+            className="flex items-center justify-between border-b border-[color:var(--line)] bg-[var(--surface-1)]"
+            style={{
+              borderTopLeftRadius: metrics.borderRadius,
+              borderTopRightRadius: metrics.borderRadius,
+              padding: `${metrics.headerPaddingY}px ${metrics.headerPaddingX}px`
+            }}
+            onPointerDown={(event) => {
+              if (event.button !== 0) {
+                return
+              }
+
+              event.stopPropagation()
+              beginTileDrag(tile, event)
+            }}
+            onDoubleClick={() => {
+              if (tile.filePath && tileFileKind) {
+                onOpenFile({
+                  kind: 'file',
+                  name: tile.title,
+                  path: tile.filePath,
+                  fileKind: tileFileKind
+                })
+              }
+            }}
+          >
+            <div className="min-w-0 flex-1">
+              <div
+                className="truncate font-medium text-[var(--text)]"
+                style={{ fontSize: metrics.titleFontSize }}
+              >
+                {tile.title}
+              </div>
+              <div
+                className="truncate uppercase tracking-[0.14em] text-[var(--text-faint)]"
+                style={{ fontSize: metrics.subtitleFontSize }}
+              >
+                {tileSubtitleLabel(tile)}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center" style={{ gap: metrics.controlGap }}>
+              {hasFileDocument ? (
+                <button
+                  className="flex items-center justify-center border border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                  style={{
+                    borderRadius: 8 * state.viewport.zoom,
+                    fontSize: metrics.controlFontSize,
+                    height: metrics.controlSize,
+                    width: metrics.controlSize
+                  }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  title="Refresh file"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    requestTileRefresh(tile.id)
+                  }}
+                >
+                  ↻
+                </button>
+              ) : null}
+              {hasFileDocument && tileFileKind ? (
+                <button
+                  className="flex items-center justify-center border border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                  style={{
+                    borderRadius: 8 * state.viewport.zoom,
+                    fontSize: metrics.controlFontSize,
+                    height: metrics.controlSize,
+                    width: metrics.controlSize
+                  }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  title="Reveal in file explorer"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onRevealFileInNavigator({
+                      kind: 'file',
+                      name: tile.title,
+                      path: tile.filePath as string,
+                      fileKind: tileFileKind
+                    })
+                  }}
+                >
+                  ↗
+                </button>
+              ) : null}
+              <button
+                className="flex items-center justify-center border border-[color:var(--line)] bg-[var(--surface-0)] leading-none text-[var(--text-dim)] transition hover:border-[color:var(--error-line)] hover:bg-[var(--error-bg)] hover:text-[var(--error-text)]"
+                style={{
+                  borderRadius: 8 * state.viewport.zoom,
+                  fontSize: 13 * state.viewport.zoom,
+                  height: metrics.controlSize,
+                  width: metrics.controlSize
+                }}
+                title="Close tile"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  deleteTile(tile.id)
+                }}
+              >
+                ×
+              </button>
+            </div>
+          </div>
+
+          <div
+            className="min-h-0 flex-1 overflow-hidden"
+            style={{
+              borderBottomLeftRadius: metrics.borderRadius,
+              borderBottomRightRadius: metrics.borderRadius
+            }}
+          >
+            <TerminalPane
+              canvasZoom={state.viewport.zoom}
+              contextPrompt={terminalContextPrompt}
+              cwd={activeWorkspacePath}
+              darkMode={darkMode}
+              focusMode={
+                selectedTileId === tile.id && focusedTerminal?.tileId === tile.id
+                  ? focusedTerminal.mode
+                  : null
+              }
+              isSelected={selectedTileIdSet.has(tile.id)}
+              notifyOnComplete={Boolean(tile.terminalNotifyOnComplete)}
+              onCreateMarkdownCard={(options) => createMarkdownCardForTerminal(tile.id, options)}
+              onFocusModeChange={(mode) => {
+                focusTerminal(tile.id, mode)
+              }}
+              onToggleNotifyOnComplete={(enabled) => {
+                updateTile(
+                  tile.id,
+                  (currentTile) => ({
+                    ...currentTile,
+                    terminalNotifyOnComplete: enabled
+                  }),
+                  { immediate: true }
+                )
+              }}
+              provider={terminalProviderForTile(tile)}
+              sessionId={tile.sessionId as string}
+            />
+          </div>
+
+          {(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as ResizeHandle[]).map((handle) => (
+            <div
+              key={handle}
+              className="absolute bg-transparent"
+              style={{
+                cursor: `${handle}-resize`,
+                height:
+                  handle === 'e' || handle === 'w'
+                    ? `calc(100% - ${metrics.resizeInset * 2}px)`
+                    : metrics.resizeSize,
+                left: handle.includes('w') ? metrics.connectorInset / 2 : handle.includes('e') ? undefined : metrics.resizeInset,
+                right: handle.includes('e') ? -metrics.resizeSize / 3 : handle.includes('w') ? undefined : metrics.resizeInset,
+                top: handle.includes('n') ? -metrics.resizeSize / 3 : handle.includes('s') ? undefined : metrics.resizeInset,
+                bottom: handle.includes('s') ? -metrics.resizeSize / 3 : handle.includes('n') ? undefined : metrics.resizeInset,
+                width:
+                  handle === 'n' || handle === 's'
+                    ? `calc(100% - ${metrics.resizeInset * 2}px)`
+                    : metrics.resizeSize
+              }}
+              onPointerDown={(event) => {
+                event.stopPropagation()
+                beginTileResize(tile, handle, event)
+              }}
+            />
+          ))}
+        </div>
+      )
+    }
 
     return (
       <div
@@ -5121,10 +5440,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             )
           })}
 
-          {state.tiles
-            .slice()
-            .sort((left, right) => left.zIndex - right.zIndex)
-            .map((tile) => (
+          {contentTiles.map((tile) => (
               (() => {
                 const contextTiles = tile.type === 'term' ? contextTilesForTerminal(tile) : []
                 const contextGroups = tile.type === 'term' ? contextGroupsForTerminal(tile) : []
@@ -5553,6 +5869,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   {tile.type === 'term' ? (
                     <div className="h-full min-h-0">
                       <TerminalPane
+                        canvasZoom={state.viewport.zoom}
                         contextPrompt={terminalContextPrompt}
                         cwd={activeWorkspacePath}
                         darkMode={darkMode}
@@ -5654,6 +5971,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 )
               })()
             ))}
+        </div>
+
+        <div className="pointer-events-none absolute inset-0 z-30">
+          {terminalTiles.map((tile) => renderTerminalTile(tile))}
         </div>
 
         {hoveredConnection &&

@@ -8,6 +8,7 @@ import { Terminal } from '@xterm/xterm'
 import type { TerminalProvider, TerminalUiMode } from '@shared/types'
 
 interface TerminalPaneProps {
+  canvasZoom: number
   contextPrompt?: string
   cwd: string | null
   darkMode: boolean
@@ -188,8 +189,26 @@ function statusLabel(status: TerminalStatus, statusMessage: string | null) {
   return null
 }
 
+function normalizedCanvasZoom(zoom: number) {
+  if (!Number.isFinite(zoom) || zoom <= 0) {
+    return 1
+  }
+
+  return zoom
+}
+
 function TerminalPaneComponent(props: TerminalPaneProps) {
-  const { contextPrompt, cwd, darkMode, focusMode, isSelected, onFocusModeChange, provider, sessionId } =
+  const {
+    canvasZoom,
+    contextPrompt,
+    cwd,
+    darkMode,
+    focusMode,
+    isSelected,
+    onFocusModeChange,
+    provider,
+    sessionId
+  } =
     props
   const hostRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
@@ -201,6 +220,7 @@ function TerminalPaneComponent(props: TerminalPaneProps) {
   const isSelectedRef = useRef(isSelected)
   const [status, setStatus] = useState<TerminalStatus>('connecting')
   const [statusMessage, setStatusMessage] = useState<string | null>('Connecting terminal...')
+  const effectiveCanvasZoom = normalizedCanvasZoom(canvasZoom)
 
   function focusShell() {
     onFocusModeChange('shell')
@@ -232,7 +252,7 @@ function TerminalPaneComponent(props: TerminalPaneProps) {
       cursorStyle: 'block',
       drawBoldTextInBrightColors: false,
       fontFamily: '"SF Mono", "JetBrains Mono", "SFMono-Regular", "Menlo", "Consolas", monospace',
-      fontSize: DEFAULT_TERMINAL_FONT_SIZE,
+      fontSize: DEFAULT_TERMINAL_FONT_SIZE * effectiveCanvasZoom,
       fontWeight: '400',
       fontWeightBold: '600',
       lineHeight: DEFAULT_TERMINAL_LINE_HEIGHT,
@@ -589,7 +609,18 @@ function TerminalPaneComponent(props: TerminalPaneProps) {
 
     terminalRef.current.options.minimumContrastRatio = minimumContrastRatio(darkMode, provider)
     terminalRef.current.options.theme = terminalTheme(darkMode, provider)
-  }, [darkMode, provider])
+    terminalRef.current.options.fontSize = DEFAULT_TERMINAL_FONT_SIZE * effectiveCanvasZoom
+    terminalRef.current.options.lineHeight = DEFAULT_TERMINAL_LINE_HEIGHT
+
+    window.requestAnimationFrame(() => {
+      if (!terminalRef.current || !fitRef.current) {
+        return
+      }
+
+      fitRef.current.fit()
+      window.collaborator.resizeTerminalSession(sessionId, terminalRef.current.cols, terminalRef.current.rows)
+    })
+  }, [darkMode, effectiveCanvasZoom, provider, sessionId])
 
   const nextStatusLabel = statusLabel(status, statusMessage)
 
@@ -621,6 +652,7 @@ function TerminalPaneComponent(props: TerminalPaneProps) {
 
 export const TerminalPane = memo(TerminalPaneComponent, (previous, next) => {
   return (
+    previous.canvasZoom === next.canvasZoom &&
     previous.contextPrompt === next.contextPrompt &&
     previous.cwd === next.cwd &&
     previous.darkMode === next.darkMode &&
