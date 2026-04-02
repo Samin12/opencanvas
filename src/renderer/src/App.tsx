@@ -1060,7 +1060,9 @@ export default function App() {
           return
         }
 
-        setViewerFile(null)
+        if (viewerFile) {
+          closeViewer({ focusNavigator: true })
+        }
       }
     }
 
@@ -1327,6 +1329,16 @@ export default function App() {
 
     setWorkspaceTree([])
     setViewerFile(null)
+  }
+
+  function closeViewer(options?: { focusNavigator?: boolean }) {
+    setViewerFile(null)
+
+    if (options?.focusNavigator) {
+      window.requestAnimationFrame(() => {
+        setFocusNavigatorVersion((current) => current + 1)
+      })
+    }
   }
 
   function previewFile(file: FileTreeNode) {
@@ -2252,7 +2264,7 @@ export default function App() {
           />
           <ViewerOverlay
             file={viewerFile}
-            onClose={() => setViewerFile(null)}
+            onClose={() => closeViewer({ focusNavigator: true })}
             onImportImageFile={importWorkspaceImageFile}
             officeViewer={officeViewer}
             onPlaceOnCanvas={(file) => {
