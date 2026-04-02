@@ -651,6 +651,7 @@ function RichNoteEditor({
   const latestSavedRef = useRef(normalizedInitialContent)
   const editorHostRef = useRef<HTMLDivElement | null>(null)
   const slashMenuRef = useRef<HTMLDivElement | null>(null)
+  const slashMenuListRef = useRef<HTMLDivElement | null>(null)
   const slashMenuStateRef = useRef<SlashMenuState | null>(null)
   const slashMenuItemsRef = useRef(MARKDOWN_SLASH_COMMAND_OPTIONS)
   const activeSlashMenuItemRef = useRef<(typeof MARKDOWN_SLASH_COMMAND_OPTIONS)[number] | null>(null)
@@ -703,6 +704,7 @@ function RichNoteEditor({
     const placement =
       availableBelow < SLASH_MENU_MIN_FLIP_SPACE && availableAbove > availableBelow ? 'top' : 'bottom'
     const availableHeight = placement === 'bottom' ? availableBelow : availableAbove
+    const previousSlashMenuState = slashMenuStateRef.current
 
     setSlashMenuState({
       anchorLeft: Math.min(Math.max(caretRect.left, SLASH_MENU_EDGE_PADDING), maxLeft),
@@ -715,7 +717,14 @@ function RichNoteEditor({
       query: slashQuery.query,
       range: slashQuery.range
     })
-    setSlashMenuIndex(0)
+    setSlashMenuIndex((current) =>
+      previousSlashMenuState &&
+      previousSlashMenuState.query === slashQuery.query &&
+      previousSlashMenuState.range.from === slashQuery.range.from &&
+      previousSlashMenuState.range.to === slashQuery.range.to
+        ? current
+        : 0
+    )
   }
 
   function applySlashMenuCommand(command: SlashCommand) {
@@ -1263,6 +1272,30 @@ function RichNoteEditor({
   }, [slashMenuItems.length, slashMenuState])
 
   useEffect(() => {
+    if (!slashMenuState || !slashMenuListRef.current) {
+      return
+    }
+
+    const activeItem = slashMenuListRef.current.querySelector<HTMLElement>(
+      `[data-slash-item-index="${Math.max(0, Math.min(slashMenuIndex, slashMenuItems.length - 1))}"]`
+    )
+
+    if (!activeItem) {
+      return
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      activeItem.scrollIntoView({
+        block: 'nearest'
+      })
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+    }
+  }, [slashMenuIndex, slashMenuItems.length, slashMenuState])
+
+  useEffect(() => {
     if (!autoSizeEnabled || !editor) {
       return
     }
@@ -1449,7 +1482,11 @@ function RichNoteEditor({
               <div className="px-2 pb-1.5 pt-1 text-[10px] font-medium text-[var(--text-faint)]">
                 {slashMenuState.query ? `Filter: ${slashMenuState.query}` : 'Type to filter'}
               </div>
-              <div className="overflow-y-auto pr-0.5" style={{ maxHeight: slashMenuState.maxHeight }}>
+              <div
+                ref={slashMenuListRef}
+                className="overflow-y-auto pr-0.5"
+                style={{ maxHeight: slashMenuState.maxHeight }}
+              >
                 {slashMenuItems.length > 0 ? (
                   slashMenuItems.map((item, index) => {
                     const isActive = index === (activeSlashMenuItem ? slashMenuItems.indexOf(activeSlashMenuItem) : -1)
@@ -1458,6 +1495,8 @@ function RichNoteEditor({
                       <button
                         key={item.command}
                         type="button"
+                        data-slash-item-index={index}
+                        aria-selected={isActive}
                         className={clsx(
                           'flex w-full items-center gap-2.5 rounded-[12px] px-2.5 py-2 text-left transition',
                           isActive
