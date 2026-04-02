@@ -701,6 +701,47 @@ function RichNoteEditor({
     return items[resolvedIndex] ?? null
   }
 
+  function handleSlashMenuKeyDown(event: {
+    key: string
+    preventDefault: () => void
+    stopPropagation: () => void
+  }) {
+    if (!slashMenuStateRef.current) {
+      return false
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      event.stopPropagation()
+      setSlashMenuIndexImmediate(slashMenuIndexRef.current + 1)
+      return true
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      event.stopPropagation()
+      setSlashMenuIndexImmediate(slashMenuIndexRef.current - 1)
+      return true
+    }
+
+    const highlightedSlashMenuItem = currentSlashMenuItem()
+
+    if ((event.key === 'Enter' || event.key === 'Tab') && highlightedSlashMenuItem) {
+      event.preventDefault()
+      event.stopPropagation()
+      return applySlashMenuCommand(highlightedSlashMenuItem.command)
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeSlashMenu()
+      return true
+    }
+
+    return false
+  }
+
   function syncSlashMenu(activeEditor: TiptapEditor | null | undefined) {
     if (!activeEditor) {
       closeSlashMenu()
@@ -1125,31 +1166,8 @@ function RichNoteEditor({
           keydown: (_view: unknown, event: KeyboardEvent) => {
             event.stopPropagation()
 
-            if (slashMenuStateRef.current) {
-              if (event.key === 'ArrowDown') {
-                event.preventDefault()
-                setSlashMenuIndexImmediate(slashMenuIndexRef.current + 1)
-                return true
-              }
-
-              if (event.key === 'ArrowUp') {
-                event.preventDefault()
-                setSlashMenuIndexImmediate(slashMenuIndexRef.current - 1)
-                return true
-              }
-
-              const highlightedSlashMenuItem = currentSlashMenuItem()
-
-              if ((event.key === 'Enter' || event.key === 'Tab') && highlightedSlashMenuItem) {
-                event.preventDefault()
-                return applySlashMenuCommand(highlightedSlashMenuItem.command)
-              }
-
-              if (event.key === 'Escape') {
-                event.preventDefault()
-                closeSlashMenu()
-                return true
-              }
+            if (handleSlashMenuKeyDown(event)) {
+              return true
             }
 
             if (event.key === 'Enter' && selectionInsidePrimaryHeading(editor)) {
@@ -1466,6 +1484,9 @@ function RichNoteEditor({
         data-shortcut-lock="true"
         onDragOverCapture={handleImageDragOver}
         onDropCapture={handleImageDrop}
+        onKeyDownCapture={(event) => {
+          handleSlashMenuKeyDown(event)
+        }}
         onPasteCapture={handleImagePaste}
         onPointerEnter={() => {
           if (variant === 'viewer') {
