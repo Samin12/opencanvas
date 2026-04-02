@@ -37,6 +37,9 @@ import {
 const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
 const MARKDOWN_PASTE_STRUCTURE_PATTERN =
   /^(#{1,6}\s|>\s|\s*[-*+]\s|\s*\d+\.\s|\s*\[[ xX]\]\s|```|~~~|\|.+\||-{3,}\s*$)/m
+const NOTE_TILE_BASE_FONT_SIZE_PX = 17
+const NOTE_TILE_MIN_VIEW_SCALE = 0.85
+const NOTE_TILE_MAX_VIEW_SCALE = 1.45
 
 function emptyNoteEditorContent() {
   return {
@@ -76,6 +79,21 @@ function primaryHeadingFromEditor(editor: TiptapEditor | null | undefined) {
 
   const heading = normalizeHeadingText(firstBlock.textContent)
   return heading.length > 0 ? heading : null
+}
+
+function selectionInsidePrimaryHeading(editor: TiptapEditor | null | undefined) {
+  if (!editor) {
+    return false
+  }
+
+  const { $from } = editor.state.selection
+  const parentNode = $from.parent
+
+  if (parentNode.type.name !== 'heading' || parentNode.attrs.level !== 1) {
+    return false
+  }
+
+  return $from.before() === 0
 }
 
 function markdownFromPlainTextPaste(rawText: string) {
@@ -126,10 +144,19 @@ function measureNoteContentHeight(contentElement: HTMLElement) {
   return Math.ceil(Math.max(contentElement.scrollHeight, contentElement.clientHeight, blockBottom + paddingBottom))
 }
 
+function clampNoteViewScale(value: number | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 1
+  }
+
+  return Math.min(NOTE_TILE_MAX_VIEW_SCALE, Math.max(NOTE_TILE_MIN_VIEW_SCALE, value))
+}
+
 interface DocumentPaneProps {
   fileKind: FileKind
   filePath: string
   noteSizingMode?: 'auto' | 'manual'
+  noteViewScale?: number
   onNoteContentHeightChange?: (contentHeight: number) => void
   onPrimaryHeadingChange?: (heading: string | null) => void
   officeViewer?: OfficeViewerBootstrap | null
@@ -556,6 +583,7 @@ function RichNoteEditor({
   filePath,
   initialContent,
   noteSizingMode,
+  noteViewScale,
   onNoteContentHeightChange,
   onPrimaryHeadingChange,
   onDocumentChange,
@@ -572,6 +600,7 @@ function RichNoteEditor({
   filePath: string
   initialContent: string
   noteSizingMode?: 'auto' | 'manual'
+  noteViewScale?: number
   onNoteContentHeightChange?: (contentHeight: number) => void
   onPrimaryHeadingChange?: (heading: string | null) => void
   onDocumentChange: (document: TextFileDocument) => void
@@ -596,6 +625,7 @@ function RichNoteEditor({
   const lastPublishedHeadingRef = useRef<string | null>(null)
   const autoSizeEnabled =
     variant === 'tile' && noteSizingMode === 'auto' && Boolean(onNoteContentHeightChange)
+  const resolvedNoteViewScale = variant === 'tile' ? clampNoteViewScale(noteViewScale) : 1
 
   function scheduleContentMeasurement() {
     if (!autoSizeEnabled || !editor) {
@@ -817,6 +847,7 @@ function RichNoteEditor({
 
       latestSavedRef.current = updated.content
       onDocumentChange(updated)
+      publishPrimaryHeading(editor)
 
       if (latestDraftRef.current === updated.content) {
         onStatusChange('idle')
@@ -934,7 +965,7 @@ function RichNoteEditor({
           class: clsx(
             'markdown-preview rich-note-editor__content w-full text-[var(--text)] outline-none',
             autoSizeEnabled ? 'min-h-full overflow-y-hidden' : 'h-full overflow-y-auto',
-            variant === 'viewer' ? 'px-6 py-5 text-[16px]' : 'px-5 py-4 text-[13px]'
+            variant === 'viewer' ? 'px-6 py-5 text-[16px]' : 'px-8 py-7'
           ),
           'data-scroll-lock': 'true',
           spellcheck: 'true'
@@ -950,6 +981,12 @@ function RichNoteEditor({
           },
           keydown: (_view: unknown, event: KeyboardEvent) => {
             event.stopPropagation()
+
+            if (event.key === 'Enter' && selectionInsidePrimaryHeading(editor)) {
+              clearScheduledHeadingPublish()
+              publishPrimaryHeading(editor)
+            }
+
             return false
           },
           keyup: (_view: unknown, event: KeyboardEvent) => {
@@ -1090,6 +1127,14 @@ function RichNoteEditor({
   }, [autoSizeEnabled, editor])
 
   useEffect(() => {
+    if (!autoSizeEnabled || !editor) {
+      return
+    }
+
+    scheduleContentMeasurement()
+  }, [autoSizeEnabled, editor, resolvedNoteViewScale])
+
+  useEffect(() => {
     if (!editor) {
       return
     }
@@ -1161,6 +1206,13 @@ function RichNoteEditor({
       <div
         ref={editorHostRef}
         className="rich-note-editor relative min-h-0 flex-1"
+        style={
+          variant === 'tile'
+            ? {
+                fontSize: `${NOTE_TILE_BASE_FONT_SIZE_PX * resolvedNoteViewScale}px`
+              }
+            : undefined
+        }
         data-document-drop-target="true"
         data-shortcut-lock="true"
         onDragOverCapture={handleImageDragOver}
@@ -1192,6 +1244,7 @@ function RichNoteEditor({
 function NoteDocumentPane({
   filePath,
   noteSizingMode,
+  noteViewScale,
   onNoteContentHeightChange,
   onPrimaryHeadingChange,
   onImportImageFile,
@@ -1256,6 +1309,7 @@ function NoteDocumentPane({
       filePath={filePath}
       initialContent={document.content}
       noteSizingMode={noteSizingMode}
+      noteViewScale={noteViewScale}
       onNoteContentHeightChange={onNoteContentHeightChange}
       onPrimaryHeadingChange={onPrimaryHeadingChange}
       onDocumentChange={setDocument}
@@ -1460,8 +1514,10 @@ function ImageDocumentPane({
   return (
     <div
       className={clsx(
-        'relative flex h-full items-center justify-center overflow-hidden bg-[var(--surface-1)] p-3',
-        variant === 'viewer' ? 'rounded-[6px] border border-[color:var(--line)]' : 'rounded-[4px]'
+        'relative flex h-full items-center justify-center overflow-hidden',
+        variant === 'viewer'
+          ? 'rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-1)] p-3'
+          : 'rounded-none bg-transparent p-0'
       )}
     >
       {(variant === 'tile' && showTileRefreshButton) ||
@@ -1481,7 +1537,11 @@ function ImageDocumentPane({
         src={imageUrl}
         alt=""
         draggable
-        className="max-h-full max-w-full h-auto w-auto object-contain"
+        className={clsx(
+          variant === 'viewer'
+            ? 'max-h-full max-w-full h-auto w-auto object-contain'
+            : 'h-full w-full object-contain'
+        )}
         onDragStart={(event) => {
           if (!event.dataTransfer) {
             return
@@ -1694,6 +1754,7 @@ function DocumentPaneComponent({
   fileKind,
   filePath,
   noteSizingMode,
+  noteViewScale,
   onNoteContentHeightChange,
   onPrimaryHeadingChange,
   officeViewer = null,
@@ -1776,6 +1837,7 @@ function DocumentPaneComponent({
       <NoteDocumentPane
         filePath={filePath}
         noteSizingMode={noteSizingMode}
+        noteViewScale={noteViewScale}
         onNoteContentHeightChange={onNoteContentHeightChange}
         onPrimaryHeadingChange={onPrimaryHeadingChange}
         onImportImageFile={onImportImageFile}
@@ -1806,7 +1868,9 @@ export const DocumentPane = memo(DocumentPaneComponent, (previous, next) => {
     previous.fileKind === next.fileKind &&
     previous.filePath === next.filePath &&
     previous.noteSizingMode === next.noteSizingMode &&
+    previous.noteViewScale === next.noteViewScale &&
     previous.refreshToken === next.refreshToken &&
+    previous.presentationEmbedUrl === next.presentationEmbedUrl &&
     previous.showTileRefreshButton === next.showTileRefreshButton &&
     previous.showViewerRefreshButton === next.showViewerRefreshButton &&
     previous.variant === next.variant

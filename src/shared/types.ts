@@ -28,6 +28,7 @@ export interface CanvasTile {
   embedUrl?: string
   filePath?: string
   noteSizeMode?: 'auto' | 'manual'
+  noteViewScale?: number
   sessionId?: string
   terminalNotifyOnComplete?: boolean
   terminalProvider?: TerminalProvider
@@ -192,6 +193,7 @@ export interface ImportWorkspaceDownloadOptions {
 }
 
 export interface RenameWorkspaceNodeOptions {
+  dedupeConflicts?: boolean
   nextName: string
   targetPath: string
 }

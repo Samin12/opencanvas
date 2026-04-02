@@ -125,6 +125,12 @@ function sanitizeCanvasState(input: Partial<CanvasState> | undefined): CanvasSta
                   ? 'manual'
                   : 'auto'
                 : undefined,
+            noteViewScale:
+              tile.type === 'note'
+                ? typeof tile.noteViewScale === 'number' && Number.isFinite(tile.noteViewScale)
+                  ? Math.min(1.45, Math.max(0.85, tile.noteViewScale))
+                  : 1
+                : undefined,
             sessionId: typeof tile.sessionId === 'string' ? tile.sessionId : undefined,
             terminalNotifyOnComplete:
               tile.type === 'term' ? Boolean(tile.terminalNotifyOnComplete) : undefined,

@@ -45,7 +45,7 @@ import type {
   TerminalUiMode
 } from '@shared/types'
 
-import { DocumentPane, MarkdownCopyMenu, type MarkdownCopyActions } from './DocumentPane'
+import { DocumentPane } from './DocumentPane'
 import { EmbedPane } from './EmbedPane'
 import { HoverTooltip } from './HoverTooltip'
 import { TerminalPane } from './TerminalPane'
@@ -87,7 +87,7 @@ interface CanvasSurfaceProps {
   onRenameNode: (
     targetPath: string,
     nextName: string,
-    options?: { suppressError?: boolean }
+    options?: { dedupeConflicts?: boolean; suppressError?: boolean }
   ) => Promise<boolean>
   onStateChange: (state: CanvasState, options?: { immediate?: boolean }) => void
   shortcutsSuspended?: boolean
@@ -334,8 +334,9 @@ const ZOOM_IN_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd++' : 'Ctrl++'
 const ZOOM_OUT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+-' : 'Ctrl+-'
 const RESET_ZOOM_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+0' : 'Ctrl+0'
 const CREATE_CODEX_TERMINAL_SHORTCUT_KEY = 'Shift+C'
-const NOTE_SLASH_TOOLTIP_LABEL =
-  'Markdown shortcuts: headings, paragraphs, bullets, numbered lists, todos, quotes, code blocks and dividers. Also works with /, #, >, -, 1., [ ] and ---.'
+const NOTE_VIEW_SCALE_MIN = 0.85
+const NOTE_VIEW_SCALE_MAX = 1.45
+const NOTE_VIEW_SCALE_STEP = 0.12
 const SHORTCUT_ITEMS: Array<{ action: ShortcutAction; key: string; label: string }> = [
   { action: 'terminal-claude', key: 'Shift+T', label: 'New Claude Terminal' },
   { action: 'terminal-codex', key: CREATE_CODEX_TERMINAL_SHORTCUT_KEY, label: 'New Codex Terminal' },
@@ -837,7 +838,8 @@ function createTileFromFile(
     height,
     zIndex,
     filePath: file.path,
-    noteSizeMode: isNote ? 'auto' : undefined
+    noteSizeMode: isNote ? 'auto' : undefined,
+    noteViewScale: isNote ? 1 : undefined
   }
 }
 
@@ -979,6 +981,14 @@ function sanitizeTileFileStem(value: string) {
     .slice(0, 72)
 }
 
+function normalizedNoteViewScale(value: number | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 1
+  }
+
+  return Math.min(NOTE_VIEW_SCALE_MAX, Math.max(NOTE_VIEW_SCALE_MIN, value))
+}
+
 function isMarkdownNotePath(targetPath: string | null | undefined) {
   return typeof targetPath === 'string' && /\.(?:md|mdx|markdown)$/i.test(targetPath)
 }
@@ -1096,7 +1106,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const [tileSelectionBox, setTileSelectionBox] = useState<TileSelectionBox | null>(null)
     const [focusedTerminal, setFocusedTerminal] = useState<{ mode: TerminalUiMode; tileId: string } | null>(null)
     const [tileRefreshTokens, setTileRefreshTokens] = useState<Record<string, number>>({})
-    const [noteCopyActionsByTile, setNoteCopyActionsByTile] = useState<Record<string, MarkdownCopyActions | null>>({})
     const [convertingStickyNote, setConvertingStickyNote] = useState(false)
     const [renamingTileId, setRenamingTileId] = useState<string | null>(null)
     const [renamingValue, setRenamingValue] = useState('')
@@ -1318,6 +1327,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       try {
         await onRenameNode(tile.filePath, `${nextStem}${extension}`, {
+          dedupeConflicts: true,
           suppressError: true
         })
       } finally {
@@ -1347,31 +1357,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         cancelTileRename()
       }
     }, [renamingTileId, state])
-
-    function registerNoteCopyActions(tileId: string, actions: MarkdownCopyActions | null) {
-      setNoteCopyActionsByTile((current) => {
-        const existing = current[tileId] ?? null
-
-        if (existing === actions) {
-          return current
-        }
-
-        if (!actions) {
-          if (!(tileId in current)) {
-            return current
-          }
-
-          const next = { ...current }
-          delete next[tileId]
-          return next
-        }
-
-        return {
-          ...current,
-          [tileId]: actions
-        }
-      })
-    }
 
     function isContextSourceTile(tile: CanvasTile | null): tile is CanvasTile {
       return Boolean(tile && tile.type !== 'term' && (tile.filePath || tile.embedUrl))
@@ -2213,6 +2198,22 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 height: nextHeight
               }
             : currentTile
+      )
+    }
+
+    function adjustNoteViewScale(tileId: string, delta: number) {
+      updateTile(
+        tileId,
+        (currentTile) =>
+          currentTile.type === 'note'
+            ? {
+                ...currentTile,
+                noteViewScale: normalizedNoteViewScale(
+                  normalizedNoteViewScale(currentTile.noteViewScale) + delta
+                )
+              }
+            : currentTile,
+        { immediate: true }
       )
     }
 
@@ -4729,25 +4730,33 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 const isContextSource = isContextSourceTile(tile)
                 const isPendingLinkSource = linkSourceTileId === tile.id
                 const hasFileDocument = Boolean(tile.filePath)
-                const showNoteShortcutHelp = tile.type === 'note'
                 const tileRefreshToken = tileRefreshTokens[tile.id] ?? 0
                 const isMarkdownTile = tileFileKind === 'note' && isMarkdownNotePath(tile.filePath)
                 const isRenamingThisTile = renamingTileId === tile.id
                 const renameExtension = tile.filePath ? splitFileName(fileNameFromPath(tile.filePath)).extension : ''
+                const noteViewScale = tile.type === 'note' ? normalizedNoteViewScale(tile.noteViewScale) : 1
+                const noteCanDecreaseViewScale = noteViewScale > NOTE_VIEW_SCALE_MIN + 0.01
+                const noteCanIncreaseViewScale = noteViewScale < NOTE_VIEW_SCALE_MAX - 0.01
                 const isTileSelected = selectedTileIdSet.has(tile.id)
                 const isTilePrimarySelected = isTileSelected && !multiSelectedTiles && selectedTileId === tile.id
                 const isTileGroupSelected = isTileSelected && multiSelectedTiles
                 const isTilePointerHovered = hoveredTileId === tile.id
                 const isTileHovered = hoveredTileId === tile.id && !isTileSelected
+                const terminalProvider = tile.type === 'term' ? terminalProviderForTile(tile) : null
+                const isMinimalTerminalTile = tile.type === 'term' && terminalProvider === 't1code'
                 const showFloatingTileChrome =
-                  tile.type === 'term' ||
-                  isRenamingThisTile ||
-                  isTileSelected ||
-                  isTilePointerHovered
+                  isMinimalTerminalTile
+                    ? isTileSelected || isTilePointerHovered
+                    : tile.type === 'term' || isRenamingThisTile || isTileSelected || isTilePointerHovered
                 const tileBodyClassName =
                   tile.type === 'term'
-                    ? 'h-[calc(100%-37px)]'
-                    : tile.type === 'note' || tile.type === 'embed'
+                    ? isMinimalTerminalTile
+                      ? 'h-full'
+                      : 'h-[calc(100%-37px)]'
+                    : tile.type === 'note' ||
+                        tile.type === 'embed' ||
+                        tileFileKind === 'image' ||
+                        tileFileKind === 'video'
                       ? 'h-full overflow-hidden'
                       : 'h-full p-2'
                 const connectorLabel =
@@ -4767,7 +4776,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     data-tile-root="true"
                     data-terminal-connector-id={tile.type === 'term' ? tile.id : undefined}
                     className={clsx(
-                      'pointer-events-auto absolute overflow-visible rounded-[4px] border bg-[var(--surface-0)] shadow-[0_8px_18px_rgba(0,0,0,0.22)]',
+                      'pointer-events-auto absolute overflow-visible border bg-[var(--surface-0)] shadow-[0_18px_40px_rgba(0,0,0,0.22)]',
+                      tile.type === 'term' ? 'rounded-[4px]' : 'rounded-[16px]',
                       selectedTileId === tile.id && focusedTerminal?.tileId === tile.id
                         ? 'border-[color:var(--accent)] shadow-[0_0_0_1px_var(--accent-soft),0_10px_22px_rgba(0,0,0,0.22)]'
                         : isTilePrimarySelected
@@ -4776,9 +4786,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                             : 'border-[color:rgba(31,33,29,0.46)] shadow-[0_0_0_1px_rgba(31,33,29,0.18),0_8px_18px_rgba(0,0,0,0.18)]'
                           : isTileGroupSelected
                             ? 'border-[color:rgba(100,181,246,0.82)] shadow-[0_0_0_1px_rgba(100,181,246,0.58),0_8px_18px_rgba(0,0,0,0.24)]'
-                            : isTileHovered
+                          : isTileHovered
                               ? 'border-[color:rgba(100,181,246,0.42)] shadow-[0_0_0_1px_rgba(100,181,246,0.26),0_8px_18px_rgba(0,0,0,0.22)]'
-                              : 'border-[color:var(--line)]',
+                              : isMinimalTerminalTile
+                                ? 'border-transparent shadow-[0_16px_36px_rgba(0,0,0,0.28)]'
+                                : 'border-[color:var(--line)]',
                       isPendingLinkSource && 'border-[color:var(--link-line)]'
                     )}
                     style={{
@@ -4867,7 +4879,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     }}
                   />
                 ) : null}
-                {tile.type === 'term' ? (
+                {tile.type === 'term' && !isMinimalTerminalTile ? (
                   <div
                     className="flex items-center justify-between rounded-t-[4px] border-b border-[color:var(--line)] bg-[var(--surface-1)] px-2.5 py-1.5"
                     onPointerDown={(event) => {
@@ -4945,11 +4957,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 ) : (
                   <div
                     className={clsx(
-                      'pointer-events-none absolute inset-x-0 top-0 z-30 p-2 transition duration-150 ease-out',
-                      showFloatingTileChrome ? 'translate-y-0 opacity-100' : '-translate-y-1 opacity-0'
+                      'pointer-events-none absolute inset-x-0 top-0 z-30 px-2 transition duration-150 ease-out',
+                      showFloatingTileChrome ? '-translate-y-[calc(100%+14px)] opacity-100' : '-translate-y-[calc(100%+6px)] opacity-0'
                     )}
                   >
-                    <div className="flex items-start justify-between gap-3 rounded-[12px] border border-white/8 bg-[color:color-mix(in_srgb,var(--surface-overlay)_88%,transparent)] px-3 py-2 shadow-[0_18px_36px_rgba(0,0,0,0.28)] backdrop-blur-md">
+                    <div className="flex items-start justify-between gap-3 rounded-[16px] border border-white/6 bg-[color:color-mix(in_srgb,var(--surface-overlay)_94%,transparent)] px-3.5 py-2.5 shadow-[0_22px_42px_rgba(0,0,0,0.28)] backdrop-blur-md">
                       <div
                         className="pointer-events-auto min-w-0 flex-1 cursor-grab active:cursor-grabbing"
                         onPointerDown={(event) => {
@@ -5044,50 +5056,61 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                         )}
                       </div>
                       <div className="pointer-events-auto flex shrink-0 items-center gap-1">
-                        {showNoteShortcutHelp ? (
-                          <HoverTooltip label={NOTE_SLASH_TOOLTIP_LABEL} placement="bottom">
+                        {tile.type === 'note' ? (
+                          <HoverTooltip
+                            label="Decrease note text size"
+                            placement="bottom"
+                          >
                             <button
                               type="button"
-                              aria-label="Markdown shortcuts"
+                              aria-label="Decrease note text size"
                               data-managed-tooltip="custom"
-                              className="flex h-7 w-7 items-center justify-center rounded-[10px] border border-white/10 bg-black/15 text-[10px] font-semibold text-[var(--text-faint)] transition hover:bg-black/25 hover:text-[var(--text)]"
+                              disabled={!noteCanDecreaseViewScale}
+                              className={clsx(
+                                'flex h-7 min-w-7 items-center justify-center rounded-[11px] border border-white/10 bg-black/15 px-2 text-[11px] font-semibold text-[var(--text-faint)] transition',
+                                noteCanDecreaseViewScale
+                                  ? 'hover:bg-black/25 hover:text-[var(--text)]'
+                                  : 'cursor-default opacity-45'
+                              )}
                               onPointerDown={(event) => event.stopPropagation()}
-                              onClick={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                adjustNoteViewScale(tile.id, -NOTE_VIEW_SCALE_STEP)
+                              }}
                             >
-                              /
+                              A-
                             </button>
                           </HoverTooltip>
                         ) : null}
-                        {tileFileKind === 'note' ? (
-                          <MarkdownCopyMenu
-                            copyActions={noteCopyActionsByTile[tile.id] ?? null}
-                            variant="tile"
-                          />
-                        ) : null}
-                        {hasFileDocument ? (
-                          <button
-                            className="flex h-7 w-7 items-center justify-center rounded-[10px] border border-white/10 bg-black/15 text-[11px] text-[var(--text-dim)] transition hover:bg-black/25 hover:text-[var(--text)]"
-                            onPointerDown={(event) => event.stopPropagation()}
-                            title={
-                              tile.type === 'image'
-                                ? 'Refresh image'
-                                : tile.type === 'video'
-                                  ? 'Refresh video'
-                                  : tile.type === 'pdf'
-                                    ? 'Refresh PDF'
-                                    : 'Refresh file'
-                            }
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              requestTileRefresh(tile.id)
-                            }}
+                        {tile.type === 'note' ? (
+                          <HoverTooltip
+                            label="Increase note text size"
+                            placement="bottom"
                           >
-                            ↻
-                          </button>
+                            <button
+                              type="button"
+                              aria-label="Increase note text size"
+                              data-managed-tooltip="custom"
+                              disabled={!noteCanIncreaseViewScale}
+                              className={clsx(
+                                'flex h-7 min-w-7 items-center justify-center rounded-[11px] border border-white/10 bg-black/15 px-2 text-[11px] font-semibold text-[var(--text-faint)] transition',
+                                noteCanIncreaseViewScale
+                                  ? 'hover:bg-black/25 hover:text-[var(--text)]'
+                                  : 'cursor-default opacity-45'
+                              )}
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                adjustNoteViewScale(tile.id, NOTE_VIEW_SCALE_STEP)
+                              }}
+                            >
+                              A+
+                            </button>
+                          </HoverTooltip>
                         ) : null}
                         {hasFileDocument && tileFileKind ? (
                           <button
-                            className="flex h-7 w-7 items-center justify-center rounded-[10px] border border-white/10 bg-black/15 text-[11px] text-[var(--text-dim)] transition hover:bg-black/25 hover:text-[var(--text)]"
+                            className="flex h-7 w-7 items-center justify-center rounded-[11px] border border-white/10 bg-black/15 text-[11px] text-[var(--text-dim)] transition hover:bg-black/25 hover:text-[var(--text)]"
                             onPointerDown={(event) => event.stopPropagation()}
                             title="Open preview"
                             onClick={(event) => {
@@ -5105,7 +5128,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                         ) : null}
                         {tile.type === 'embed' && tile.embedUrl ? (
                           <button
-                            className="flex h-7 w-7 items-center justify-center rounded-[10px] border border-white/10 bg-black/15 text-[11px] text-[var(--text-dim)] transition hover:bg-black/25 hover:text-[var(--text)]"
+                            className="flex h-7 w-7 items-center justify-center rounded-[11px] border border-white/10 bg-black/15 text-[11px] text-[var(--text-dim)] transition hover:bg-black/25 hover:text-[var(--text)]"
                             onPointerDown={(event) => event.stopPropagation()}
                             title="Open in browser"
                             onClick={(event) => {
@@ -5117,7 +5140,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                           </button>
                         ) : null}
                         <button
-                          className="flex h-7 w-7 items-center justify-center rounded-[10px] border border-white/10 bg-black/15 text-[13px] leading-none text-[var(--text-dim)] transition hover:border-[color:var(--error-line)] hover:bg-[var(--error-bg)] hover:text-[var(--error-text)]"
+                          className="flex h-7 w-7 items-center justify-center rounded-[11px] border border-white/10 bg-black/15 text-[13px] leading-none text-[var(--text-dim)] transition hover:border-[color:var(--error-line)] hover:bg-[var(--error-bg)] hover:text-[var(--error-text)]"
                           title="Close tile"
                           onPointerDown={(event) => event.stopPropagation()}
                           onClick={(event) => {
@@ -5136,73 +5159,75 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   className={tileBodyClassName}
                 >
                   {tile.type === 'term' ? (
-                    <div className="flex h-full min-h-0 flex-col gap-2">
-                      <div
-                        className="flex flex-wrap items-center gap-2 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-1)] px-2.5 py-2"
-                        data-terminal-control="true"
-                        onPointerDown={(event) => event.stopPropagation()}
-                      >
-                        {!hasLinkedContext ? (
-                          <div className="text-[11px] text-[var(--text-dim)]">
-                            {linkSourceTile
-                              ? 'Drop the dragged connector on this terminal dot to attach it.'
-                              : `Drag a file dot or a bundle dot into this terminal to build ${terminalProviderLabel(
-                                  terminalProviderForTile(tile)
-                                )} context.`}
-                          </div>
-                        ) : (
-                          <>
-                            {contextGroups.map((contextGroup) => (
-                              <div
-                                key={contextGroup.id}
-                                className="flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[10px] text-[var(--text-dim)]"
-                              >
-                                <span className="font-semibold uppercase tracking-[0.08em] text-[var(--text-faint)]">
-                                  Bundle
-                                </span>
-                                <span className="max-w-[120px] truncate text-[var(--text)]">
-                                  {contextGroup.label}
-                                </span>
-                                <span className="rounded-[4px] bg-[var(--surface-1)] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-[var(--text-faint)]">
-                                  {contextGroup.containedTiles.length}
-                                </span>
-                                <button
-                                  className="rounded-[4px] px-1 text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
-                                  title="Remove linked bundle"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    detachContextGroup(tile.id, contextGroup.id)
-                                  }}
-                                >
-                                  ×
-                                </button>
-                              </div>
-                            ))}
-                            {contextTiles.map((contextTile) => (
-                              <div
-                                key={contextTile.id}
-                                className="flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[10px] text-[var(--text-dim)]"
-                              >
-                                <span className="max-w-[120px] truncate">{contextTile.title}</span>
-                                <button
-                                  className="rounded-[4px] px-1 text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
-                                  title="Remove linked context"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    detachContextTile(tile.id, contextTile.id)
-                                  }}
-                                >
-                                  ×
-                                </button>
-                              </div>
-                            ))}
-                            <div className="text-[10px] text-[var(--text-faint)]">
-                              Linked resources stay attached and get prepended when you send the next
-                              prompt.
+                    <div className={clsx('flex h-full min-h-0 flex-col', isMinimalTerminalTile ? '' : 'gap-2')}>
+                      {isMinimalTerminalTile ? null : (
+                        <div
+                          className="flex flex-wrap items-center gap-2 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-1)] px-2.5 py-2"
+                          data-terminal-control="true"
+                          onPointerDown={(event) => event.stopPropagation()}
+                        >
+                          {!hasLinkedContext ? (
+                            <div className="text-[11px] text-[var(--text-dim)]">
+                              {linkSourceTile
+                                ? 'Drop the dragged connector on this terminal dot to attach it.'
+                                : `Drag a file dot or a bundle dot into this terminal to build ${terminalProviderLabel(
+                                    terminalProviderForTile(tile)
+                                  )} context.`}
                             </div>
-                          </>
-                        )}
-                      </div>
+                          ) : (
+                            <>
+                              {contextGroups.map((contextGroup) => (
+                                <div
+                                  key={contextGroup.id}
+                                  className="flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[10px] text-[var(--text-dim)]"
+                                >
+                                  <span className="font-semibold uppercase tracking-[0.08em] text-[var(--text-faint)]">
+                                    Bundle
+                                  </span>
+                                  <span className="max-w-[120px] truncate text-[var(--text)]">
+                                    {contextGroup.label}
+                                  </span>
+                                  <span className="rounded-[4px] bg-[var(--surface-1)] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-[var(--text-faint)]">
+                                    {contextGroup.containedTiles.length}
+                                  </span>
+                                  <button
+                                    className="rounded-[4px] px-1 text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                                    title="Remove linked bundle"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      detachContextGroup(tile.id, contextGroup.id)
+                                    }}
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              ))}
+                              {contextTiles.map((contextTile) => (
+                                <div
+                                  key={contextTile.id}
+                                  className="flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[10px] text-[var(--text-dim)]"
+                                >
+                                  <span className="max-w-[120px] truncate">{contextTile.title}</span>
+                                  <button
+                                    className="rounded-[4px] px-1 text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                                    title="Remove linked context"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      detachContextTile(tile.id, contextTile.id)
+                                    }}
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              ))}
+                              <div className="text-[10px] text-[var(--text-faint)]">
+                                Linked resources stay attached and get prepended when you send the next
+                                prompt.
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
 
                       <div className="min-h-0 flex-1">
                         <TerminalPane
@@ -5242,6 +5267,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       fileKind={tileFileKind}
                       filePath={tile.filePath}
                       noteSizingMode={tile.type === 'note' ? tile.noteSizeMode ?? 'auto' : undefined}
+                      noteViewScale={tile.type === 'note' ? noteViewScale : undefined}
                       onNoteContentHeightChange={
                         tile.type === 'note'
                           ? (contentHeight) => {
@@ -5272,11 +5298,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                           : undefined
                       }
                       onImportImageFile={onImportImageFile}
-                      onRegisterNoteCopyActions={
-                        tileFileKind === 'note'
-                          ? (actions) => registerNoteCopyActions(tile.id, actions)
-                          : undefined
-                      }
                       onPassthroughScroll={panBy}
                       presentationEmbedUrl={tile.type === 'presentation' ? tile.embedUrl ?? null : null}
                       refreshToken={tileRefreshToken}

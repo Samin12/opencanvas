@@ -1655,7 +1655,7 @@ export default function App() {
   async function renameWorkspaceNode(
     targetPath: string,
     nextName: string,
-    options?: { suppressError?: boolean }
+    options?: { dedupeConflicts?: boolean; suppressError?: boolean }
   ) {
     if (!activeWorkspace) {
       return false
@@ -1663,6 +1663,7 @@ export default function App() {
 
     try {
       const renamedNode = await window.collaborator.renameWorkspaceNode(activeWorkspace, {
+        dedupeConflicts: options?.dedupeConflicts,
         nextName,
         targetPath
       })

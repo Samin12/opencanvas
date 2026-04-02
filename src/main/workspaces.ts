@@ -137,12 +137,12 @@ async function pathExists(targetPath: string) {
 }
 
 async function createUniquePath(directoryPath: string, baseName: string, extension: string) {
-  let suffix = 1
   let candidatePath = join(directoryPath, `${baseName}${extension}`)
+  let suffix = 1
 
   while (await pathExists(candidatePath)) {
+    candidatePath = join(directoryPath, `${baseName} (${suffix})${extension}`)
     suffix += 1
-    candidatePath = join(directoryPath, `${baseName} ${suffix}${extension}`)
   }
 
   return candidatePath
@@ -606,7 +606,7 @@ export async function renameWorkspaceNode(
   }
 
   const nextName = validateWorkspaceNameSegment(options.nextName, 'Name')
-  const nextPath = join(dirname(resolvedTargetPath), nextName)
+  let nextPath = join(dirname(resolvedTargetPath), nextName)
 
   if (resolvedTargetPath === nextPath) {
     return ensureNode(resolvedTargetPath)
@@ -619,7 +619,17 @@ export async function renameWorkspaceNode(
     (await pathExists(nextPath)) &&
     !(isCaseOnlyRename && (await pathsReferToSameNode(resolvedTargetPath, nextPath)))
   ) {
-    throw new Error('A file or folder with that name already exists')
+    if (!options.dedupeConflicts) {
+      throw new Error('A file or folder with that name already exists')
+    }
+
+    const sourceStats = await stat(resolvedTargetPath)
+    const nextExtension = sourceStats.isDirectory() ? '' : extname(nextPath)
+    nextPath = await createUniquePath(
+      dirname(resolvedTargetPath),
+      sourceStats.isDirectory() ? basename(nextPath) : basename(nextPath, nextExtension),
+      nextExtension
+    )
   }
 
   if (isCaseOnlyRename) {

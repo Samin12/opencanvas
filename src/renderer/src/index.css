@@ -210,9 +210,10 @@ textarea {
 
 .markdown-preview {
   font-family: var(--font-ui);
-  line-height: 1.65;
+  line-height: 1.72;
   overflow-wrap: break-word;
   word-break: normal;
+  text-rendering: optimizeLegibility;
 }
 
 .rich-note-editor {
