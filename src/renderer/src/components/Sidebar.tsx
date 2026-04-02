@@ -508,6 +508,7 @@ interface SidebarProps {
   config: AppConfig
   darkMode: boolean
   focusNavigatorVersion: number
+  revealNavigatorVersion: number
   loadingWorkspace: boolean
   navigatorZoom: number
   onAddWorkspace: () => void
@@ -560,6 +561,7 @@ function SidebarComponent({
   config,
   darkMode,
   focusNavigatorVersion,
+  revealNavigatorVersion,
   loadingWorkspace,
   navigatorZoom,
   onAddWorkspace,
@@ -687,6 +689,16 @@ function SidebarComponent({
     setFileBrowserMode('tree')
     setTreeFocusVersion((current) => current + 1)
   }, [focusNavigatorVersion])
+
+  useEffect(() => {
+    if (revealNavigatorVersion === 0) {
+      return
+    }
+
+    setFileBrowserMode('tree')
+    setFileQuery('')
+    setTreeFocusVersion((current) => current + 1)
+  }, [revealNavigatorVersion])
 
   return (
     <aside
@@ -979,8 +991,6 @@ function SidebarComponent({
             'min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-[var(--radius-surface)] bg-[var(--nav-panel)] px-1.5 pb-2 pt-2',
             navigatorSelected && 'shadow-[inset_0_0_0_1px_var(--accent)]'
           )}
-          onFocusCapture={onActivateNavigator}
-          onPointerDownCapture={onActivateNavigator}
         >
           {activeWorkspacePath ? (
             fileBrowserMode === 'recent' ? (
@@ -1013,9 +1023,8 @@ function SidebarComponent({
                             onClick={() => onSelectNode(file)}
                             onDoubleClick={(event) => {
                               event.preventDefault()
-                              onPlaceFile(file)
+                              onSelectNode(file)
                             }}
-                            title="Click to preview. Double-click or press Shift+Enter to place on canvas."
                           >
                             <FileKindIcon darkMode={darkMode} fileKind={file.fileKind} fileName={file.name} />
                             <div className="min-w-0 flex-1">
@@ -1049,6 +1058,7 @@ function SidebarComponent({
                 focusVersion={treeFocusVersion}
                 keyboardActive={navigatorSelected}
                 nodes={workspaceTree}
+                onActivateNavigator={onActivateNavigator}
                 onCreateWorkspaceDirectory={onCreateWorkspaceDirectory}
                 onCreateWorkspaceDirectoryWithSelection={onCreateWorkspaceDirectoryWithSelection}
                 onCreateWorkspaceFile={onCreateWorkspaceFile}

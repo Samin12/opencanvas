@@ -368,7 +368,6 @@ export default function App() {
   const [workspaceTree, setWorkspaceTree] = useState<FileTreeNode[]>([])
   const [viewerFile, setViewerFile] = useState<FileTreeNode | null>(null)
   const [selectedTreePath, setSelectedTreePath] = useState<string | null>(null)
-  const [canvasSelectedFilePath, setCanvasSelectedFilePath] = useState<string | null>(null)
   const [sidebarWidth, setSidebarWidth] = useState(320)
   const [darkMode, setDarkMode] = useState(false)
   const [navigatorZoom, setNavigatorZoom] = useState(1)
@@ -384,6 +383,7 @@ export default function App() {
   const [bootError, setBootError] = useState<string | null>(null)
   const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState<string | null>(null)
   const [focusNavigatorVersion, setFocusNavigatorVersion] = useState(0)
+  const [revealNavigatorVersion, setRevealNavigatorVersion] = useState(0)
   const [activeKeyboardSurface, setActiveKeyboardSurface] = useState<KeyboardSurface>('canvas')
   const [officeViewer, setOfficeViewer] = useState<OfficeViewerBootstrap | null>(null)
   const [terminalDependencies, setTerminalDependencies] = useState<TerminalDependencyState | null>(null)
@@ -411,8 +411,7 @@ export default function App() {
     () => (selectedTreeNode?.kind === 'file' ? selectedTreeNode : null),
     [selectedTreeNode]
   )
-  const activeTreePath =
-    activeKeyboardSurface === 'canvas' ? canvasSelectedFilePath : selectedTreePath
+  const activeTreePath = activeKeyboardSurface === 'navigator' ? selectedTreePath : null
   const noteTargetPath = useMemo(() => {
     if (!activeWorkspace) {
       return null
@@ -502,20 +501,6 @@ export default function App() {
       cancelled = true
     }
   }, [])
-
-  useEffect(() => {
-    if (!canvasSelectedFilePath) {
-      return
-    }
-
-    if (
-      !activeWorkspace ||
-      !isSameOrDescendantPath(canvasSelectedFilePath, activeWorkspace) ||
-      !findNodeByPath(workspaceTree, canvasSelectedFilePath)
-    ) {
-      setCanvasSelectedFilePath(null)
-    }
-  }, [activeWorkspace, canvasSelectedFilePath, workspaceTree])
 
   async function flushPendingCanvasSave() {
     if (canvasSaveTimerRef.current !== null) {
@@ -1510,19 +1495,18 @@ export default function App() {
   function previewFile(file: FileTreeNode) {
     setSelectedTreePath(file.path)
     setViewerFile(file)
+    setActiveKeyboardSurface('canvas')
   }
 
-  function handleCanvasSelectedFilePathChange(filePath: string | null) {
-    if (!filePath) {
-      setCanvasSelectedFilePath(null)
-      return
+  function revealFileInNavigator(file: FileTreeNode) {
+    setSelectedTreePath(file.path)
+
+    if (sidebarCollapsed) {
+      setSidebarPlacement(sidebarSide, false)
     }
 
-    if (!activeWorkspace || !isSameOrDescendantPath(filePath, activeWorkspace)) {
-      return
-    }
-
-    setCanvasSelectedFilePath((currentPath) => (currentPath === filePath ? currentPath : filePath))
+    setActiveKeyboardSurface('navigator')
+    setRevealNavigatorVersion((current) => current + 1)
   }
 
   function selectWorkspaceNode(node: FileTreeNode, options?: { preview?: boolean }) {
@@ -1530,6 +1514,7 @@ export default function App() {
 
     if (node.kind === 'file' && options?.preview !== false) {
       setViewerFile(node)
+      setActiveKeyboardSurface('canvas')
     }
   }
 
@@ -1835,10 +1820,6 @@ export default function App() {
       const rebasedSelectedPath = isSameOrDescendantPath(selectedTreePath, sourcePath)
         ? replacePathPrefix(selectedTreePath ?? '', sourcePath, movedNode.path)
         : null
-      const rebasedCanvasSelectedPath = isSameOrDescendantPath(canvasSelectedFilePath, sourcePath)
-        ? replacePathPrefix(canvasSelectedFilePath ?? '', sourcePath, movedNode.path)
-        : null
-
       if (rebasedViewerPath) {
         const nextViewerNode = findNodeByPath(nextTree, rebasedViewerPath)
         setViewerFile(nextViewerNode?.kind === 'file' ? nextViewerNode : null)
@@ -1847,11 +1828,6 @@ export default function App() {
       if (rebasedSelectedPath) {
         const nextSelectedNode = findNodeByPath(nextTree, rebasedSelectedPath)
         setSelectedTreePath(nextSelectedNode?.path ?? null)
-      }
-
-      if (rebasedCanvasSelectedPath) {
-        const nextCanvasSelectedNode = findNodeByPath(nextTree, rebasedCanvasSelectedPath)
-        setCanvasSelectedFilePath(nextCanvasSelectedNode?.kind === 'file' ? nextCanvasSelectedNode.path : null)
       }
 
       const currentCanvasState = canvasStateRef.current
@@ -1905,10 +1881,6 @@ export default function App() {
       const rebasedSelectedPath = isSameOrDescendantPath(selectedTreePath, targetPath)
         ? replacePathPrefix(selectedTreePath ?? '', targetPath, renamedNode.path)
         : null
-      const rebasedCanvasSelectedPath = isSameOrDescendantPath(canvasSelectedFilePath, targetPath)
-        ? replacePathPrefix(canvasSelectedFilePath ?? '', targetPath, renamedNode.path)
-        : null
-
       if (rebasedViewerPath) {
         const nextViewerNode = findNodeByPath(nextTree, rebasedViewerPath)
         setViewerFile(nextViewerNode?.kind === 'file' ? nextViewerNode : null)
@@ -1917,11 +1889,6 @@ export default function App() {
       if (rebasedSelectedPath) {
         const nextSelectedNode = findNodeByPath(nextTree, rebasedSelectedPath)
         setSelectedTreePath(nextSelectedNode?.path ?? null)
-      }
-
-      if (rebasedCanvasSelectedPath) {
-        const nextCanvasSelectedNode = findNodeByPath(nextTree, rebasedCanvasSelectedPath)
-        setCanvasSelectedFilePath(nextCanvasSelectedNode?.kind === 'file' ? nextCanvasSelectedNode.path : null)
       }
 
       const currentCanvasState = canvasStateRef.current
@@ -2028,10 +1995,6 @@ export default function App() {
         setSelectedTreePath(null)
       }
 
-      if (isSameOrDescendantPath(canvasSelectedFilePath, targetPath)) {
-        setCanvasSelectedFilePath(null)
-      }
-
       const currentCanvasState = canvasStateRef.current
 
       if (currentCanvasState) {
@@ -2107,11 +2070,6 @@ export default function App() {
       const nextTree = await refreshWorkspaceTree(activeWorkspace)
       const rebasedViewerPath = rebasePathThroughOperations(viewerFile?.path, moveOperations)
       const rebasedSelectedPath = rebasePathThroughOperations(selectedTreePath, moveOperations)
-      const rebasedCanvasSelectedPath = rebasePathThroughOperations(
-        canvasSelectedFilePath,
-        moveOperations
-      )
-
       if (rebasedViewerPath) {
         const nextViewerNode = findNodeByPath(nextTree, rebasedViewerPath)
         setViewerFile(nextViewerNode?.kind === 'file' ? nextViewerNode : null)
@@ -2120,11 +2078,6 @@ export default function App() {
       if (rebasedSelectedPath) {
         const nextSelectedNode = findNodeByPath(nextTree, rebasedSelectedPath)
         setSelectedTreePath(nextSelectedNode?.path ?? null)
-      }
-
-      if (rebasedCanvasSelectedPath) {
-        const nextCanvasSelectedNode = findNodeByPath(nextTree, rebasedCanvasSelectedPath)
-        setCanvasSelectedFilePath(nextCanvasSelectedNode?.kind === 'file' ? nextCanvasSelectedNode.path : null)
       }
 
       const currentCanvasState = canvasStateRef.current
@@ -2195,14 +2148,6 @@ export default function App() {
 
       if (normalizedTargetPaths.some((targetPath) => isSameOrDescendantPath(selectedTreePath, targetPath))) {
         setSelectedTreePath(null)
-      }
-
-      if (
-        normalizedTargetPaths.some((targetPath) =>
-          isSameOrDescendantPath(canvasSelectedFilePath, targetPath)
-        )
-      ) {
-        setCanvasSelectedFilePath(null)
       }
 
       const currentCanvasState = canvasStateRef.current
@@ -2288,16 +2233,6 @@ export default function App() {
 
       setSelectedTreePath(nextDirectoryNode?.path ?? createdDirectory.path)
       setViewerFile(null)
-
-      const rebasedCanvasSelectedPath = rebasePathThroughOperations(
-        canvasSelectedFilePath,
-        moveOperations
-      )
-
-      if (rebasedCanvasSelectedPath) {
-        const nextCanvasSelectedNode = findNodeByPath(nextTree, rebasedCanvasSelectedPath)
-        setCanvasSelectedFilePath(nextCanvasSelectedNode?.kind === 'file' ? nextCanvasSelectedNode.path : null)
-      }
 
       const currentCanvasState = canvasStateRef.current
 
@@ -2538,6 +2473,7 @@ export default function App() {
               config={config}
               darkMode={darkMode}
               focusNavigatorVersion={focusNavigatorVersion}
+              revealNavigatorVersion={revealNavigatorVersion}
               loadingWorkspace={loadingWorkspace}
               navigatorZoom={navigatorZoom}
               navigatorSelected={activeKeyboardSurface === 'navigator'}
@@ -2754,8 +2690,8 @@ export default function App() {
               })
             }
             onImportImageFile={importWorkspaceImageFile}
-            onSelectedFilePathChange={handleCanvasSelectedFilePathChange}
             onOpenFile={previewFile}
+            onRevealFileInNavigator={revealFileInNavigator}
             onRenameNode={renameWorkspaceNode}
             onStateChange={handleCanvasStateChange}
             shortcutsSuspended={Boolean(viewerFile)}
@@ -2810,6 +2746,7 @@ export default function App() {
               config={config}
               darkMode={darkMode}
               focusNavigatorVersion={focusNavigatorVersion}
+              revealNavigatorVersion={revealNavigatorVersion}
               loadingWorkspace={loadingWorkspace}
               navigatorZoom={navigatorZoom}
               navigatorSelected={activeKeyboardSurface === 'navigator'}

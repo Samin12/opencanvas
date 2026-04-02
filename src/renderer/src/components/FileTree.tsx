@@ -54,11 +54,6 @@ import {
   externalPathsFromDataTransfer,
   hasExternalPathPayload
 } from '../utils/externalDropPaths'
-import {
-  PLACE_ON_CANVAS_SHORTCUT_KEY,
-  TREE_COLLAPSE_ALL_SHORTCUT_KEY,
-  TREE_EXPAND_ALL_SHORTCUT_KEY
-} from '../utils/navigatorShortcuts'
 
 interface FileTreeProps {
   activePath: string | null
@@ -68,6 +63,7 @@ interface FileTreeProps {
   focusVersion?: number
   keyboardActive?: boolean
   nodes: FileTreeNode[]
+  onActivateNavigator?: () => void
   onCreateWorkspaceDirectory: (targetDirectoryPath: string, directoryName: string) => void
   onCreateWorkspaceDirectoryWithSelection: (
     sourcePaths: string[],
@@ -649,6 +645,7 @@ export function FileTree({
   focusVersion = 0,
   keyboardActive = false,
   nodes,
+  onActivateNavigator,
   onCreateWorkspaceDirectory,
   onCreateWorkspaceDirectoryWithSelection,
   onCreateWorkspaceFile,
@@ -742,7 +739,14 @@ export function FileTree({
   }, [activePath, nodes])
 
   useEffect(() => {
-    if (!keyboardActive || !activePath) {
+    if (!keyboardActive) {
+      setSelectedPaths((current) => (current.length === 0 ? current : []))
+      setSelectionAnchorPath((current) => (current === null ? current : null))
+      setFocusedPath((current) => (current === null ? current : null))
+      return
+    }
+
+    if (!activePath) {
       return
     }
 
@@ -761,6 +765,29 @@ export function FileTree({
       activeElement.blur()
     }
   }, [keyboardActive])
+
+  useEffect(() => {
+    function handleDocumentPointerDown(event: PointerEvent) {
+      const treeRoot = treeRootRef.current
+      const target = event.target as Node | null
+
+      if (!treeRoot || (target && treeRoot.contains(target))) {
+        return
+      }
+
+      const activeElement = document.activeElement
+
+      if (activeElement instanceof HTMLElement && treeRoot.contains(activeElement)) {
+        activeElement.blur()
+      }
+    }
+
+    document.addEventListener('pointerdown', handleDocumentPointerDown, true)
+
+    return () => {
+      document.removeEventListener('pointerdown', handleDocumentPointerDown, true)
+    }
+  }, [])
 
   useEffect(() => {
     if (focusVersion === 0) {
@@ -1117,6 +1144,22 @@ export function FileTree({
     }
 
     if ((event.key === 'Backspace' || event.key === 'Delete') && selectedPaths.length > 0) {
+      const deleteShortcutPressed = (event.metaKey || event.ctrlKey) && !event.altKey
+
+      if (!deleteShortcutPressed) {
+        return
+      }
+
+      const treeRoot = treeRootRef.current
+      const activeElement = document.activeElement
+      const treeHasFocus = Boolean(
+        treeRoot && activeElement instanceof HTMLElement && treeRoot.contains(activeElement)
+      )
+
+      if (!treeHasFocus) {
+        return
+      }
+
       event.preventDefault()
       event.stopPropagation()
       openDeleteDialogForPaths(selectedPaths)
@@ -1720,6 +1763,7 @@ export function FileTree({
     }
 
     if (event.shiftKey) {
+      onActivateNavigator?.()
       const nextRangePaths = rangeSelectionPaths(flatVisibleEntries, selectionAnchorPath, node.path)
       setSelectionState(nextRangePaths, node.path)
       onSelectNode(node, {
@@ -1729,6 +1773,7 @@ export function FileTree({
     }
 
     if (event.metaKey || event.ctrlKey) {
+      onActivateNavigator?.()
       const isCurrentlySelected = selectedPathSet.has(node.path)
       const nextPaths = isCurrentlySelected
         ? selectedPaths.filter((path) => path !== node.path)
@@ -1753,6 +1798,10 @@ export function FileTree({
       return
     }
 
+    if (node.kind === 'directory' || options?.toggleDirectory) {
+      onActivateNavigator?.()
+    }
+
     selectOnlyNode(node, {
       preview: node.kind === 'file'
     })
@@ -1764,8 +1813,8 @@ export function FileTree({
 
   function renderEntry(entry: VisibleTreeEntry) {
     const { depth, node, parentPath } = entry
-    const isFocused = focusedPath === node.path
-    const isSelected = selectedPathSet.has(node.path)
+    const isFocused = keyboardActive && focusedPath === node.path
+    const isSelected = keyboardActive && selectedPathSet.has(node.path)
     const isActive = activePath === node.path
     const rowPaddingLeft = depth * TREE_INDENT_STEP + TREE_ROW_START_PADDING
 
@@ -1815,7 +1864,6 @@ export function FileTree({
             onDragOverCapture={handleExternalDragOver}
             onDropCapture={handleExternalDrop}
             onContextMenu={(event) => openContextMenu(event, node, node.path)}
-            title={`Toggle folder: ${node.name}. Use ${TREE_COLLAPSE_ALL_SHORTCUT_KEY} or ${TREE_EXPAND_ALL_SHORTCUT_KEY} to collapse or expand everything.`}
             onPointerDown={(event) => startDraggingNode(event, node)}
           >
             <span className="flex h-2.5 w-2.5 shrink-0 items-center justify-center text-[var(--text-faint)]">
@@ -1897,10 +1945,9 @@ export function FileTree({
           }
           onDoubleClick={(event) => {
             event.preventDefault()
-            onPlaceFile(node)
+            onSelectNode(node)
           }}
           onPointerDown={(event) => startDraggingNode(event, node)}
-          title={`Preview ${node.name}. Double-click or ${PLACE_ON_CANVAS_SHORTCUT_KEY} to place it on the canvas.`}
         >
           <span className="flex h-2.5 w-2.5 shrink-0 items-center justify-center text-transparent">
             <ChevronIcon expanded={false} />

@@ -94,8 +94,8 @@ interface CanvasSurfaceProps {
     targetDirectoryPath: string | null
   ) => Promise<FileTreeNode[]>
   onImportImageFile: (file: File) => Promise<FileTreeNode | null>
-  onSelectedFilePathChange?: (filePath: string | null) => void
   onOpenFile: (node: FileTreeNode) => void
+  onRevealFileInNavigator: (node: FileTreeNode) => void
   onRenameNode: (
     targetPath: string,
     nextName: string,
@@ -1186,8 +1186,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       onImportExternalDownload,
       onImportExternalPaths,
       onImportImageFile,
-      onSelectedFilePathChange,
       onOpenFile,
+      onRevealFileInNavigator,
       onRenameNode,
       onStateChange,
       shortcutsSuspended = false,
@@ -3673,20 +3673,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }, [hoveredTileId, selectedTileId, selectedTileIds, state.tiles])
 
     useEffect(() => {
-      if (!onSelectedFilePathChange) {
-        return
-      }
-
-      if (selectedTileIds.length !== 1 || !selectedTileId) {
-        onSelectedFilePathChange(null)
-        return
-      }
-
-      const selectedTile = state.tiles.find((tile) => tile.id === selectedTileId) ?? null
-      onSelectedFilePathChange(selectedTile?.filePath ?? null)
-    }, [onSelectedFilePathChange, selectedTileId, selectedTileIds, state.tiles])
-
-    useEffect(() => {
       if (activeBoardTool !== 'draw') {
         return
       }
@@ -5166,10 +5152,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                         <button
                           className="flex h-5 w-5 items-center justify-center rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] text-[11px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
                           onPointerDown={(event) => event.stopPropagation()}
-                          title="Open preview"
+                          title="Reveal in file explorer"
                           onClick={(event) => {
                             event.stopPropagation()
-                            onOpenFile({
+                            onRevealFileInNavigator({
                               kind: 'file',
                               name: tile.title,
                               path: tile.filePath as string,
@@ -5344,10 +5330,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                           <button
                             className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] border border-white/10 bg-black/15 text-[11px] text-[var(--text-dim)] transition hover:bg-black/25 hover:text-[var(--text)]"
                             onPointerDown={(event) => event.stopPropagation()}
-                            title="Open preview"
+                            title="Reveal in file explorer"
                             onClick={(event) => {
                               event.stopPropagation()
-                              onOpenFile({
+                              onRevealFileInNavigator({
                                 kind: 'file',
                                 name: tile.title,
                                 path: tile.filePath as string,
