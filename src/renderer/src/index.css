@@ -35,8 +35,9 @@
   --font-ui: "Inter", "Avenir Next", "Segoe UI", sans-serif;
   --font-display: "Manrope", "Inter", "Avenir Next", "Segoe UI", sans-serif;
   --font-mono: "SF Mono", "JetBrains Mono", "SFMono-Regular", "Menlo", "Consolas", monospace;
-  --radius-sm: 4px;
-  --radius-md: 6px;
+  --radius-control: 8px;
+  --radius-surface: 12px;
+  --radius-pill: 999px;
   font-family: var(--font-ui);
   color: var(--text);
 }
@@ -149,7 +150,7 @@ textarea {
   align-items: flex-start;
   gap: 0.5rem;
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: var(--surface-overlay);
   padding: 0.375rem 0.625rem;
   color: var(--text);
@@ -175,7 +176,7 @@ textarea {
 .app-tooltip__shortcut {
   flex-shrink: 0;
   border: 1px solid var(--accent);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: var(--accent-soft);
   padding: 0.125rem 0.375rem;
   color: var(--accent);
@@ -204,7 +205,7 @@ textarea {
 
 .terminal-pane .xterm-viewport::-webkit-scrollbar-thumb {
   background: rgba(121, 121, 121, 0.4);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
 }
 
 .terminal-pane .xterm-viewport::-webkit-scrollbar-thumb:hover {

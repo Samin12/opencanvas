@@ -1862,6 +1862,21 @@ export default function App() {
     setSelectedTreePath(file.path)
   }
 
+  function placeFileOnCanvasAtPoint(file: FileTreeNode, clientX: number, clientY: number) {
+    canvasRef.current?.spawnFileTileAtPoint(file, clientX, clientY)
+    setSelectedTreePath(file.path)
+    setViewerFile(null)
+    const focusEditableTile = file.fileKind === 'note' || file.fileKind === 'code'
+
+    window.requestAnimationFrame(() => {
+      if (focusEditableTile && canvasRef.current?.focusSelectedTileEditor()) {
+        return
+      }
+
+      canvasRef.current?.focusCanvas()
+    })
+  }
+
   function terminalProviderDependencyMessage(provider: TerminalProvider) {
     if (!terminalDependencies) {
       return 'Terminal prerequisites are still loading.'
@@ -1993,7 +2008,7 @@ export default function App() {
   if (bootError) {
     return (
       <div className="app-shell">
-        <div className="glass-panel flex flex-1 items-center justify-center rounded-[6px] text-center">
+        <div className="glass-panel flex flex-1 items-center justify-center rounded-[var(--radius-surface)] text-center">
           <div className="max-w-lg p-8">
             <div className="text-[11px] uppercase tracking-[0.25em] text-[var(--text-faint)]">
               Boot Error
@@ -2008,7 +2023,7 @@ export default function App() {
   if (!config || !canvasState) {
     return (
       <div className="app-shell">
-        <div className="glass-panel flex flex-1 items-center justify-center rounded-[6px]">
+        <div className="glass-panel flex flex-1 items-center justify-center rounded-[var(--radius-surface)]">
           <div className="text-sm uppercase tracking-[0.25em] text-[var(--text-faint)]">
             Initializing…
           </div>
@@ -2071,6 +2086,7 @@ export default function App() {
                 setSearchOpen(true)
               }}
               onPlaceFile={placeFileOnCanvas}
+              onPlaceFileAtPoint={placeFileOnCanvasAtPoint}
               onRemoveWorkspace={() => void removeActiveWorkspace()}
               onSelectNode={selectWorkspaceNode}
               onSelectWorkspace={(index) =>
@@ -2117,7 +2133,7 @@ export default function App() {
 
         <main className="relative min-h-0 min-w-0 flex-1">
           {showAppUpdateBanner ? (
-            <div className="glass-panel absolute left-1/2 top-3 z-[265] w-[min(44rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-[10px] border border-[color:var(--line-strong)] bg-[var(--surface-overlay)] px-4 py-3 shadow-[0_20px_44px_rgba(15,23,42,0.18)]">
+            <div className="glass-panel absolute left-1/2 top-3 z-[265] w-[min(44rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-[var(--radius-surface)] border border-[color:var(--line-strong)] bg-[var(--surface-overlay)] px-4 py-3 shadow-[0_20px_44px_rgba(15,23,42,0.18)]">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
@@ -2137,20 +2153,20 @@ export default function App() {
                   <div className="flex flex-wrap items-center gap-2">
                     {appUpdate?.installSupported ? (
                       <button
-                        className="rounded-[6px] bg-[var(--accent)] px-3.5 py-2 text-[13px] font-semibold text-white transition hover:brightness-105"
+                        className="rounded-[var(--radius-control)] bg-[var(--accent)] px-3.5 py-2 text-[13px] font-semibold text-white transition hover:brightness-105"
                         onClick={() => void installAppUpdate()}
                       >
                         Install And Relaunch
                       </button>
                     ) : null}
                     <button
-                      className="rounded-[6px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-3.5 py-2 text-[13px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-1)]"
+                      className="rounded-[var(--radius-control)] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-3.5 py-2 text-[13px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-1)]"
                       onClick={() => void openAppUpdateRelease()}
                     >
                       View Release
                     </button>
                     <button
-                      className="rounded-[6px] px-3 py-2 text-[13px] font-medium text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                      className="rounded-[var(--radius-control)] px-3 py-2 text-[13px] font-medium text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
                       onClick={() => setDismissedUpdateVersion(appUpdate?.latestVersion ?? null)}
                     >
                       Later
@@ -2163,7 +2179,7 @@ export default function App() {
           {sidebarCollapsed && !viewerFile ? (
             <div
               className={clsx(
-                'app-drag-region glass-panel absolute top-3 z-[270] flex items-center gap-1 rounded-[6px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] p-1.5',
+                'app-drag-region glass-panel absolute top-3 z-[270] flex items-center gap-1 rounded-[var(--radius-surface)] border border-[color:var(--line-strong)] bg-[var(--surface-0)] p-1.5',
                 sidebarSide === 'left' ? 'left-3' : 'right-3'
               )}
             >
@@ -2173,7 +2189,7 @@ export default function App() {
                 shortcut={SIDEBAR_LEFT_SHORTCUT_KEY}
               >
                 <button
-                  className="app-no-drag flex h-10 w-10 items-center justify-center rounded-[4px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                  className="app-no-drag flex h-10 w-10 items-center justify-center rounded-[var(--radius-control)] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
                   aria-label="Open sidebar on the left"
                   data-managed-tooltip="custom"
                   data-shortcut={SIDEBAR_LEFT_SHORTCUT_KEY ?? undefined}
@@ -2188,7 +2204,7 @@ export default function App() {
                 shortcut={SIDEBAR_RIGHT_SHORTCUT_KEY}
               >
                 <button
-                  className="app-no-drag flex h-10 w-10 items-center justify-center rounded-[4px] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                  className="app-no-drag flex h-10 w-10 items-center justify-center rounded-[var(--radius-control)] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
                   aria-label="Open sidebar on the right"
                   data-managed-tooltip="custom"
                   data-shortcut={SIDEBAR_RIGHT_SHORTCUT_KEY ?? undefined}
@@ -2251,7 +2267,7 @@ export default function App() {
           {workspaceError ? (
             <div
               className={clsx(
-                'absolute right-3 top-20 z-[260] max-w-[24rem] rounded-[4px] border px-3.5 py-3 text-[13px] leading-5 shadow-[0_14px_30px_rgba(0,0,0,0.18)] backdrop-blur',
+                'absolute right-3 top-20 z-[260] max-w-[24rem] rounded-[var(--radius-control)] border px-3.5 py-3 text-[13px] leading-5 shadow-[0_14px_30px_rgba(0,0,0,0.18)] backdrop-blur',
                 'border-[color:var(--error-line)] bg-[var(--error-bg)] text-[var(--error-text)]'
               )}
             >
@@ -2318,6 +2334,7 @@ export default function App() {
                 setSearchOpen(true)
               }}
               onPlaceFile={placeFileOnCanvas}
+              onPlaceFileAtPoint={placeFileOnCanvasAtPoint}
               onRemoveWorkspace={() => void removeActiveWorkspace()}
               onSelectNode={selectWorkspaceNode}
               onSelectWorkspace={(index) =>

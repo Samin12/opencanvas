@@ -15,7 +15,7 @@ interface EmbedPaneProps {
 function OpenExternalButton({ url }: { url: string }) {
   return (
     <button
-      className="rounded-[4px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+      className="rounded-[var(--radius-control)] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
       onClick={() => {
         void window.collaborator.openExternalUrl(url)
       }}
@@ -31,7 +31,7 @@ function EmbedPaneComponent({ headerActions, title, url, variant = 'tile' }: Emb
 
   if (!descriptor) {
     return (
-      <div className="flex h-full items-center justify-center rounded-[4px] border border-[color:var(--error-line)] bg-[var(--error-bg)] p-4 text-center text-sm text-[var(--error-text)]">
+      <div className="flex h-full items-center justify-center rounded-[var(--radius-surface)] border border-[color:var(--error-line)] bg-[var(--error-bg)] p-4 text-center text-sm text-[var(--error-text)]">
         This link could not be embedded on the canvas.
       </div>
     )
@@ -39,7 +39,7 @@ function EmbedPaneComponent({ headerActions, title, url, variant = 'tile' }: Emb
 
   if (descriptor.renderKind === 'video') {
     return (
-      <div className="relative flex h-full items-center justify-center overflow-hidden rounded-[4px] bg-black/90">
+      <div className="relative flex h-full items-center justify-center overflow-hidden rounded-[var(--radius-surface)] bg-black/90">
         {variant === 'viewer' ? (
           <div className="absolute right-3 top-3 z-10">
             <OpenExternalButton url={descriptor.canonicalUrl} />
@@ -66,7 +66,7 @@ function EmbedPaneComponent({ headerActions, title, url, variant = 'tile' }: Emb
 
   if (variant === 'tile') {
     return (
-      <div className="relative h-full overflow-hidden rounded-[4px] bg-[var(--surface-0)]">
+      <div className="relative h-full overflow-hidden rounded-[var(--radius-surface)] bg-[var(--surface-0)]">
         <iframe
           key={descriptor.sourceUrl}
           src={descriptor.sourceUrl}
@@ -83,7 +83,7 @@ function EmbedPaneComponent({ headerActions, title, url, variant = 'tile' }: Emb
   return (
     <div
       className={clsx(
-        'relative h-full overflow-hidden rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)]',
+        'relative h-full overflow-hidden rounded-[var(--radius-surface)] border border-[color:var(--line)] bg-[var(--surface-0)]',
         'bg-[var(--surface-0)]'
       )}
     >
@@ -103,7 +103,7 @@ function EmbedPaneComponent({ headerActions, title, url, variant = 'tile' }: Emb
         className="h-full w-full border-0"
         referrerPolicy="no-referrer-when-downgrade"
       />
-      <div className="pointer-events-none absolute inset-x-3 bottom-3 rounded-[4px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-2 text-[11px] text-[var(--text-dim)] backdrop-blur">
+      <div className="pointer-events-none absolute inset-x-3 bottom-3 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-2 text-[11px] text-[var(--text-dim)] backdrop-blur">
         If this page stays blank, the site blocked iframe embedding. Use Open to continue in your browser.
       </div>
     </div>

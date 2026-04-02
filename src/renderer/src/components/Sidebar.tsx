@@ -38,10 +38,16 @@ const IS_MAC_PLATFORM =
 const SIDEBAR_LEFT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2190' : null
 const SIDEBAR_RIGHT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2192' : null
 const SIDEBAR_TOGGLE_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2193' : null
+const NAV_TITLE_TEXT_CLASS =
+  'truncate text-[15px] font-semibold leading-[1.05] tracking-[-0.02em] text-[var(--text)]'
+const NAV_CONTROL_TEXT_CLASS = 'text-[13px] font-medium leading-none text-[var(--text)]'
+const NAV_META_TEXT_CLASS = 'text-[11px] leading-[1.35] text-[var(--text-dim)]'
+const NAV_CAPTION_TEXT_CLASS =
+  'text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]'
 
 function SearchIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.5]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.4]">
       <circle cx="7" cy="7" r="4.25" />
       <path d="M10.25 10.25L13.5 13.5" strokeLinecap="round" />
     </svg>
@@ -53,7 +59,7 @@ function TreeViewIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <rect x="2.25" y="2.75" width="4" height="3.75" rx="0.8" />
       <rect x="2.25" y="9.5" width="4" height="3.75" rx="0.8" />
@@ -68,7 +74,7 @@ function ExpandTreeIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="M2.5 3.25H13.5M2.5 8H9.75M2.5 12.75H9.75" />
       <path d="M11.25 6.1V9.9M9.35 8H13.15" />
@@ -81,7 +87,7 @@ function CollapseTreeIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="M2.5 3.25H13.5M2.5 8H13.5M2.5 12.75H13.5" />
       <path d="M9.35 8H13.15" />
@@ -94,7 +100,7 @@ function RecentFilesIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="M4 2.5H8.9L12.5 6.05V12A1.5 1.5 0 0 1 11 13.5H4A1.5 1.5 0 0 1 2.5 12V4A1.5 1.5 0 0 1 4 2.5Z" />
       <path d="M8.7 2.75V6H12" />
@@ -107,7 +113,7 @@ function RecentFilesIcon() {
 
 function ClockIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.45]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.25 w-3.25 fill-none stroke-current stroke-[1.35]">
       <circle cx="8" cy="8" r="5.1" />
       <path d="M8 5.25V8.2L10.2 9.3" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -119,7 +125,7 @@ function SortArrowIcon({ ascending }: { ascending: boolean }) {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className={clsx('h-3.5 w-3.5 fill-current transition-transform', ascending && 'rotate-180')}
+      className={clsx('h-3 w-3 fill-current transition-transform', ascending && 'rotate-180')}
     >
       <path d="M8 11.9L3.8 6.8H12.2L8 11.9Z" />
     </svg>
@@ -128,7 +134,7 @@ function SortArrowIcon({ ascending }: { ascending: boolean }) {
 
 function AddWorkspaceIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4.5 w-4.5 fill-none stroke-current stroke-[1.35]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.75 w-3.75 fill-none stroke-current stroke-[1.3]">
       <path d="M2.25 4.25A1.75 1.75 0 0 1 4 2.5H6.5L8 4h4A1.75 1.75 0 0 1 13.75 5.75V11.75A1.75 1.75 0 0 1 12 13.5H4A1.75 1.75 0 0 1 2.25 11.75V4.25Z" strokeLinejoin="round" />
       <path d="M11 8H8M9.5 6.5V9.5" strokeLinecap="round" />
     </svg>
@@ -137,7 +143,7 @@ function AddWorkspaceIcon() {
 
 function NewNoteIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4.5 w-4.5 fill-none stroke-current stroke-[1.35]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.75 w-3.75 fill-none stroke-current stroke-[1.3]">
       <path d="M4 2.25H9.25L12.5 5.5V12A1.75 1.75 0 0 1 10.75 13.75H4A1.75 1.75 0 0 1 2.25 12V4A1.75 1.75 0 0 1 4 2.25Z" strokeLinejoin="round" />
       <path d="M9 2.75V5.75H12" strokeLinejoin="round" />
       <path d="M8 8H5M8 10.5H5" strokeLinecap="round" />
@@ -147,7 +153,7 @@ function NewNoteIcon() {
 
 function ClaudeTerminalIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4.5 w-4.5 fill-none stroke-current stroke-[1.35]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.75 w-3.75 fill-none stroke-current stroke-[1.3]">
       <rect x="2" y="2.5" width="12" height="11" rx="2" />
       <path d="M4.5 6L6.75 8L4.5 10" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M8.25 10H11.5" strokeLinecap="round" />
@@ -158,7 +164,7 @@ function ClaudeTerminalIcon() {
 
 function CodexTerminalIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4.5 w-4.5 fill-none stroke-current stroke-[1.35]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.75 w-3.75 fill-none stroke-current stroke-[1.3]">
       <rect x="2" y="2.5" width="12" height="11" rx="2" />
       <path d="M5.1 6.2L3.9 8L5.1 9.8" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M10.9 6.2L12.1 8L10.9 9.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -172,7 +178,7 @@ function ChevronDownIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-4 w-4 fill-none stroke-current stroke-[1.4] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="m4.5 6.25 3.5 3.5 3.5-3.5" />
     </svg>
@@ -184,7 +190,7 @@ function TrashIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-4.5 w-4.5 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3.75 w-3.75 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="M3.5 4.5H12.5" />
       <path d="M6 2.75H10" />
@@ -200,7 +206,7 @@ function FolderOpenIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-4.5 w-4.5 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3.75 w-3.75 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="M2.25 4.25A1.75 1.75 0 0 1 4 2.5H6.35L7.75 4H12A1.75 1.75 0 0 1 13.75 5.75V11.75A1.75 1.75 0 0 1 12 13.5H4A1.75 1.75 0 0 1 2.25 11.75V4.25Z" />
       <path d="M8.25 6.25H11.75V9.75" />
@@ -214,7 +220,7 @@ function CopyIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-4.5 w-4.5 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3.75 w-3.75 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <rect x="5.25" y="3.25" width="7.5" height="9.5" rx="1.5" />
       <path d="M3.25 10.75V5A1.75 1.75 0 0 1 5 3.25" />
@@ -224,7 +230,7 @@ function CopyIcon() {
 
 function SidebarIcon({ collapsed }: { collapsed: boolean }) {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.3]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.25]">
       <rect x="1.75" y="2.25" width="12.5" height="11.5" rx="1.1" />
       <path d="M5.5 2.75V13.25" />
       {collapsed ? (
@@ -238,7 +244,7 @@ function SidebarIcon({ collapsed }: { collapsed: boolean }) {
 
 function DockSidePreviewIcon({ side }: { side: SidebarSide }) {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.3]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.25]">
       <rect x="1.75" y="2.25" width="12.5" height="11.5" rx="1.1" />
       <path d={side === 'left' ? 'M5.25 2.75V13.25' : 'M10.75 2.75V13.25'} />
     </svg>
@@ -248,7 +254,7 @@ function DockSidePreviewIcon({ side }: { side: SidebarSide }) {
 function ThemeIcon({ darkMode }: { darkMode: boolean }) {
   if (darkMode) {
     return (
-      <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.35]">
+      <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.3]">
         <path
           d="M10.9 1.75C8.25 2.1 6.2 4.35 6.2 7.15C6.2 10.2 8.7 12.65 11.75 12.65C12.35 12.65 12.95 12.55 13.45 12.35C12.55 13.45 11.15 14.1 9.6 14.1C6.85 14.1 4.6 11.9 4.6 9.1C4.6 6.15 6.95 3.7 9.85 3.7C10.2 3.7 10.55 3.75 10.9 3.85V1.75Z"
           strokeLinejoin="round"
@@ -258,7 +264,7 @@ function ThemeIcon({ darkMode }: { darkMode: boolean }) {
   }
 
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.35]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.3]">
       <circle cx="8" cy="8" r="2.9" />
       <path d="M8 1.5V3.2M8 12.8V14.5M14.5 8H12.8M3.2 8H1.5M12.6 3.4L11.35 4.65M4.65 11.35L3.4 12.6M12.6 12.6L11.35 11.35M4.65 4.65L3.4 3.4" strokeLinecap="round" />
     </svg>
@@ -291,7 +297,7 @@ function ActionIconButton({
           data-shortcut={shortcut ?? undefined}
           disabled={disabled}
           className={clsx(
-            'flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] border transition',
+            'flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-control)] border transition',
             active
               ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
               : 'border-[color:var(--line)] bg-[var(--nav-surface)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]',
@@ -327,7 +333,7 @@ function HeaderIconButton({
         data-managed-tooltip="custom"
         data-shortcut={shortcut ?? undefined}
         className={clsx(
-          'flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] border transition',
+          'flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-control)] border transition',
           active
             ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
             : 'border-[color:var(--line)] bg-[var(--nav-surface)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]'
@@ -360,7 +366,7 @@ function PanelIconButton({
         data-managed-tooltip="custom"
         data-shortcut={shortcut ?? undefined}
         disabled={disabled}
-        className="flex h-7 w-7 items-center justify-center rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-40"
         onClick={onClick}
       >
         {children}
@@ -508,6 +514,7 @@ interface SidebarProps {
   onOpenSearch: () => void
   onOpenWorkspacePath: () => void
   onPlaceFile: (node: FileTreeNode) => void
+  onPlaceFileAtPoint: (node: FileTreeNode, clientX: number, clientY: number) => void
   onRemoveWorkspace: () => void
   onSelectNode: (node: FileTreeNode, options?: { preview?: boolean }) => void
   onSelectWorkspace: (index: number) => void
@@ -544,6 +551,7 @@ function SidebarComponent({
   onOpenSearch,
   onOpenWorkspacePath,
   onPlaceFile,
+  onPlaceFileAtPoint,
   onRemoveWorkspace,
   onSelectNode,
   onSelectWorkspace,
@@ -568,7 +576,7 @@ function SidebarComponent({
   const normalizedFileQuery = fileQuery.trim().toLowerCase()
   const workspaceFiles = flattenWorkspaceFiles(workspaceTree)
   const searchFieldLabel = fileBrowserMode === 'recent' ? 'Search recent files' : 'Search files and folders'
-  const searchPlaceholder = compactBrowserChrome ? 'Search…' : `${searchFieldLabel}…`
+  const searchPlaceholder = compactBrowserChrome ? 'Search…' : fileBrowserMode === 'recent' ? 'Search recent…' : 'Search files…'
   const visibleRecentFiles = workspaceFiles
     .filter((node) => (normalizedFileQuery ? matchesFileQuery(node, normalizedFileQuery) : true))
     .sort((left, right) => {
@@ -645,20 +653,17 @@ function SidebarComponent({
   }, [focusNavigatorVersion])
 
   return (
-    <aside className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-r border-[color:var(--line)] bg-[var(--nav-panel)]">
-      <div className="relative shrink-0 border-b border-[color:var(--line)] px-3 pb-2.5 pt-[36px]">
+    <aside className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-r border-[color:var(--line)] bg-[var(--nav-panel)] font-[var(--font-ui)]">
+      <div className="relative shrink-0 border-b border-[color:var(--line)] px-3 pb-1.5 pt-[32px]">
         <div aria-hidden="true" className="app-drag-region absolute inset-x-0 top-0 h-10" />
-        <div className="app-drag-region flex items-start gap-2">
+        <div className="app-drag-region flex items-center gap-2">
           <img
             src={logoMark}
             alt="Open Canvas logo"
-            className="h-7 w-7 shrink-0 rounded-[5px] border border-[color:var(--line)] bg-[var(--nav-surface)]"
+            className="h-8 w-8 shrink-0 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)]"
           />
-          <div className="min-w-0 flex-1 pt-0.5">
-            <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--text-faint)]">
-              Navigator
-            </div>
-            <h1 className="mt-0.5 truncate font-[var(--font-display)] text-[1rem] font-semibold leading-[1.05] tracking-[-0.03em] text-[var(--text)]">
+          <div className="min-w-0 flex-1">
+            <h1 className={NAV_TITLE_TEXT_CLASS}>
               Open Canvas
             </h1>
           </div>
@@ -689,8 +694,8 @@ function SidebarComponent({
           </div>
         </div>
 
-        <div className="app-no-drag mt-2.5 space-y-2">
-          <div className="flex items-stretch gap-2">
+        <div className="app-no-drag mt-1.5 space-y-1">
+          <div className="flex items-stretch gap-1">
             <HoverTooltip
               label="Switch active workspace"
               placement="bottom"
@@ -702,7 +707,10 @@ function SidebarComponent({
                   aria-label="Switch active workspace"
                   data-managed-tooltip="custom"
                   data-shortcut={WORKSPACE_SWITCHER_SHORTCUT_KEY}
-                  className="h-9 w-full appearance-none rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] px-3 pr-10 text-[12px] font-medium text-[var(--text)] outline-none transition focus:border-[color:var(--accent)]"
+                  className={clsx(
+                    'h-9 w-full appearance-none rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] px-3 pr-9 outline-none transition focus:border-[color:var(--accent)]',
+                    NAV_CONTROL_TEXT_CLASS
+                  )}
                   value={config.activeWorkspace}
                   onChange={(event) => onSelectWorkspace(Number(event.target.value))}
                   disabled={config.workspaces.length === 0}
@@ -717,14 +725,14 @@ function SidebarComponent({
                     ))
                   )}
                 </select>
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[var(--text-faint)]">
+                <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-[var(--text-faint)]">
                   <ChevronDownIcon />
                 </span>
               </div>
             </HoverTooltip>
             <HoverTooltip label="Add workspace folder" placement="bottom" shortcut={ADD_WORKSPACE_SHORTCUT_KEY}>
               <button
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]"
                 onClick={onAddWorkspace}
                 data-managed-tooltip="custom"
                 data-shortcut={ADD_WORKSPACE_SHORTCUT_KEY}
@@ -735,7 +743,7 @@ function SidebarComponent({
             </HoverTooltip>
             <HoverTooltip label="Remove active workspace" placement="bottom">
               <button
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-40"
                 onClick={onRemoveWorkspace}
                 disabled={!activeWorkspacePath}
                 data-managed-tooltip="custom"
@@ -746,19 +754,19 @@ function SidebarComponent({
             </HoverTooltip>
           </div>
 
-          <div className="flex items-center gap-2 rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] px-2.5 py-2 text-[11px] text-[var(--text-dim)]">
+          <div className="flex items-center gap-1.5 rounded-[var(--radius-surface)] border border-[color:var(--line)] bg-[var(--nav-surface)] px-3 py-2 text-[11px] text-[var(--text-dim)]">
             <div className="min-w-0 flex-1">
-              <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+              <div className={NAV_CAPTION_TEXT_CLASS}>
                 Workspace root
               </div>
               <div
-                className="mt-0.5 truncate text-[11px] text-[var(--text-dim)]"
+                className={clsx('mt-1 truncate', NAV_META_TEXT_CLASS)}
                 title={activeWorkspacePath ?? 'Add a folder to start building a spatial workspace.'}
               >
                 {activeWorkspacePath ?? 'Add a folder to start building a spatial workspace.'}
               </div>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5">
               <PanelIconButton
                 disabled={!activeWorkspacePath}
                 label="Open workspace root in Finder"
@@ -777,7 +785,7 @@ function SidebarComponent({
           </div>
 
           {terminalDependencies && !terminalDependencies.tmuxInstalled ? (
-            <div className="rounded-[4px] border border-amber-500/20 bg-[rgba(120,53,15,0.12)] px-3 py-2.5 text-[12px] leading-5 text-[var(--text-dim)]">
+            <div className="rounded-[var(--radius-surface)] border border-amber-500/20 bg-[rgba(120,53,15,0.12)] px-3 py-2 text-[11px] leading-[1.4] text-[var(--text-dim)]">
               Install tmux and restart the app before creating terminal tiles.
             </div>
           ) : null}
@@ -785,128 +793,130 @@ function SidebarComponent({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col bg-[var(--nav-panel)]">
-        <div className="shrink-0 border-b border-[color:var(--line)] bg-[var(--nav-panel)] px-3 py-2.5">
-          <div className="mb-2 flex items-center justify-between px-0.5">
+        <div className="shrink-0 border-b border-[color:var(--line)] bg-[var(--nav-panel)] px-3 py-1.5">
+          <div className="mb-1 flex items-center justify-between px-0.5">
             <div className="flex items-center gap-2">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-faint)]">
+              <div className={NAV_CAPTION_TEXT_CLASS}>
                 Files
               </div>
             </div>
             {loadingWorkspace ? (
-              <div className="text-[10px] text-[var(--text-faint)]">Refreshing…</div>
+              <div className="text-[10px] font-medium text-[var(--text-faint)]">Refreshing…</div>
             ) : activeWorkspacePath ? (
-              <div className="rounded-[999px] border border-[color:var(--line)] bg-[var(--nav-badge)] px-2 py-0.5 text-[9px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
+              <div className="rounded-[999px] border border-[color:var(--line)] bg-[var(--nav-badge)] px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
                 {workspaceFiles.length}
                 {compactBrowserChrome ? '' : ' Files'}
               </div>
             ) : null}
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] p-1">
-              <HoverTooltip label="Show recent files">
-                <button
-                  aria-label="Show recent files"
-                  data-managed-tooltip="custom"
-                  className={clsx(
-                    'flex h-7 w-7 items-center justify-center rounded-[4px] transition',
-                    fileBrowserMode === 'recent'
-                      ? 'bg-[var(--nav-surface-hover)] text-[var(--text)]'
-                      : 'text-[var(--text-faint)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]'
-                  )}
-                  onClick={() => setFileBrowserMode('recent')}
-                >
-                  <RecentFilesIcon />
-                </button>
-              </HoverTooltip>
-              <HoverTooltip label="Show folder tree">
-                <button
-                  aria-label="Show folder tree"
-                  data-managed-tooltip="custom"
-                  className={clsx(
-                    'flex h-7 w-7 items-center justify-center rounded-[4px] transition',
-                    fileBrowserMode === 'tree'
-                      ? 'bg-[var(--nav-surface-hover)] text-[var(--text)]'
-                      : 'text-[var(--text-faint)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]'
-                  )}
-                  onClick={() => setFileBrowserMode('tree')}
-                >
-                  <TreeViewIcon />
-                </button>
-              </HoverTooltip>
-              <HoverTooltip
-                label={
-                  fileBrowserMode === 'recent'
-                    ? 'Toggle recent-file sort order'
-                    : 'Open recent files sorted by date'
-                }
-              >
-                <button
-                  aria-label="Sort recent files"
-                  data-managed-tooltip="custom"
-                  className={clsx(
-                    'flex h-7 w-7 items-center justify-center rounded-[4px] transition',
-                    fileBrowserMode === 'recent'
-                      ? 'bg-[var(--nav-surface-hover)] text-[var(--text)]'
-                      : 'text-[var(--text-faint)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]'
-                  )}
-                  onClick={() => {
-                    if (fileBrowserMode !== 'recent') {
-                      setFileBrowserMode('recent')
-                      return
-                    }
-
-                    setRecentAscending((current) => !current)
-                  }}
-                >
-                  <span className="relative flex h-4.5 w-4.5 items-center justify-center">
-                    <ClockIcon />
-                    <span className="absolute -bottom-1 -right-1">
-                      <SortArrowIcon ascending={recentAscending} />
-                    </span>
-                  </span>
-                </button>
-              </HoverTooltip>
-            </div>
-            {fileBrowserMode === 'tree' ? (
-              <div className="flex items-center gap-1 rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] p-1">
-                <HoverTooltip
-                  label="Collapse all folders"
-                  shortcut={TREE_COLLAPSE_ALL_SHORTCUT_KEY}
-                >
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-stretch gap-1.5">
+            <div className="flex items-stretch gap-1">
+              <div className="flex h-9 items-center gap-0.5 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] p-0.5">
+                <HoverTooltip label="Show recent files">
                   <button
-                    aria-label="Collapse all folders"
+                    aria-label="Show recent files"
                     data-managed-tooltip="custom"
-                    data-shortcut={TREE_COLLAPSE_ALL_SHORTCUT_KEY}
-                    className="flex h-7 w-7 items-center justify-center rounded-[4px] text-[var(--text-faint)] transition hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]"
-                    disabled={!activeWorkspacePath}
-                    onClick={() => setCollapseAllVersion((current) => current + 1)}
+                    className={clsx(
+                      'flex h-8 w-8 items-center justify-center rounded-[6px] transition',
+                      fileBrowserMode === 'recent'
+                        ? 'bg-[var(--nav-surface-hover)] text-[var(--text)]'
+                        : 'text-[var(--text-faint)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]'
+                    )}
+                    onClick={() => setFileBrowserMode('recent')}
                   >
-                    <CollapseTreeIcon />
+                    <RecentFilesIcon />
+                  </button>
+                </HoverTooltip>
+                <HoverTooltip label="Show folder tree">
+                  <button
+                    aria-label="Show folder tree"
+                    data-managed-tooltip="custom"
+                    className={clsx(
+                      'flex h-8 w-8 items-center justify-center rounded-[6px] transition',
+                      fileBrowserMode === 'tree'
+                        ? 'bg-[var(--nav-surface-hover)] text-[var(--text)]'
+                        : 'text-[var(--text-faint)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]'
+                    )}
+                    onClick={() => setFileBrowserMode('tree')}
+                  >
+                    <TreeViewIcon />
                   </button>
                 </HoverTooltip>
                 <HoverTooltip
-                  label="Expand all folders"
-                  shortcut={TREE_EXPAND_ALL_SHORTCUT_KEY}
+                  label={
+                    fileBrowserMode === 'recent'
+                      ? 'Toggle recent-file sort order'
+                      : 'Open recent files sorted by date'
+                  }
                 >
                   <button
-                    aria-label="Expand all folders"
+                    aria-label="Sort recent files"
                     data-managed-tooltip="custom"
-                    data-shortcut={TREE_EXPAND_ALL_SHORTCUT_KEY}
-                    className="flex h-7 w-7 items-center justify-center rounded-[4px] text-[var(--text-faint)] transition hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]"
-                    disabled={!activeWorkspacePath}
-                    onClick={() => setExpandAllVersion((current) => current + 1)}
+                    className={clsx(
+                      'flex h-8 w-8 items-center justify-center rounded-[6px] transition',
+                      fileBrowserMode === 'recent'
+                        ? 'bg-[var(--nav-surface-hover)] text-[var(--text)]'
+                        : 'text-[var(--text-faint)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]'
+                    )}
+                    onClick={() => {
+                      if (fileBrowserMode !== 'recent') {
+                        setFileBrowserMode('recent')
+                        return
+                      }
+
+                      setRecentAscending((current) => !current)
+                    }}
                   >
-                    <ExpandTreeIcon />
+                    <span className="relative flex h-4 w-4 items-center justify-center">
+                      <ClockIcon />
+                      <span className="absolute -bottom-1 -right-1">
+                        <SortArrowIcon ascending={recentAscending} />
+                      </span>
+                    </span>
                   </button>
                 </HoverTooltip>
               </div>
-            ) : null}
+              {fileBrowserMode === 'tree' ? (
+                <div className="flex h-9 items-center gap-0.5 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] p-0.5">
+                  <HoverTooltip
+                    label="Collapse all folders"
+                    shortcut={TREE_COLLAPSE_ALL_SHORTCUT_KEY}
+                  >
+                    <button
+                      aria-label="Collapse all folders"
+                      data-managed-tooltip="custom"
+                      data-shortcut={TREE_COLLAPSE_ALL_SHORTCUT_KEY}
+                      className="flex h-8 w-8 items-center justify-center rounded-[6px] text-[var(--text-faint)] transition hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]"
+                      disabled={!activeWorkspacePath}
+                      onClick={() => setCollapseAllVersion((current) => current + 1)}
+                    >
+                      <CollapseTreeIcon />
+                    </button>
+                  </HoverTooltip>
+                  <HoverTooltip
+                    label="Expand all folders"
+                    shortcut={TREE_EXPAND_ALL_SHORTCUT_KEY}
+                  >
+                    <button
+                      aria-label="Expand all folders"
+                      data-managed-tooltip="custom"
+                      data-shortcut={TREE_EXPAND_ALL_SHORTCUT_KEY}
+                      className="flex h-8 w-8 items-center justify-center rounded-[6px] text-[var(--text-faint)] transition hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]"
+                      disabled={!activeWorkspacePath}
+                      onClick={() => setExpandAllVersion((current) => current + 1)}
+                    >
+                      <ExpandTreeIcon />
+                    </button>
+                  </HoverTooltip>
+                </div>
+              ) : null}
+            </div>
             <div className="relative min-w-0 flex-1">
-              <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[var(--text-faint)]">
+              <span className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center text-[var(--text-faint)]">
                 <SearchIcon />
               </span>
               {!compactBrowserChrome ? (
-                <span className="pointer-events-none absolute right-3 top-1/2 flex h-5 min-w-[3.5rem] -translate-y-1/2 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--nav-panel)] px-1.5 text-[9px] font-medium leading-none text-[var(--text-faint)] opacity-80">
+                <span className="pointer-events-none absolute right-2.5 top-1/2 flex h-[1.3rem] min-w-[3.6rem] -translate-y-1/2 items-center justify-center rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-panel)] px-1.5 text-[10px] font-medium leading-none text-[var(--text-faint)] opacity-80">
                   {SEARCH_SHORTCUT_HINT}
                 </span>
               ) : null}
@@ -917,40 +927,37 @@ function SidebarComponent({
                 placeholder={searchPlaceholder}
                 title={composeTooltipLabel(searchFieldLabel, SEARCH_SHORTCUT_KEY)}
                 className={clsx(
-                  'h-9 w-full rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] pl-10 text-[12px] text-[var(--text)] outline-none transition placeholder:text-[var(--text-faint)] focus:border-[color:var(--accent)]',
-                  compactBrowserChrome ? 'pr-3' : 'pr-[6.75rem]'
+                  'h-9 w-full rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] pl-[2.125rem] outline-none transition placeholder:text-[var(--text-faint)] focus:border-[color:var(--accent)]',
+                  NAV_CONTROL_TEXT_CLASS,
+                  compactBrowserChrome ? 'pr-3' : 'pr-[6rem]'
                 )}
               />
             </div>
           </div>
           {activeWorkspacePath && fileBrowserMode === 'tree' ? (
-            <div className="mt-2 rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] px-2.5 py-2 text-[10px] leading-4 text-[var(--text-faint)]">
-              <span className="text-[var(--text-dim)]">Drag files to the canvas.</span>{' '}
-              <span className="font-medium text-[var(--text)]">{FOCUS_NAVIGATOR_SHORTCUT_KEY}</span> focuses the
-              tree, <span className="font-medium text-[var(--text)]">{TREE_EXPAND_SHORTCUT_KEY}</span> /{' '}
-              <span className="font-medium text-[var(--text)]">{TREE_COLLAPSE_SHORTCUT_KEY}</span> open and close
-              folders, <span className="font-medium text-[var(--text)]">{PLACE_ON_CANVAS_SHORTCUT_KEY}</span> places
-              the selection, and <span className="font-medium text-[var(--text)]">{FOCUS_CANVAS_SHORTCUT_KEY}</span>{' '}
-              returns to the canvas.
+            <div className="mt-1 px-0.5 text-[11px] leading-[1.45] text-[var(--text-faint)]">
+              Drag to canvas. <span className="font-medium text-[var(--text-dim)]">{FOCUS_NAVIGATOR_SHORTCUT_KEY}</span>{' '}
+              focus, <span className="font-medium text-[var(--text-dim)]">{PLACE_ON_CANVAS_SHORTCUT_KEY}</span>{' '}
+              place, <span className="font-medium text-[var(--text-dim)]">{FOCUS_CANVAS_SHORTCUT_KEY}</span> return.
             </div>
           ) : null}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[var(--nav-panel)] px-2.5 py-2.5">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[var(--nav-panel)] px-2 py-1.5">
           {activeWorkspacePath ? (
             fileBrowserMode === 'recent' ? (
               workspaceFiles.length === 0 ? (
-                <div className="rounded-[4px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-0)] p-4 text-sm text-[var(--text-dim)]">
+                <div className="rounded-[var(--radius-surface)] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-0)] p-4 text-[11px] leading-[1.45] text-[var(--text-dim)]">
                   This workspace is empty.
                 </div>
               ) : recentGroups.length > 0 ? (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {recentGroups.map((group) => (
                     <section key={group.label}>
                       <div className="mb-2 flex items-center justify-between px-1">
-                        <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--text-faint)]">
+                        <div className={NAV_CAPTION_TEXT_CLASS}>
                           {group.label}
                         </div>
-                        <div className="rounded-[999px] border border-[color:var(--line)] bg-[var(--nav-badge)] px-2 py-0.5 text-[9px] font-medium leading-none text-[var(--text-faint)]">
+                        <div className="rounded-[999px] border border-[color:var(--line)] bg-[var(--nav-badge)] px-2.5 py-1 text-[10px] font-medium leading-none text-[var(--text-faint)]">
                           {group.files.length}
                         </div>
                       </div>
@@ -959,7 +966,7 @@ function SidebarComponent({
                           <button
                             key={file.path}
                             className={clsx(
-                              'flex w-full items-center gap-2.5 rounded-[4px] border border-transparent px-2.5 py-2 text-left transition',
+                              'flex w-full items-center gap-2.5 rounded-[var(--radius-control)] border border-transparent px-2.5 py-2 text-left transition',
                               activeTreePath === file.path
                                 ? 'border-[color:var(--line)] bg-[var(--surface-selected)] text-[var(--text)]'
                                 : 'text-[var(--text-dim)] hover:bg-[var(--nav-surface)]'
@@ -973,14 +980,14 @@ function SidebarComponent({
                           >
                             <FileKindIcon darkMode={darkMode} fileKind={file.fileKind} />
                             <div className="min-w-0 flex-1">
-                              <div className="truncate text-[12px] font-medium text-[var(--text)]">
+                              <div className="truncate text-[12px] font-medium leading-[1.2rem] text-[var(--text)]">
                                 {file.name}
                               </div>
-                              <div className="truncate text-[10px] text-[var(--text-faint)]">
+                              <div className="truncate text-[11px] leading-[1.35] text-[var(--text-faint)]">
                                 {relativeDirectoryLabel(activeWorkspacePath, file.path)}
                               </div>
                             </div>
-                            <div className="shrink-0 text-[10px] text-[var(--text-faint)]">
+                            <div className="shrink-0 text-[11px] leading-[1.35] text-[var(--text-faint)]">
                               {formatRecentTimestamp(file.updatedAt)}
                             </div>
                           </button>
@@ -990,7 +997,7 @@ function SidebarComponent({
                   ))}
                 </div>
               ) : (
-                <div className="rounded-[4px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-0)] p-4 text-sm text-[var(--text-dim)]">
+                <div className="rounded-[var(--radius-surface)] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-0)] p-4 text-[11px] leading-[1.45] text-[var(--text-dim)]">
                   No recent files match <span className="text-[var(--text)]">“{fileQuery.trim()}”</span>.
                 </div>
               )
@@ -1011,6 +1018,7 @@ function SidebarComponent({
                 query={fileQuery}
                 onMoveFile={onMoveFile}
                 onPlaceFile={onPlaceFile}
+                onPlaceFileAtPoint={onPlaceFileAtPoint}
                 onRevealNodeInFinder={onRevealNodeInFinder}
                 onRenameNode={onRenameNode}
                 onSelectNode={onSelectNode}
@@ -1018,7 +1026,7 @@ function SidebarComponent({
               />
             )
           ) : (
-            <div className="rounded-[4px] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-0)] p-4 text-sm text-[var(--text-dim)]">
+            <div className="rounded-[var(--radius-surface)] border border-dashed border-[color:var(--line-strong)] bg-[var(--surface-0)] p-4 text-[11px] text-[var(--text-dim)]">
               Add a workspace with{' '}
               <span className="font-[var(--font-mono)] text-[var(--text)]">Cmd+Shift+O</span> to populate the navigator.
             </div>
@@ -1026,8 +1034,8 @@ function SidebarComponent({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-[color:var(--line)] bg-[var(--nav-surface)] px-3 py-2.5">
-        <div className="grid grid-cols-5 gap-1.5">
+      <div className="shrink-0 border-t border-[color:var(--line)] bg-[var(--nav-surface)] px-2.5 py-2">
+        <div className="grid grid-cols-5 gap-1">
           <ActionIconButton
             label="Search Workspace"
             onClick={onOpenSearch}

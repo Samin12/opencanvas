@@ -15,7 +15,7 @@ interface ViewerOverlayProps {
 
 function PlaceIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-none stroke-current stroke-[1.4]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.3]">
       <path d="M2.5 8H10.75" strokeLinecap="round" />
       <path d="M8.5 5.75L10.75 8L8.5 10.25" strokeLinecap="round" strokeLinejoin="round" />
       <rect x="11.25" y="3" width="2.75" height="10" rx="0.85" />
@@ -28,7 +28,7 @@ function RefreshIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-4 w-4 fill-none stroke-current stroke-[1.45] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="M13 4.75V8h-3.25" />
       <path d="M3 11.25V8h3.25" />
@@ -122,35 +122,35 @@ function ViewerOverlayComponent({
       onClick={onClose}
     >
       <aside
-        className="glass-panel absolute inset-y-4 left-4 flex w-[min(60vw,920px)] min-w-[640px] flex-col overflow-hidden rounded-[6px] border border-[color:var(--line-strong)] shadow-[0_28px_80px_rgba(0,0,0,0.34)]"
+        className="glass-panel absolute inset-y-4 left-4 flex w-[min(60vw,920px)] min-w-[640px] flex-col overflow-hidden rounded-[var(--radius-surface)] border border-[color:var(--line-strong)] shadow-[0_28px_80px_rgba(0,0,0,0.34)]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="border-b border-[color:var(--line)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_92%,transparent),var(--surface-0))] px-6 pb-5 pt-6">
-          <div className="flex items-start justify-between gap-6">
+        <div className="border-b border-[color:var(--line)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-1)_92%,transparent),var(--surface-0))] px-5 pb-4 pt-5">
+          <div className="flex items-start justify-between gap-5">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-faint)]">
                   Preview
                 </div>
-                <div className="rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-dim)]">
+                <div className="rounded-[999px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-[var(--text-dim)]">
                   {viewerKindLabel(file)}
                 </div>
               </div>
-              <div className="mt-4 truncate px-0.5 pb-1 pt-0.5 font-[var(--font-display)] text-[2.1rem] font-semibold leading-[1.02] tracking-[-0.05em] text-[var(--text)]">
+              <div className="mt-3 truncate px-0.5 pb-0.5 text-[1.6rem] font-semibold leading-[1.05] tracking-[-0.035em] text-[var(--text)]">
                 {file.name}
               </div>
-              <div className="mt-4 rounded-[4px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3.5 py-3">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]">
+              <div className="mt-3 flex max-w-[30rem] items-center gap-2 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-2">
+                <div className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
                   Source
                 </div>
-                <div className="mt-1 truncate font-[var(--font-mono)] text-[12px] text-[var(--text-dim)]">
+                <div className="min-w-0 truncate text-[11px] text-[var(--text-dim)]">
                   {file.path}
                 </div>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2 self-start">
               <button
-                className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-[4px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-4 text-sm text-[var(--text)] transition hover:bg-[var(--surface-1)]"
+                className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-[var(--radius-control)] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-3.5 text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-1)]"
                 onClick={() => setRefreshToken((current) => current + 1)}
                 title="Refresh file"
               >
@@ -158,7 +158,7 @@ function ViewerOverlayComponent({
                 <span>Refresh</span>
               </button>
               <button
-                className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-[4px] border border-[color:var(--accent)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--accent-soft)_84%,transparent),color-mix(in_srgb,var(--surface-0)_92%,var(--accent-soft)))] px-4 text-sm font-medium text-[var(--text)] transition hover:border-[color:var(--accent)]"
+                className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-[var(--radius-control)] border border-[color:var(--accent)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--accent-soft)_84%,transparent),color-mix(in_srgb,var(--surface-0)_92%,var(--accent-soft)))] px-3.5 text-[12px] font-medium text-[var(--text)] transition hover:border-[color:var(--accent)]"
                 data-shortcut="Shift+Enter"
                 onClick={() => {
                   onPlaceOnCanvas(file)
@@ -167,25 +167,25 @@ function ViewerOverlayComponent({
               >
                 <PlaceIcon />
                 <span>Add To Canvas</span>
-                <span className="rounded-[4px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-2 py-1 font-[var(--font-mono)] text-[10px] font-semibold leading-none tracking-[0.08em] text-[var(--text-faint)]">
+                <span className="rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-2 py-0.5 text-[9px] font-semibold leading-none tracking-[0.12em] text-[var(--text-faint)]">
                   Shift+Enter
                 </span>
               </button>
-              <div className="hidden rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)] sm:block">
-                Esc
-              </div>
               <button
-                className="inline-flex h-11 items-center whitespace-nowrap rounded-[4px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-4 text-sm text-[var(--text)] transition hover:bg-[var(--surface-1)]"
+                className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-[var(--radius-control)] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-3.5 text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-1)]"
                 onClick={onClose}
                 data-shortcut="Esc"
                 title={composeTooltipLabel('Close preview', 'Esc')}
               >
+                <span className="hidden rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--text-faint)] sm:inline-flex">
+                  Esc
+                </span>
                 Close
               </button>
             </div>
           </div>
         </div>
-        <div className="min-h-0 flex-1 p-5">
+        <div className="min-h-0 flex-1 p-4">
           <DocumentPane
             fileKind={file.fileKind ?? 'code'}
             filePath={file.path}

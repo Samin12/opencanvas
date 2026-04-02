@@ -107,10 +107,12 @@ interface CanvasSurfaceProps {
 export interface CanvasSurfaceHandle {
   createTerminal: (provider?: TerminalProvider) => void
   focusCanvas: () => void
+  focusSelectedTileEditor: () => boolean
   importDiagramSet: (envelope: CanvasDiagramEnvelope) => void
   importExcalidrawContent: (content: unknown, title?: string) => Promise<void>
   spawnEmbedTile: (url: string) => void
   spawnFileTile: (file: FileTreeNode) => void
+  spawnFileTileAtPoint: (file: FileTreeNode, clientX: number, clientY: number) => void
   resetZoom: () => void
   zoomIn: () => void
   zoomOut: () => void
@@ -2817,6 +2819,24 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       setTileSelection([tile.id])
     }
 
+    function focusSelectedTileEditor() {
+      if (!containerRef.current || !selectedTileId || selectedTileIds.length !== 1) {
+        return false
+      }
+
+      const tileRoot = containerRef.current.querySelector<HTMLElement>(
+        `[data-tile-root="true"][data-tile-id="${CSS.escape(selectedTileId)}"]`
+      )
+      const documentEditTarget = tileRoot?.querySelector<HTMLElement>('[data-document-edit-target="true"]')
+
+      if (!documentEditTarget) {
+        return false
+      }
+
+      documentEditTarget.dispatchEvent(new Event('collaborator:focus-document-editor'))
+      return true
+    }
+
     function spawnEmbedTileAtClientPoint(url: string, clientX: number, clientY: number) {
       const point = pagePointFromClient(clientX, clientY)
       const tile = createEmbedTile(
@@ -3294,6 +3314,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         containerRef.current?.focus()
         editorRef.current?.focus()
       },
+      focusSelectedTileEditor: () => {
+        return focusSelectedTileEditor()
+      },
       importDiagramSet: (envelope: CanvasDiagramEnvelope) => {
         importDiagramSet(envelope)
       },
@@ -3305,6 +3328,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       },
       spawnFileTile: (file: FileTreeNode) => {
         spawnFileTile(file)
+      },
+      spawnFileTileAtPoint: (file: FileTreeNode, clientX: number, clientY: number) => {
+        spawnFileTileAtClientPoint(file, clientX, clientY)
       },
       zoomIn: () => {
         zoomByFactor(1.1)
@@ -3646,6 +3672,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         }
 
         if (event.key === 'Enter' && !event.shiftKey) {
+          if (focusSelectedTileEditor()) {
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+
           if (startEditingSelectedRichTextShape()) {
             event.preventDefault()
             event.stopPropagation()
@@ -4340,6 +4372,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     return (
       <div
         ref={containerRef}
+        data-canvas-surface="true"
         tabIndex={0}
         className={clsx(
           'canvas-surface relative h-full overflow-hidden bg-[var(--canvas-bg)] touch-none outline-none [overscroll-behavior:none]'
@@ -4384,7 +4417,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           data-canvas-ui="true"
           className="group absolute right-3 top-3 z-[220]"
         >
-          <div className="flex min-h-10 w-10 max-w-[calc(100vw-1.5rem)] origin-top-right items-start overflow-hidden rounded-[6px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] shadow-[0_10px_22px_rgba(15,23,42,0.12)] backdrop-blur transition-[width,max-height,border-radius] duration-200 ease-out max-h-10 group-hover:w-[28rem] group-hover:max-h-[26rem] group-hover:rounded-[6px] group-focus-within:w-[28rem] group-focus-within:max-h-[26rem] group-focus-within:rounded-[6px]">
+          <div className="flex min-h-10 w-10 max-w-[calc(100vw-1.5rem)] origin-top-right items-start overflow-hidden rounded-[var(--radius-surface)] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] shadow-[0_10px_22px_rgba(15,23,42,0.12)] backdrop-blur transition-[width,max-height,border-radius] duration-200 ease-out max-h-10 group-hover:w-[28rem] group-hover:max-h-[26rem] group-hover:rounded-[var(--radius-surface)] group-focus-within:w-[28rem] group-focus-within:max-h-[26rem] group-focus-within:rounded-[var(--radius-surface)]">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center self-start text-[13px] font-semibold tracking-[0.2em] text-[var(--text-dim)]">
               ?
             </div>
@@ -4396,12 +4429,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 {APP_SHORTCUT_ITEMS.map((shortcut) => (
                   <div
                     key={shortcut.label}
-                    className="flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-left"
+                    className="flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-left"
                   >
                     <span className="min-w-0 flex-1 whitespace-normal text-[11px] font-semibold uppercase leading-[1.35] tracking-[0.08em] text-[var(--text-dim)]">
                       {shortcut.label}
                     </span>
-                    <span className="shrink-0 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-1)] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
+                    <span className="shrink-0 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-1)] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
                       {shortcut.key}
                     </span>
                   </div>
@@ -4414,12 +4447,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 {NAVIGATOR_SHORTCUT_ITEMS.map((shortcut) => (
                   <div
                     key={shortcut.label}
-                    className="flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-left"
+                    className="flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-left"
                   >
                     <span className="min-w-0 flex-1 whitespace-normal text-[11px] font-semibold uppercase leading-[1.35] tracking-[0.08em] text-[var(--text-dim)]">
                       {shortcut.label}
                     </span>
-                    <span className="shrink-0 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-1)] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
+                    <span className="shrink-0 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-1)] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
                       {shortcut.key}
                     </span>
                   </div>
@@ -4432,12 +4465,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 {PREVIEW_SHORTCUT_ITEMS.map((shortcut) => (
                   <div
                     key={shortcut.label}
-                    className="flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-left"
+                    className="flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-left"
                   >
                     <span className="min-w-0 flex-1 whitespace-normal text-[11px] font-semibold uppercase leading-[1.35] tracking-[0.08em] text-[var(--text-dim)]">
                       {shortcut.label}
                     </span>
-                    <span className="shrink-0 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-1)] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
+                    <span className="shrink-0 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-1)] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
                       {shortcut.key}
                     </span>
                   </div>
@@ -4457,7 +4490,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       key={shortcut.action}
                       disabled={isDisabled}
                       className={clsx(
-                        'flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[4px] border px-3 py-2 text-left transition',
+                        'flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[var(--radius-control)] border px-3 py-2 text-left transition',
                         isActive
                           ? 'border-[color:var(--text)] bg-[var(--text)] text-[var(--surface-0)]'
                           : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:text-[var(--text)]',
@@ -4470,7 +4503,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       </span>
                       <span
                         className={clsx(
-                          'shrink-0 rounded-[4px] border px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em]',
+                          'shrink-0 rounded-[var(--radius-control)] border px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em]',
                           isActive
                             ? 'border-white/25 bg-white/12 text-white'
                             : 'border-[color:var(--line)] bg-[var(--surface-1)] text-[var(--text-faint)]'
@@ -4532,6 +4565,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   .
                 </div>
                 <div>
+                  <span className="font-semibold text-[var(--text)]">Edit selected note or code tile:</span>{' '}
+                  press{' '}
+                  <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
+                    Enter
+                  </span>{' '}
+                  to jump into the file and start typing.
+                </div>
+                <div>
                   <span className="font-semibold text-[var(--text)]">Group bundle:</span> press{' '}
                   <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
                     G
@@ -4548,7 +4589,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         </div>
 
         {linkSourceTile ? (
-          <div className="pointer-events-none absolute left-3 top-3 z-[210] rounded-[4px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-1.5 text-[11px] font-medium tracking-[0.12em] text-[var(--text-dim)] backdrop-blur">
+          <div className="pointer-events-none absolute left-3 top-3 z-[210] rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-1.5 text-[11px] font-medium tracking-[0.12em] text-[var(--text-dim)] backdrop-blur">
             Drag <span className="text-[var(--text)]">{linkSourceTile.title}</span> into a terminal
             dot, or press Esc to cancel.
           </div>
@@ -4729,7 +4770,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           {frameBundleShells.map((group) => (
             <div
               key={`bundle-shell:${group.id}`}
-              className="pointer-events-none absolute overflow-hidden rounded-[12px] border border-[color:var(--line-strong)] bg-[color:color-mix(in_srgb,var(--surface-1)_90%,transparent)] shadow-[0_10px_22px_rgba(15,23,42,0.18)] transition"
+              className="pointer-events-none absolute overflow-hidden rounded-[var(--radius-surface)] border border-[color:var(--line-strong)] bg-[color:color-mix(in_srgb,var(--surface-1)_90%,transparent)] shadow-[0_10px_22px_rgba(15,23,42,0.18)] transition"
               style={{
                 left: group.x,
                 top: group.y,
@@ -4746,7 +4787,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   {group.movableTiles.length}
                 </span>
               </div>
-              <div className="absolute inset-x-1.5 bottom-1.5 top-9 rounded-[8px] border border-[color:var(--line)] bg-[color:color-mix(in_srgb,var(--surface-0)_94%,transparent)]">
+              <div className="absolute inset-x-1.5 bottom-1.5 top-9 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[color:color-mix(in_srgb,var(--surface-0)_94%,transparent)]">
                 {group.isEmpty ? (
                   <div className="flex h-full items-center justify-center text-[11px] font-medium text-[var(--text-faint)]">
                     Drop files into this group
@@ -4837,7 +4878,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   tile.type !== 'term' && (isRenamingThisTile || isTileSelected || isTilePointerHovered)
                 const tileBodyClassName =
                   tile.type === 'term'
-                    ? 'h-[calc(100%-37px)]'
+                    ? 'h-[calc(100%-37px)] overflow-hidden rounded-b-[var(--radius-surface)]'
                     : tile.type === 'note' ||
                         tile.type === 'embed' ||
                         tileFileKind === 'image' ||
@@ -4859,10 +4900,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   <div
                     key={tile.id}
                     data-tile-root="true"
+                    data-tile-id={tile.id}
                     data-terminal-connector-id={tile.type === 'term' ? tile.id : undefined}
                     className={clsx(
-                      'pointer-events-auto absolute overflow-visible border bg-[var(--surface-0)] shadow-[0_18px_40px_rgba(0,0,0,0.22)]',
-                      tile.type === 'term' ? 'rounded-[4px]' : 'rounded-[16px]',
+                      'pointer-events-auto absolute overflow-visible rounded-[var(--radius-surface)] border bg-[var(--surface-0)] shadow-[0_18px_40px_rgba(0,0,0,0.22)]',
                       selectedTileId === tile.id && focusedTerminal?.tileId === tile.id
                         ? 'border-[color:var(--accent)] shadow-[0_0_0_1px_var(--accent-soft),0_10px_22px_rgba(0,0,0,0.22)]'
                         : isTilePrimarySelected
@@ -4964,7 +5005,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 ) : null}
                 {tile.type === 'term' ? (
                   <div
-                    className="flex items-center justify-between rounded-t-[4px] border-b border-[color:var(--line)] bg-[var(--surface-1)] px-2.5 py-1.5"
+                    className="flex items-center justify-between rounded-t-[var(--radius-surface)] border-b border-[color:var(--line)] bg-[var(--surface-1)] px-2.5 py-1.5"
                     onPointerDown={(event) => {
                       if (event.button !== 0) {
                         return
@@ -4995,7 +5036,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     <div className="flex shrink-0 items-center gap-1">
                       {hasFileDocument ? (
                         <button
-                          className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[11px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                          className="flex h-5 w-5 items-center justify-center rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] text-[11px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
                           onPointerDown={(event) => event.stopPropagation()}
                           title="Refresh file"
                           onClick={(event) => {
@@ -5008,7 +5049,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       ) : null}
                       {hasFileDocument && tileFileKind ? (
                         <button
-                          className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[11px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                          className="flex h-5 w-5 items-center justify-center rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] text-[11px] text-[var(--text-dim)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
                           onPointerDown={(event) => event.stopPropagation()}
                           title="Open preview"
                           onClick={(event) => {
@@ -5025,7 +5066,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                         </button>
                       ) : null}
                       <button
-                        className="flex h-5 w-5 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[13px] leading-none text-[var(--text-dim)] transition hover:border-[color:var(--error-line)] hover:bg-[var(--error-bg)] hover:text-[var(--error-text)]"
+                        className="flex h-5 w-5 items-center justify-center rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] text-[13px] leading-none text-[var(--text-dim)] transition hover:border-[color:var(--error-line)] hover:bg-[var(--error-bg)] hover:text-[var(--error-text)]"
                         title="Close tile"
                         onPointerDown={(event) => event.stopPropagation()}
                         onClick={(event) => {
@@ -5044,7 +5085,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       showFloatingTileChrome ? '-translate-y-[calc(100%+8px)] opacity-100' : '-translate-y-[calc(100%+4px)] opacity-0'
                     )}
                   >
-                    <div className="flex items-start justify-between gap-3 rounded-[14px] border border-[color:var(--line-strong)] bg-[color:var(--surface-overlay)] px-3.5 py-2.5 shadow-[0_6px_16px_rgba(15,23,42,0.08)] backdrop-blur-sm">
+                    <div className="flex items-start justify-between gap-3 rounded-[var(--radius-surface)] border border-[color:var(--line-strong)] bg-[color:var(--surface-overlay)] px-3.5 py-2.5 shadow-[0_6px_16px_rgba(15,23,42,0.08)] backdrop-blur-sm">
                       <div
                         className="pointer-events-auto min-w-0 flex-1 cursor-grab active:cursor-grabbing"
                         onPointerDown={(event) => {
@@ -5078,7 +5119,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                               onChange={(event) => {
                                 setRenamingValue(event.target.value)
                               }}
-                              className="min-w-0 flex-1 rounded-[8px] border border-[color:var(--accent)] bg-[var(--surface-0)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--text)] outline-none"
+                            className="min-w-0 flex-1 rounded-[var(--radius-control)] border border-[color:var(--accent)] bg-[var(--surface-0)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--text)] outline-none"
                               onBlur={cancelTileRename}
                               onKeyDown={(event) => {
                                 event.stopPropagation()
@@ -5143,7 +5184,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                               data-managed-tooltip="custom"
                               disabled={!noteCanDecreaseViewScale}
                               className={clsx(
-                                'flex h-7 min-w-7 items-center justify-center rounded-[11px] border border-white/10 bg-black/15 px-2 text-[11px] font-semibold text-[var(--text-faint)] transition',
+                                'flex h-7 min-w-7 items-center justify-center rounded-[var(--radius-control)] border border-white/10 bg-black/15 px-2 text-[11px] font-semibold text-[var(--text-faint)] transition',
                                 noteCanDecreaseViewScale
                                   ? 'hover:bg-black/25 hover:text-[var(--text)]'
                                   : 'cursor-default opacity-45'
@@ -5169,7 +5210,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                               data-managed-tooltip="custom"
                               disabled={!noteCanIncreaseViewScale}
                               className={clsx(
-                                'flex h-7 min-w-7 items-center justify-center rounded-[11px] border border-white/10 bg-black/15 px-2 text-[11px] font-semibold text-[var(--text-faint)] transition',
+                                'flex h-7 min-w-7 items-center justify-center rounded-[var(--radius-control)] border border-white/10 bg-black/15 px-2 text-[11px] font-semibold text-[var(--text-faint)] transition',
                                 noteCanIncreaseViewScale
                                   ? 'hover:bg-black/25 hover:text-[var(--text)]'
                                   : 'cursor-default opacity-45'
@@ -5186,7 +5227,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                         ) : null}
                         {hasFileDocument && tileFileKind ? (
                           <button
-                            className="flex h-7 w-7 items-center justify-center rounded-[11px] border border-white/10 bg-black/15 text-[11px] text-[var(--text-dim)] transition hover:bg-black/25 hover:text-[var(--text)]"
+                            className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] border border-white/10 bg-black/15 text-[11px] text-[var(--text-dim)] transition hover:bg-black/25 hover:text-[var(--text)]"
                             onPointerDown={(event) => event.stopPropagation()}
                             title="Open preview"
                             onClick={(event) => {
@@ -5204,7 +5245,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                         ) : null}
                         {tile.type === 'embed' && tile.embedUrl ? (
                           <button
-                            className="flex h-7 w-7 items-center justify-center rounded-[11px] border border-white/10 bg-black/15 text-[11px] text-[var(--text-dim)] transition hover:bg-black/25 hover:text-[var(--text)]"
+                            className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] border border-white/10 bg-black/15 text-[11px] text-[var(--text-dim)] transition hover:bg-black/25 hover:text-[var(--text)]"
                             onPointerDown={(event) => event.stopPropagation()}
                             title="Open in browser"
                             onClick={(event) => {
@@ -5216,7 +5257,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                           </button>
                         ) : null}
                         <button
-                          className="flex h-7 w-7 items-center justify-center rounded-[11px] border border-white/10 bg-black/15 text-[13px] leading-none text-[var(--text-dim)] transition hover:border-[color:var(--error-line)] hover:bg-[var(--error-bg)] hover:text-[var(--error-text)]"
+                          className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] border border-white/10 bg-black/15 text-[13px] leading-none text-[var(--text-dim)] transition hover:border-[color:var(--error-line)] hover:bg-[var(--error-bg)] hover:text-[var(--error-text)]"
                           title="Close tile"
                           onPointerDown={(event) => event.stopPropagation()}
                           onClick={(event) => {
@@ -5309,7 +5350,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                       showTileRefreshButton={false}
                     />
                   ) : (
-                    <div className="flex h-full items-center justify-center rounded-[4px] border border-[color:var(--error-line)] bg-[var(--error-bg)] p-4 text-center text-sm text-[var(--error-text)]">
+                    <div className="flex h-full items-center justify-center rounded-[var(--radius-surface)] border border-[color:var(--error-line)] bg-[var(--error-bg)] p-4 text-center text-sm text-[var(--error-text)]">
                       This tile could not be rendered.
                     </div>
                   )}
@@ -5390,14 +5431,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         ) : null}
 
         {zoomIndicator ? (
-          <div className="pointer-events-none absolute bottom-[6.65rem] right-3 z-[220] rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-1.5 text-[10px] font-medium tracking-[0.14em] text-[var(--text-dim)] shadow-[0_10px_22px_rgba(15,23,42,0.08)] backdrop-blur">
+          <div className="pointer-events-none absolute bottom-[6.65rem] right-3 z-[220] rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-1.5 text-[10px] font-medium tracking-[0.14em] text-[var(--text-dim)] shadow-[0_10px_22px_rgba(15,23,42,0.08)] backdrop-blur">
             {zoomIndicator}
           </div>
         ) : null}
 
         <div
           data-canvas-ui="true"
-          className="absolute bottom-0 right-0 z-[220] overflow-hidden border-l border-t border-[color:var(--line)] bg-[color:var(--surface-overlay)] shadow-[0_-8px_24px_rgba(15,23,42,0.1)] backdrop-blur"
+          className="absolute bottom-0 right-0 z-[220] overflow-hidden rounded-tl-[var(--radius-surface)] border-l border-t border-[color:var(--line)] bg-[color:var(--surface-overlay)] shadow-[0_-8px_24px_rgba(15,23,42,0.1)] backdrop-blur"
         >
           <div className="flex items-center gap-1.5 border-b border-[color:var(--line)] px-3 py-2">
             {QUICK_ACTION_ITEMS.map((action) => {
@@ -5410,7 +5451,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     data-managed-tooltip="custom"
                     data-shortcut={action.key}
                     className={clsx(
-                      'flex h-9 w-9 items-center justify-center rounded-[4px] border transition',
+                      'flex h-9 w-9 items-center justify-center rounded-[var(--radius-control)] border transition',
                       isActive
                         ? 'border-[color:var(--text)] bg-[var(--text)] text-[var(--surface-0)]'
                         : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:text-[var(--text)]'
@@ -5509,7 +5550,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                         aria-label={`Pen thickness ${item.label}`}
                         data-managed-tooltip="custom"
                         className={clsx(
-                          'relative flex h-8 min-w-[2.5rem] items-center justify-center rounded-[4px] border px-2 transition',
+                          'relative flex h-8 min-w-[2.5rem] items-center justify-center rounded-[var(--radius-control)] border px-2 transition',
                           isActive
                             ? 'border-[color:var(--text)] bg-[var(--surface-0)] text-[var(--text)]'
                             : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:text-[var(--text)]'
@@ -5544,7 +5585,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   type="button"
                   aria-label="Convert selected sticky note to markdown"
                   data-managed-tooltip="custom"
-                  className="flex items-center gap-2 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
+                  className="flex items-center gap-2 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
                   disabled={convertingStickyNote}
                   onClick={() => {
                     void convertSelectedStickyNoteToMarkdown()
@@ -5559,7 +5600,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
           <div className="flex items-center gap-1.5 px-3 py-2.5">
             <button
-              className="flex h-9 w-9 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[1.35rem] font-light leading-none text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
+              className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] text-[1.35rem] font-light leading-none text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
               aria-label="Zoom out"
               data-shortcut={ZOOM_OUT_SHORTCUT_KEY}
               disabled={!canZoomOut}
@@ -5571,7 +5612,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               -
             </button>
             <button
-              className="min-w-[6rem] rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3.5 py-2.5 text-[0.95rem] font-medium leading-none tracking-[0.04em] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]"
+              className="min-w-[6rem] rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] px-3.5 py-2.5 text-[0.95rem] font-medium leading-none tracking-[0.04em] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]"
               aria-label="Reset zoom"
               data-shortcut={RESET_ZOOM_SHORTCUT_KEY}
               onClick={() => {
@@ -5582,7 +5623,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               {zoomLabel}
             </button>
             <button
-              className="flex h-9 w-9 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[1.35rem] font-light leading-none text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
+              className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] text-[1.35rem] font-light leading-none text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
               aria-label="Zoom in"
               data-shortcut={ZOOM_IN_SHORTCUT_KEY}
               disabled={!canZoomIn}

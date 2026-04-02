@@ -84,14 +84,16 @@ export function VideoPane({
     <div
       className={clsx(
         'relative flex h-full items-center justify-center overflow-hidden bg-[var(--surface-1)]',
-        variant === 'viewer' ? 'rounded-[6px] border border-[color:var(--line)]' : 'rounded-[4px]'
+        variant === 'viewer'
+          ? 'rounded-[var(--radius-surface)] border border-[color:var(--line)]'
+          : 'rounded-[var(--radius-surface)]'
       )}
     >
       {(variant === 'tile' && showTileRefreshButton) ||
       (variant === 'viewer' && showViewerRefreshButton) ? (
         <button
           className={clsx(
-            'absolute z-10 flex h-6 min-w-6 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-2 text-[11px] text-[var(--text-dim)] shadow-[0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]',
+            'absolute z-10 flex h-6 min-w-6 items-center justify-center rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-2 text-[11px] text-[var(--text-dim)] shadow-[0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]',
             variant === 'viewer' ? 'right-3 top-3' : 'right-2 top-2'
           )}
           onClick={() => setReloadCount((current) => current + 1)}

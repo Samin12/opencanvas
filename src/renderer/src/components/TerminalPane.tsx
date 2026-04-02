@@ -31,10 +31,11 @@ const DATA_BUFFER_FLUSH_MS = 5
 const DEFAULT_TERMINAL_FONT_SIZE = 12.5
 const DEFAULT_TERMINAL_LINE_HEIGHT = 1.45
 const TERMINAL_WHEEL_LINE_HEIGHT_PX = 40
+const CODEX_LIGHT_MODE_MINIMUM_CONTRAST_RATIO = 7
 const IS_MAC =
   typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac')
 
-function terminalTheme(darkMode: boolean) {
+function terminalTheme(darkMode: boolean, provider: TerminalProvider) {
   if (darkMode) {
     return {
       background: '#0d1014',
@@ -58,6 +59,33 @@ function terminalTheme(darkMode: boolean) {
       brightMagenta: '#e9d5ff',
       brightCyan: '#a5f3fc',
       brightWhite: '#ffffff'
+    }
+  }
+
+  if (provider === 'codex') {
+    return {
+      background: '#ffffff',
+      foreground: '#111111',
+      cursor: '#111111',
+      cursorAccent: '#ffffff',
+      selectionBackground: 'rgba(17, 17, 17, 0.14)',
+      selectionForeground: '#111111',
+      black: '#111111',
+      red: '#991b1b',
+      green: '#166534',
+      yellow: '#92400e',
+      blue: '#1d4ed8',
+      magenta: '#7c3aed',
+      cyan: '#0f766e',
+      white: '#334155',
+      brightBlack: '#475569',
+      brightRed: '#b91c1c',
+      brightGreen: '#15803d',
+      brightYellow: '#a16207',
+      brightBlue: '#1e40af',
+      brightMagenta: '#6d28d9',
+      brightCyan: '#115e59',
+      brightWhite: '#0f172a'
     }
   }
 
@@ -85,6 +113,14 @@ function terminalTheme(darkMode: boolean) {
     brightCyan: '#14b8a6',
     brightWhite: '#f8fafc'
   }
+}
+
+function minimumContrastRatio(darkMode: boolean, provider: TerminalProvider) {
+  if (!darkMode && provider === 'codex') {
+    return CODEX_LIGHT_MODE_MINIMUM_CONTRAST_RATIO
+  }
+
+  return 1
 }
 
 function syncTerminalWheelAttributes(host: HTMLDivElement | null, enabled: boolean) {
@@ -195,11 +231,12 @@ function TerminalPaneComponent(props: TerminalPaneProps) {
       fontWeightBold: '600',
       lineHeight: DEFAULT_TERMINAL_LINE_HEIGHT,
       macOptionIsMeta: true,
+      minimumContrastRatio: minimumContrastRatio(darkMode, provider),
       scrollOnEraseInDisplay: true,
       scrollOnUserInput: false,
       scrollback: 200_000,
       smoothScrollDuration: 0,
-      theme: terminalTheme(darkMode)
+      theme: terminalTheme(darkMode, provider)
     })
 
     const fitAddon = new FitAddon()
@@ -539,14 +576,15 @@ function TerminalPaneComponent(props: TerminalPaneProps) {
       return
     }
 
-    terminalRef.current.options.theme = terminalTheme(darkMode)
-  }, [darkMode])
+    terminalRef.current.options.minimumContrastRatio = minimumContrastRatio(darkMode, provider)
+    terminalRef.current.options.theme = terminalTheme(darkMode, provider)
+  }, [darkMode, provider])
 
   const nextStatusLabel = statusLabel(status, statusMessage)
 
   return (
     <div
-      className="terminal-pane relative h-full w-full overflow-hidden bg-[var(--surface-0)]"
+      className="terminal-pane relative h-full w-full overflow-hidden rounded-b-[var(--radius-surface)] bg-[var(--surface-0)]"
       onKeyDown={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
     >

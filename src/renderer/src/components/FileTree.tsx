@@ -43,6 +43,7 @@ interface FileTreeProps {
   onImportExternalPaths: (sourcePaths: string[], targetDirectoryPath: string | null) => void
   onMoveFile: (sourcePath: string, targetDirectoryPath: string) => void
   onPlaceFile: (node: FileTreeNode) => void
+  onPlaceFileAtPoint: (node: FileTreeNode, clientX: number, clientY: number) => void
   onRevealNodeInFinder: (targetPath: string) => void
   onRenameNode: (targetPath: string, nextName: string) => void
   onSelectNode: (node: FileTreeNode, options?: { preview?: boolean }) => void
@@ -56,7 +57,7 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
       viewBox="0 0 16 16"
       aria-hidden="true"
       className={clsx(
-        'h-3.5 w-3.5 fill-none stroke-current stroke-[1.6] transition-transform',
+        'h-3 w-3 fill-none stroke-current stroke-[1.45] transition-transform',
         expanded ? 'rotate-90' : 'rotate-0'
       )}
     >
@@ -70,7 +71,7 @@ function FolderIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-4 w-4 fill-none stroke-current stroke-[1.45] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="M2.25 4.25A1.75 1.75 0 0 1 4 2.5H6.2L7.45 3.8H12A1.75 1.75 0 0 1 13.75 5.55V11.75A1.75 1.75 0 0 1 12 13.5H4A1.75 1.75 0 0 1 2.25 11.75V4.25Z" />
     </svg>
@@ -82,7 +83,7 @@ function NoteIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-4 w-4 fill-none stroke-current stroke-[1.4] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="M3 4.35C3 3.39 3.77 2.6 4.75 2.6H7.3C7.87 2.6 8.4 2.84 8.8 3.25C9.2 2.84 9.73 2.6 10.3 2.6H12.05C13.03 2.6 13.8 3.39 13.8 4.35V11.85C13.8 12.23 13.49 12.55 13.1 12.55H10.3C9.73 12.55 9.2 12.79 8.8 13.2C8.4 12.79 7.87 12.55 7.3 12.55H4.5C3.84 12.55 3.3 12.02 3.3 11.35V4.35H3Z" />
       <path d="M8.8 3.35V13.15" />
@@ -95,7 +96,7 @@ function CodeIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.28] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="M4 2.5H8.9L12.5 6.05V12A1.5 1.5 0 0 1 11 13.5H4A1.5 1.5 0 0 1 2.5 12V4A1.5 1.5 0 0 1 4 2.5Z" />
       <path d="M8.7 2.75V6H12" />
@@ -111,7 +112,7 @@ function ImageIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.28] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <rect x="2.5" y="2.75" width="11" height="10.5" rx="1.5" />
       <circle cx="5.4" cy="5.55" r="0.9" />
@@ -125,7 +126,7 @@ function VideoIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.28] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <rect x="2.5" y="3" width="8" height="10" rx="1.5" />
       <path d="M10.5 6.1 13.5 4.75V11.25L10.5 9.9" />
@@ -139,7 +140,7 @@ function PdfIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.28] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="M4 2.5H8.9L12.5 6.05V12A1.5 1.5 0 0 1 11 13.5H4A1.5 1.5 0 0 1 2.5 12V4A1.5 1.5 0 0 1 4 2.5Z" />
       <path d="M8.7 2.75V6H12" />
@@ -156,7 +157,7 @@ function SpreadsheetIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.28] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <rect x="2.5" y="2.5" width="11" height="11" rx="1.6" />
       <path d="M2.75 6H13.25M6 2.75V13.25M9.75 2.75V13.25M2.75 9.75H13.25" />
@@ -169,7 +170,7 @@ function PresentationIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.28] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="M3.25 3.25H12.75V10.75H3.25Z" />
       <path d="M8 10.75V13.1M5.75 13.1H10.25" />
@@ -187,27 +188,27 @@ function iconToneClasses(
   }
 
   if (kind === 'note') {
-    return darkMode ? 'text-[#49d8b4]' : 'text-[#149c73]'
+    return darkMode ? 'text-[#66d1ae]' : 'text-[#1a8a67]'
   }
 
   if (kind === 'image') {
-    return darkMode ? 'text-[#70d5ff]' : 'text-[#279dcd]'
+    return darkMode ? 'text-[#7cc8ea]' : 'text-[#3e91b6]'
   }
 
   if (kind === 'video') {
-    return darkMode ? 'text-[#f6b26b]' : 'text-[#c76d28]'
+    return darkMode ? 'text-[#e0b073]' : 'text-[#ae7640]'
   }
 
   if (kind === 'pdf') {
-    return darkMode ? 'text-[#ff9d9d]' : 'text-[#c45151]'
+    return darkMode ? 'text-[#e79d9d]' : 'text-[#b56666]'
   }
 
   if (kind === 'spreadsheet') {
-    return darkMode ? 'text-[#9fe08f]' : 'text-[#4b9b3b]'
+    return darkMode ? 'text-[#9acc92]' : 'text-[#5d9460]'
   }
 
   if (kind === 'presentation') {
-    return darkMode ? 'text-[#f5b3ff]' : 'text-[#a650b1]'
+    return darkMode ? 'text-[#d8b2de]' : 'text-[#9a6aa3]'
   }
 
   return darkMode ? 'text-[#c1c5bd]' : 'text-[#70756c]'
@@ -231,7 +232,7 @@ export function FileKindIcon({
       : 'code'
 
   return (
-    <span className={clsx('flex h-4 w-4 items-center justify-center', iconToneClasses(kind, darkMode))}>
+    <span className={clsx('flex h-3.5 w-3.5 items-center justify-center', iconToneClasses(kind, darkMode))}>
       {kind === 'note' ? (
         <NoteIcon />
       ) : kind === 'image' ? (
@@ -445,7 +446,7 @@ function directoryNameTone(nodeName: string, darkMode: boolean) {
     return 'text-[var(--text)]'
   }
 
-  return darkMode ? 'text-[#d4ba88]' : 'text-[#8f6a23]'
+  return darkMode ? 'text-[#c9bb98]' : 'text-[#8a7751]'
 }
 
 function filterNodes(nodes: FileTreeNode[], query: string): FileTreeNode[] {
@@ -484,6 +485,7 @@ export function FileTree({
   onImportExternalPaths,
   onMoveFile,
   onPlaceFile,
+  onPlaceFileAtPoint,
   onRevealNodeInFinder,
   onRenameNode,
   onSelectNode,
@@ -1004,6 +1006,15 @@ export function FileTree({
     return candidatePath ?? rootDirectoryPath
   }
 
+  function isCanvasDropTarget(clientX: number, clientY: number) {
+    if (typeof document === 'undefined') {
+      return false
+    }
+
+    const elementAtPoint = document.elementFromPoint(clientX, clientY) as HTMLElement | null
+    return Boolean(elementAtPoint?.closest('[data-canvas-surface="true"]'))
+  }
+
   function clearExternalDragState() {
     externalDragDepthRef.current = 0
     setExternalDragActive(false)
@@ -1258,17 +1269,43 @@ export function FileTree({
       const nextDropTargetPath = currentDragState.active
         ? resolveDropTargetFromPoint(event.clientX, event.clientY, currentDragState.sourcePath)
         : null
+      const shouldPlaceOnCanvas =
+        currentDragState.active &&
+        currentDragState.sourceKind === 'file' &&
+        !nextDropTargetPath &&
+        isCanvasDropTarget(event.clientX, event.clientY)
+
+      if (currentDragState.active) {
+        suppressClickRef.current = true
+        window.setTimeout(() => {
+          suppressClickRef.current = false
+        }, 0)
+      }
 
       clearDragState()
 
-      if (!currentDragState.active || !nextDropTargetPath) {
+      if (!currentDragState.active) {
         return
       }
 
-      suppressClickRef.current = true
-      window.setTimeout(() => {
-        suppressClickRef.current = false
-      }, 0)
+      if (shouldPlaceOnCanvas) {
+        onPlaceFileAtPoint(
+          {
+            fileKind: currentDragState.sourceFileKind,
+            kind: 'file',
+            name: currentDragState.sourceName,
+            path: currentDragState.sourcePath
+          },
+          event.clientX,
+          event.clientY
+        )
+        return
+      }
+
+      if (!nextDropTargetPath) {
+        return
+      }
+
       onMoveFile(currentDragState.sourcePath, nextDropTargetPath)
     }
 
@@ -1312,8 +1349,8 @@ export function FileTree({
               aria-selected={activePath === node.path}
               tabIndex={isFocused ? 0 : -1}
               className={clsx(
-                'flex w-full cursor-grab items-center gap-1.5 px-1.5 py-1 text-left text-[11px] font-medium transition active:cursor-grabbing focus-visible:outline-none',
-                'rounded-[6px] border border-transparent hover:bg-[var(--nav-surface-hover)]',
+                'flex w-full cursor-grab items-center gap-1.5 px-1.5 py-[2px] text-left text-[11px] font-medium leading-[1.15rem] transition active:cursor-grabbing focus-visible:outline-none',
+                'rounded-[var(--radius-control)] border border-transparent hover:bg-[var(--nav-surface-hover)]',
                 activePath === node.path &&
                   'border-[color:var(--line)] bg-[color:color-mix(in_srgb,var(--surface-selected)_82%,transparent)] text-[var(--text)]',
                 isFocused && 'border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent-soft)_70%,transparent)]',
@@ -1344,12 +1381,12 @@ export function FileTree({
               title={`Toggle folder: ${node.name}. Use ${TREE_COLLAPSE_ALL_SHORTCUT_KEY} or ${TREE_EXPAND_ALL_SHORTCUT_KEY} to collapse or expand everything.`}
               onPointerDown={(event) => startDraggingNode(event, node)}
             >
-              <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-[var(--text-faint)]">
+              <span className="flex h-3 w-3 shrink-0 items-center justify-center text-[var(--text-faint)]">
                 <ChevronIcon expanded={isExpanded} />
               </span>
               <span
                 className={clsx(
-                  'flex h-4 w-4 shrink-0 items-center justify-center',
+                  'flex h-3.5 w-3.5 shrink-0 items-center justify-center',
                   iconToneClasses('directory', darkMode)
                 )}
               >
@@ -1381,7 +1418,7 @@ export function FileTree({
                 aria-hidden="true"
                 className="pointer-events-none absolute bottom-1 left-[7px] top-0 w-px bg-[var(--nav-tree-line)]"
               />
-              <div className="space-y-0.5 pl-4">{node.children?.map((child) => renderNode(child, depth + 1))}</div>
+              <div className="space-y-0.5 pl-3.5">{node.children?.map((child) => renderNode(child, depth + 1))}</div>
             </div>
           ) : null}
         </div>
@@ -1407,8 +1444,8 @@ export function FileTree({
           aria-selected={activePath === node.path}
           tabIndex={isFocused ? 0 : -1}
           className={clsx(
-            'flex w-full cursor-grab items-center gap-1.5 px-1.5 py-1 text-left text-[11px] font-medium transition active:cursor-grabbing focus-visible:outline-none',
-            'rounded-[6px] border border-transparent',
+            'flex w-full cursor-grab items-center gap-1.5 px-1.5 py-[2px] text-left text-[11px] font-medium leading-[1.15rem] transition active:cursor-grabbing focus-visible:outline-none',
+            'rounded-[var(--radius-control)] border border-transparent',
             dragState?.sourcePath === node.path && 'opacity-55',
             activePath === node.path
               ? 'border-[color:var(--line)] bg-[color:color-mix(in_srgb,var(--surface-selected)_82%,transparent)] text-[var(--text)]'
@@ -1444,19 +1481,12 @@ export function FileTree({
           onPointerDown={(event) => startDraggingNode(event, node)}
           title={`Preview ${node.name}. Double-click or ${PLACE_ON_CANVAS_SHORTCUT_KEY} to place it on the canvas.`}
         >
-          <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-transparent">
+          <span className="flex h-3 w-3 shrink-0 items-center justify-center text-transparent">
             <ChevronIcon expanded={false} />
           </span>
           <FileKindIcon darkMode={darkMode} fileKind={node.fileKind} />
           <span className="min-w-0 flex-1 truncate">
-            <span
-              className={clsx(
-                'truncate',
-                node.fileKind === 'note' ? (darkMode ? 'text-[#8be4c7]' : 'text-[#18885f]') : 'text-current'
-              )}
-            >
-              {stem}
-            </span>
+            <span className="truncate text-current">{stem}</span>
             {extensionLabel ? (
               <span className="ml-1 align-middle text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--text-faint)]">
                 {extensionLabel}
@@ -1473,7 +1503,7 @@ export function FileTree({
       <div
         ref={treeRootRef}
         tabIndex={0}
-        className="rounded-[6px] border border-dashed border-[color:var(--line-strong)] bg-[var(--nav-surface)] p-4 text-[11px] text-[var(--text-dim)] outline-none"
+        className="rounded-[var(--radius-surface)] border border-dashed border-[color:var(--line-strong)] bg-[var(--nav-surface)] p-4 text-[11px] text-[var(--text-dim)] outline-none"
         data-file-tree-root-drop={rootDirectoryPath ? 'true' : undefined}
         onDragEnterCapture={handleExternalDragEnter}
         onDragLeaveCapture={handleExternalDragLeave}
@@ -1500,7 +1530,7 @@ export function FileTree({
       <div
         ref={treeRootRef}
         tabIndex={0}
-        className="rounded-[6px] border border-dashed border-[color:var(--line-strong)] bg-[var(--nav-surface)] p-4 text-[11px] text-[var(--text-dim)] outline-none"
+        className="rounded-[var(--radius-surface)] border border-dashed border-[color:var(--line-strong)] bg-[var(--nav-surface)] p-4 text-[11px] text-[var(--text-dim)] outline-none"
         data-file-tree-root-drop={rootDirectoryPath ? 'true' : undefined}
         onDragEnterCapture={handleExternalDragEnter}
         onDragLeaveCapture={handleExternalDragLeave}
@@ -1529,7 +1559,7 @@ export function FileTree({
       aria-label="Workspace file tree"
       tabIndex={-1}
       className={clsx(
-        'space-y-0.5 font-[var(--font-mono)] text-[11px] outline-none',
+        'space-y-0.5 font-[var(--font-ui)] text-[11px] outline-none',
         dragState?.active && 'select-none'
       )}
       data-file-tree-root-drop={rootDirectoryPath ? 'true' : undefined}
@@ -1560,7 +1590,7 @@ export function FileTree({
         <div
           data-file-tree-root-drop="true"
           className={clsx(
-            'mb-2 rounded-[6px] border border-dashed px-3 py-2 text-[10px] font-medium uppercase tracking-[0.14em] transition',
+            'mb-2 rounded-[var(--radius-control)] border border-dashed px-3 py-2 text-[10px] font-medium uppercase tracking-[0.14em] transition',
             (externalDragActive ? externalDropTargetPath : dropTargetPath) === rootDirectoryPath
               ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
               : 'border-[color:var(--line-strong)] bg-[var(--nav-surface)] text-[var(--text-faint)]'
@@ -1574,7 +1604,7 @@ export function FileTree({
         <div
           data-file-tree-root-drop="true"
           className={clsx(
-            'mt-2 rounded-[6px] border border-dashed px-3 py-2 text-[10px] font-medium uppercase tracking-[0.14em] transition',
+            'mt-2 rounded-[var(--radius-control)] border border-dashed px-3 py-2 text-[10px] font-medium uppercase tracking-[0.14em] transition',
             (externalDragActive ? externalDropTargetPath : dropTargetPath) === rootDirectoryPath
               ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
               : 'border-[color:var(--line-strong)] bg-[var(--nav-surface)] text-[var(--text-faint)]'
@@ -1586,7 +1616,7 @@ export function FileTree({
       {dragState?.active && typeof document !== 'undefined'
         ? createPortal(
             <div
-              className="pointer-events-none fixed z-[530] flex max-w-[18rem] items-center gap-2 rounded-[8px] border border-[color:var(--line-strong)] bg-[var(--nav-surface)] px-3 py-2 text-[11px] shadow-[0_14px_30px_rgba(0,0,0,0.16)]"
+              className="pointer-events-none fixed z-[530] flex max-w-[18rem] items-center gap-2 rounded-[var(--radius-surface)] border border-[color:var(--line-strong)] bg-[var(--nav-surface)] px-3 py-2 text-[11px] shadow-[0_14px_30px_rgba(0,0,0,0.16)]"
               style={{
                 left: Math.min(dragState.currentX + 14, window.innerWidth - 280),
                 top: Math.min(dragState.currentY + 14, window.innerHeight - 72)
@@ -1613,19 +1643,19 @@ export function FileTree({
         ? createPortal(
         <div
           ref={contextMenuRef}
-          className="fixed z-[520] min-w-[220px] rounded-[8px] border border-[color:var(--line)] bg-[var(--surface-2)] p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.18)]"
+          className="fixed z-[520] min-w-[220px] rounded-[var(--radius-surface)] border border-[color:var(--line)] bg-[var(--surface-2)] p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.18)]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onPointerDown={(event) => event.stopPropagation()}
         >
           <button
-            className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
+            className="flex w-full items-center justify-between rounded-[var(--radius-control)] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
             onClick={() => openNewFileDialog(contextMenu.directoryPath)}
           >
             <span>New File</span>
             <span className="text-[var(--text-faint)]">+</span>
           </button>
           <button
-            className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
+            className="flex w-full items-center justify-between rounded-[var(--radius-control)] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
             onClick={() => openNewFolderDialog(contextMenu.directoryPath)}
           >
             <span>New Folder</span>
@@ -1635,28 +1665,28 @@ export function FileTree({
             <>
               <div className="my-1 h-px bg-[var(--line)]" />
               <button
-                className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
+                className="flex w-full items-center justify-between rounded-[var(--radius-control)] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
                 onClick={() => copyNodePath(contextMenu.node!)}
               >
                 <span>Copy Path</span>
                 <span className="text-[var(--text-faint)]">⌘C</span>
               </button>
               <button
-                className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
+                className="flex w-full items-center justify-between rounded-[var(--radius-control)] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
                 onClick={() => revealNodeInFinder(contextMenu.node!)}
               >
                 <span>Open In Finder</span>
                 <span className="text-[var(--text-faint)]">↗</span>
               </button>
               <button
-                className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
+                className="flex w-full items-center justify-between rounded-[var(--radius-control)] px-3 py-2 text-left text-[12px] font-medium text-[var(--text)] transition hover:bg-[var(--surface-0)]"
                 onClick={() => openRenameDialog(contextMenu.node!)}
               >
                 <span>Rename</span>
                 <span className="text-[var(--text-faint)]">↵</span>
               </button>
               <button
-                className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[12px] font-medium text-[var(--danger,#b95151)] transition hover:bg-[var(--surface-0)]"
+                className="flex w-full items-center justify-between rounded-[var(--radius-control)] px-3 py-2 text-left text-[12px] font-medium text-[var(--danger,#b95151)] transition hover:bg-[var(--surface-0)]"
                 onClick={() => openDeleteDialog(contextMenu.node!)}
               >
                 <span>Delete</span>
@@ -1675,7 +1705,7 @@ export function FileTree({
               onMouseDown={() => setInputDialog(null)}
             >
               <div
-                className="w-full max-w-[28rem] rounded-[10px] border border-[color:var(--line)] bg-[var(--surface-2)] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.2)]"
+                className="w-full max-w-[28rem] rounded-[var(--radius-surface)] border border-[color:var(--line)] bg-[var(--surface-2)] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.2)]"
                 onMouseDown={(event) => event.stopPropagation()}
               >
                 <div className="text-[13px] font-semibold text-[var(--text)]">{inputDialog.title}</div>
@@ -1704,19 +1734,19 @@ export function FileTree({
                           : current
                       )
                     }
-                    className="h-11 w-full rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 text-[13px] text-[var(--text)] outline-none transition focus:border-[color:var(--accent)]"
+                    className="h-11 w-full rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 text-[13px] text-[var(--text)] outline-none transition focus:border-[color:var(--accent)]"
                   />
                   <div className="flex items-center justify-end gap-2">
                     <button
                       type="button"
-                      className="rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-[12px] font-medium text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                      className="rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-[12px] font-medium text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
                       onClick={() => setInputDialog(null)}
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="rounded-[6px] border border-[color:var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-[12px] font-medium text-[var(--accent)] transition hover:brightness-[0.98]"
+                      className="rounded-[var(--radius-control)] border border-[color:var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-[12px] font-medium text-[var(--accent)] transition hover:brightness-[0.98]"
                     >
                       {inputDialog.confirmLabel}
                     </button>
@@ -1734,7 +1764,7 @@ export function FileTree({
               onMouseDown={() => setDeleteTarget(null)}
             >
               <div
-                className="w-full max-w-[28rem] rounded-[10px] border border-[color:var(--line)] bg-[var(--surface-2)] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.2)]"
+                className="w-full max-w-[28rem] rounded-[var(--radius-surface)] border border-[color:var(--line)] bg-[var(--surface-2)] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.2)]"
                 onMouseDown={(event) => event.stopPropagation()}
               >
                 <div className="text-[13px] font-semibold text-[var(--text)]">
@@ -1748,14 +1778,14 @@ export function FileTree({
                 <div className="mt-4 flex items-center justify-end gap-2">
                   <button
                     type="button"
-                    className="rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-[12px] font-medium text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                    className="rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-[12px] font-medium text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
                     onClick={() => setDeleteTarget(null)}
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
-                    className="rounded-[6px] border border-[color:var(--error-line)] bg-[var(--error-bg)] px-3 py-2 text-[12px] font-medium text-[var(--error-text)] transition hover:brightness-[0.98]"
+                    className="rounded-[var(--radius-control)] border border-[color:var(--error-line)] bg-[var(--error-bg)] px-3 py-2 text-[12px] font-medium text-[var(--error-text)] transition hover:brightness-[0.98]"
                     onClick={() => {
                       onDeleteNode(deleteTarget.path)
                       setDeleteTarget(null)

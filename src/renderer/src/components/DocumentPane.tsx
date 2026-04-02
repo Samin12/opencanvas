@@ -243,27 +243,27 @@ function SurfaceFrame({
       className={clsx(
         'relative flex h-full min-h-0 flex-col',
         variant === 'viewer'
-          ? 'overflow-hidden rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-0)] shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]'
+          ? 'overflow-hidden rounded-[var(--radius-surface)] border border-[color:var(--line)] bg-[var(--surface-0)] shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]'
           : 'overflow-hidden rounded-none bg-transparent'
       )}
     >
       {variant === 'viewer' ? (
-        <div className="flex items-center justify-between border-b border-[color:var(--line)] bg-[color:var(--surface-1)]/82 px-4 py-3">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]">
+        <div className="flex items-center justify-between border-b border-[color:var(--line)] bg-[color:var(--surface-1)]/82 px-4 py-2.5">
+          <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--text-faint)]">
             {surfaceLabel}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {headerActions}
             {onRefresh && showViewerRefreshButton ? (
               <button
-                className="rounded-[4px] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                className="rounded-[var(--radius-control)] border border-[color:var(--line-strong)] bg-[var(--surface-0)] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--text-dim)] transition hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
                 onClick={onRefresh}
                 title="Refresh file"
               >
                 Refresh
               </button>
             ) : null}
-            <div className="rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)]">
+            <div className="rounded-[999px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.16em] text-[var(--text-dim)]">
               {statusLabel}
             </div>
           </div>
@@ -271,7 +271,7 @@ function SurfaceFrame({
       ) : null}
       {variant === 'tile' && onRefresh && showTileRefreshButton ? (
         <button
-          className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] text-[12px] text-[var(--text-dim)] shadow-[0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]"
+          className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] text-[12px] text-[var(--text-dim)] shadow-[0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]"
           onClick={onRefresh}
           title="Refresh file"
         >
@@ -287,8 +287,7 @@ function LoadingPane({ variant }: { variant: 'tile' | 'viewer' }) {
   return (
     <div
       className={clsx(
-        'flex h-full items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-sm text-[var(--text-dim)]',
-        variant === 'viewer' ? 'rounded-[6px]' : 'rounded-[4px]'
+        'flex h-full items-center justify-center rounded-[var(--radius-surface)] border border-[color:var(--line)] bg-[var(--surface-0)] text-sm text-[var(--text-dim)]'
       )}
     >
       Loading…
@@ -300,9 +299,8 @@ function ErrorPane({ variant }: { variant: 'tile' | 'viewer' }) {
   return (
     <div
       className={clsx(
-        'flex h-full items-center justify-center rounded-[4px] border p-4 text-center text-sm',
+        'flex h-full items-center justify-center rounded-[var(--radius-surface)] border p-4 text-center text-sm',
         'border-[color:var(--error-line)] bg-[var(--error-bg)] text-[var(--error-text)]',
-        variant === 'viewer' ? 'rounded-[6px]' : 'rounded-[4px]'
       )}
     >
       This file could not be opened. Broken symlinks and deleted files should fail gracefully here.
@@ -535,7 +533,7 @@ export function MarkdownCopyMenu({
         className={clsx(
           'inline-flex items-center gap-2 rounded-[999px] border border-[color:var(--line-strong)]',
           'bg-[var(--surface-0)] text-[var(--text-dim)] transition',
-          isTile ? 'h-5 gap-1.5 px-1.5 py-0 text-[10px]' : 'px-2.5 py-1.5 text-[12px]',
+          isTile ? 'h-5 gap-1.5 px-1.5 py-0 text-[10px]' : 'h-8 gap-1.5 px-2.5 text-[11px]',
           disabled
             ? 'cursor-default opacity-55'
             : 'hover:border-[color:var(--line-strong)] hover:bg-[var(--surface-1)] hover:text-[var(--text)]'
@@ -549,8 +547,10 @@ export function MarkdownCopyMenu({
       >
         <span
           className={clsx(
-            'flex min-w-5 items-center justify-center rounded-[6px] bg-[var(--surface-1)] px-1 font-bold uppercase text-[var(--text-faint)]',
-            isTile ? 'h-3.5 min-w-3.5 rounded-[4px] px-0.5 text-[8px]' : 'h-5 text-[10px]'
+            'flex min-w-5 items-center justify-center rounded-[var(--radius-control)] bg-[var(--surface-1)] px-1 font-bold uppercase text-[var(--text-faint)]',
+            isTile
+              ? 'h-3.5 min-w-3.5 rounded-[var(--radius-control)] px-0.5 text-[8px]'
+              : 'h-[1.125rem] min-w-[1.125rem] rounded-[var(--radius-control)] px-0.5 text-[9px]'
           )}
         >
           F
@@ -563,7 +563,7 @@ export function MarkdownCopyMenu({
         <div
           role="menu"
           className={clsx(
-            'absolute right-0 top-[calc(100%+10px)] z-30 w-[280px] rounded-[16px] border border-[color:var(--line)]',
+            'absolute right-0 top-[calc(100%+10px)] z-30 w-[280px] rounded-[var(--radius-surface)] border border-[color:var(--line)]',
             'bg-[color:var(--surface-overlay)] p-2 shadow-[0_18px_40px_rgba(15,23,42,0.16)] backdrop-blur'
           )}
         >
@@ -571,12 +571,12 @@ export function MarkdownCopyMenu({
             type="button"
             role="menuitem"
             className={clsx(
-              'flex w-full items-start gap-3 rounded-[12px] px-3 py-3 text-left transition',
+              'flex w-full items-start gap-3 rounded-[var(--radius-control)] px-3 py-3 text-left transition',
               'hover:bg-[var(--surface-1)]'
             )}
             onClick={() => void handleCopyFormatted()}
           >
-            <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-[10px] bg-[var(--surface-1)] text-[var(--text-dim)]">
+            <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-[var(--radius-control)] bg-[var(--surface-1)] text-[var(--text-dim)]">
               <FormattingIcon />
             </span>
             <span className="flex min-w-0 flex-1 flex-col">
@@ -590,12 +590,12 @@ export function MarkdownCopyMenu({
             type="button"
             role="menuitem"
             className={clsx(
-              'mt-1 flex w-full items-start gap-3 rounded-[12px] px-3 py-3 text-left transition',
+              'mt-1 flex w-full items-start gap-3 rounded-[var(--radius-control)] px-3 py-3 text-left transition',
               'hover:bg-[var(--surface-1)]'
             )}
             onClick={() => void handleCopyPlainText()}
           >
-            <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-[10px] bg-[var(--surface-1)] text-[var(--text-dim)]">
+            <span className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-[var(--radius-control)] bg-[var(--surface-1)] text-[var(--text-dim)]">
               <PlainTextIcon />
             </span>
             <span className="flex min-w-0 flex-1 flex-col">
@@ -1208,6 +1208,24 @@ function RichNoteEditor({
   )
 
   useEffect(() => {
+    const host = editorHostRef.current
+
+    if (!host) {
+      return
+    }
+
+    function handleFocusRequest() {
+      focusEditor('end')
+    }
+
+    host.addEventListener('collaborator:focus-document-editor', handleFocusRequest)
+
+    return () => {
+      host.removeEventListener('collaborator:focus-document-editor', handleFocusRequest)
+    }
+  }, [editor])
+
+  useEffect(() => {
     if (!editor) {
       latestDraftRef.current = initialContent
       latestSavedRef.current = normalizedInitialContent
@@ -1471,6 +1489,7 @@ function RichNoteEditor({
             : undefined
         }
         data-document-drop-target="true"
+        data-document-edit-target="true"
         data-shortcut-lock={variant === 'viewer' ? 'true' : undefined}
         onDragOverCapture={handleImageDragOver}
         onDropCapture={handleImageDrop}
@@ -1486,10 +1505,7 @@ function RichNoteEditor({
         onPointerDown={(event) => {
           event.stopPropagation()
 
-          if (variant === 'tile') {
-            event.preventDefault()
-            ;(document.activeElement as HTMLElement | null)?.blur?.()
-          } else {
+          if (variant !== 'tile') {
             focusEditor()
           }
         }}
@@ -1514,7 +1530,7 @@ function RichNoteEditor({
         ? createPortal(
             <div
               ref={slashMenuRef}
-              className="fixed z-[420] w-[min(264px,calc(100vw-24px))] overflow-hidden rounded-[16px] border border-black/8 bg-[color:color-mix(in_srgb,var(--surface-overlay)_96%,transparent)] p-1.5 shadow-[0_16px_36px_rgba(0,0,0,0.22)] backdrop-blur-xl"
+              className="fixed z-[420] w-[min(264px,calc(100vw-24px))] overflow-hidden rounded-[var(--radius-surface)] border border-black/8 bg-[color:color-mix(in_srgb,var(--surface-overlay)_96%,transparent)] p-1.5 shadow-[0_16px_36px_rgba(0,0,0,0.22)] backdrop-blur-xl"
               style={{
                 left: slashMenuState.anchorLeft,
                 top: slashMenuState.anchorTop,
@@ -1541,7 +1557,7 @@ function RichNoteEditor({
                         data-slash-item-index={index}
                         aria-selected={isActive}
                         className={clsx(
-                          'flex w-full items-center gap-2.5 rounded-[12px] px-2.5 py-2 text-left transition',
+                          'flex w-full items-center gap-2.5 rounded-[var(--radius-control)] px-2.5 py-2 text-left transition',
                           isActive
                             ? 'bg-[color:color-mix(in_srgb,var(--text)_10%,transparent)] text-[var(--text)]'
                             : 'text-[var(--text-dim)] hover:bg-[color:color-mix(in_srgb,var(--text)_6%,transparent)] hover:text-[var(--text)]'
@@ -1556,7 +1572,7 @@ function RichNoteEditor({
                           setSlashMenuIndexImmediate(index)
                         }}
                       >
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-white/8 bg-white/8 text-[12px] font-semibold tracking-[-0.02em] text-[var(--text)]">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-white/8 bg-white/8 text-[12px] font-semibold tracking-[-0.02em] text-[var(--text)]">
                           {item.badge}
                         </span>
                         <span className="min-w-0 flex-1">
@@ -1571,7 +1587,7 @@ function RichNoteEditor({
                     )
                   })
                 ) : (
-                  <div className="rounded-[12px] px-2.5 py-2.5 text-[12px] text-[var(--text-dim)]">
+                  <div className="rounded-[var(--radius-control)] px-2.5 py-2.5 text-[12px] text-[var(--text-dim)]">
                     No markdown actions match “{slashMenuState.query}”.
                   </div>
                 )}
@@ -1683,6 +1699,7 @@ function CodeDocumentPane({
   const [status, setStatus] = useState<DocumentStatus>('loading')
   const fileChangeCount = useFileChangeSignal(filePath)
   const isJsonDocument = /\.json$/i.test(filePath)
+  const textAreaRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
     setDocument(null)
@@ -1739,6 +1756,36 @@ function CodeDocumentPane({
     }
   }
 
+  useEffect(() => {
+    if (!document) {
+      return
+    }
+
+    const textArea = textAreaRef.current
+
+    if (!textArea) {
+      return
+    }
+
+    function handleFocusRequest() {
+      const activeTextArea = textAreaRef.current
+
+      if (!activeTextArea) {
+        return
+      }
+
+      activeTextArea.focus()
+      const end = activeTextArea.value.length
+      activeTextArea.setSelectionRange(end, end)
+    }
+
+    textArea.addEventListener('collaborator:focus-document-editor', handleFocusRequest)
+
+    return () => {
+      textArea.removeEventListener('collaborator:focus-document-editor', handleFocusRequest)
+    }
+  }, [document, draft])
+
   if (status === 'error') {
     return <ErrorPane variant={variant} />
   }
@@ -1752,7 +1799,7 @@ function CodeDocumentPane({
       fileKind="code"
       headerActions={
         isJsonDocument ? (
-          <div className="rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-dim)]">
+          <div className="rounded-[999px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-0.5 text-[8px] font-semibold uppercase tracking-[0.16em] text-[var(--text-dim)]">
             Editable JSON
           </div>
         ) : null
@@ -1763,8 +1810,9 @@ function CodeDocumentPane({
       showViewerRefreshButton={showViewerRefreshButton}
       status={status}
       variant={variant}
-    >
+      >
       <textarea
+        ref={textAreaRef}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={() => void save()}
@@ -1782,6 +1830,7 @@ function CodeDocumentPane({
 
           event.stopPropagation()
         }}
+        data-document-edit-target="true"
         data-shortcut-lock="true"
         data-scroll-lock="true"
         spellCheck={false}
@@ -1859,7 +1908,7 @@ function ImageDocumentPane({
       className={clsx(
         'relative flex h-full items-center justify-center overflow-hidden',
         variant === 'viewer'
-          ? 'rounded-[6px] border border-[color:var(--line)] bg-[var(--surface-1)] p-3'
+          ? 'rounded-[var(--radius-surface)] border border-[color:var(--line)] bg-[var(--surface-1)] p-3'
           : 'rounded-none bg-transparent p-0'
       )}
     >
@@ -1867,7 +1916,7 @@ function ImageDocumentPane({
       (variant === 'viewer' && showViewerRefreshButton) ? (
         <button
           className={clsx(
-            'absolute z-10 flex h-6 min-w-6 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-2 text-[11px] text-[var(--text-dim)] shadow-[0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]',
+            'absolute z-10 flex h-6 min-w-6 items-center justify-center rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-2 text-[11px] text-[var(--text-dim)] shadow-[0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]',
             variant === 'viewer' ? 'right-3 top-3' : 'right-2 top-2'
           )}
           onClick={() => setReloadCount((current) => current + 1)}
@@ -1977,14 +2026,16 @@ function VideoDocumentPane({
     <div
       className={clsx(
         'relative flex h-full items-center justify-center overflow-hidden bg-[var(--surface-1)] p-3',
-        variant === 'viewer' ? 'rounded-[6px] border border-[color:var(--line)]' : 'rounded-[4px]'
+        variant === 'viewer'
+          ? 'rounded-[var(--radius-surface)] border border-[color:var(--line)]'
+          : 'rounded-[var(--radius-surface)]'
       )}
     >
       {(variant === 'tile' && showTileRefreshButton) ||
       (variant === 'viewer' && showViewerRefreshButton) ? (
         <button
           className={clsx(
-            'absolute z-10 flex h-6 min-w-6 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-2 text-[11px] text-[var(--text-dim)] shadow-[0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]',
+            'absolute z-10 flex h-6 min-w-6 items-center justify-center rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-2 text-[11px] text-[var(--text-dim)] shadow-[0_4px_10px_rgba(15,23,42,0.08)] backdrop-blur transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)]',
             variant === 'viewer' ? 'right-3 top-3' : 'right-2 top-2'
           )}
           onClick={() => setReloadCount((current) => current + 1)}
