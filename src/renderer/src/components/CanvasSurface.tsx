@@ -4938,10 +4938,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   <div
                     className={clsx(
                       'pointer-events-none absolute inset-x-0 top-0 z-30 px-2 transition duration-150 ease-out',
-                      showFloatingTileChrome ? '-translate-y-[calc(100%+14px)] opacity-100' : '-translate-y-[calc(100%+6px)] opacity-0'
+                      showFloatingTileChrome ? '-translate-y-[calc(100%+8px)] opacity-100' : '-translate-y-[calc(100%+4px)] opacity-0'
                     )}
                   >
-                    <div className="flex items-start justify-between gap-3 rounded-[16px] border border-white/6 bg-[color:color-mix(in_srgb,var(--surface-overlay)_94%,transparent)] px-3.5 py-2.5 shadow-[0_22px_42px_rgba(0,0,0,0.28)] backdrop-blur-md">
+                    <div className="flex items-start justify-between gap-3 rounded-[14px] border border-[color:var(--line-strong)] bg-[color:var(--surface-overlay)] px-3.5 py-2.5 shadow-[0_6px_16px_rgba(15,23,42,0.08)] backdrop-blur-sm">
                       <div
                         className="pointer-events-auto min-w-0 flex-1 cursor-grab active:cursor-grabbing"
                         onPointerDown={(event) => {
