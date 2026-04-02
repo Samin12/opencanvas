@@ -12,8 +12,10 @@ import type {
   ImageAssetData,
   ImportWorkspaceDownloadOptions,
   ImportWorkspacePathsOptions,
+  RestoreWorkspaceDeletedNodeOptions,
   RenameWorkspaceNodeOptions,
   TextFileDocument,
+  WorkspaceDeletedNode,
   WorkspaceAssetImport,
   WorkspaceImageImport
 } from '../shared/types'
@@ -27,6 +29,7 @@ const PRESENTATION_EXTENSIONS = new Set(['.ppt', '.pptx', '.odp'])
 const IGNORED_NAMES = new Set(['.DS_Store'])
 const IGNORED_DIRECTORIES = new Set([
   '.git',
+  '.trash',
   'node_modules',
   'dist',
   'out',
@@ -41,6 +44,7 @@ const IGNORED_DIRECTORIES = new Set([
   '.nox'
 ])
 const WORKSPACE_METADATA_DIRECTORY = '.claude-canvas'
+const WORKSPACE_TRASH_DIRECTORY = '.trash'
 const WORKSPACE_ASSETS_DIRECTORY = 'assets'
 const WORKSPACE_CANVAS_FILES_DIRECTORY = 'canvas-files'
 const watchedFiles = new Map<string, Set<() => void>>()
@@ -129,6 +133,10 @@ function workspaceMetadataPath(workspacePath: string) {
 
 function workspaceCanvasFilesPath(workspacePath: string) {
   return join(workspaceMetadataPath(workspacePath), WORKSPACE_CANVAS_FILES_DIRECTORY)
+}
+
+function workspaceTrashPath(workspacePath: string) {
+  return join(workspaceMetadataPath(workspacePath), WORKSPACE_TRASH_DIRECTORY)
 }
 
 function normalizeNameSegment(input: string, fallback: string) {
@@ -718,6 +726,77 @@ export async function deleteWorkspaceNode(workspacePath: string, targetPath: str
     force: false,
     recursive: true
   })
+}
+
+export async function trashWorkspaceNode(
+  workspacePath: string,
+  targetPath: string
+): Promise<WorkspaceDeletedNode> {
+  const resolvedWorkspacePath = resolve(workspacePath)
+  const resolvedTargetPath = resolve(targetPath)
+
+  if (!isWithinWorkspace(resolvedWorkspacePath, resolvedTargetPath)) {
+    throw new Error('Delete target is outside the active workspace')
+  }
+
+  if (resolvedTargetPath === resolvedWorkspacePath) {
+    throw new Error('The workspace root cannot be deleted from the file tree')
+  }
+
+  const sourceStats = await stat(resolvedTargetPath)
+  const trashDirectoryPath = workspaceTrashPath(resolvedWorkspacePath)
+  const extension = sourceStats.isDirectory() ? '' : extname(resolvedTargetPath)
+  const trashTargetPath = await createUniquePath(
+    await (async () => {
+      await mkdir(trashDirectoryPath, { recursive: true })
+      return trashDirectoryPath
+    })(),
+    basename(resolvedTargetPath, extension),
+    extension
+  )
+
+  await rename(resolvedTargetPath, trashTargetPath)
+
+  return {
+    originalPath: resolvedTargetPath,
+    trashPath: trashTargetPath
+  }
+}
+
+export async function restoreWorkspaceDeletedNode(
+  workspacePath: string,
+  options: RestoreWorkspaceDeletedNodeOptions
+): Promise<FileTreeNode> {
+  const resolvedWorkspacePath = resolve(workspacePath)
+  const resolvedOriginalPath = resolve(options.originalPath)
+  const resolvedTrashPath = resolve(options.trashPath)
+  const resolvedTrashRoot = workspaceTrashPath(resolvedWorkspacePath)
+
+  if (!isWithinWorkspace(resolvedWorkspacePath, resolvedOriginalPath)) {
+    throw new Error('Restore target is outside the active workspace')
+  }
+
+  if (!isSameOrDescendantPath(resolvedTrashPath, resolvedTrashRoot)) {
+    throw new Error('Restore source is outside the workspace trash')
+  }
+
+  const sourceStats = await stat(resolvedTrashPath)
+  const extension = sourceStats.isDirectory() ? '' : extname(resolvedOriginalPath)
+  const restoreDirectoryPath = dirname(resolvedOriginalPath)
+
+  await mkdir(restoreDirectoryPath, { recursive: true })
+
+  const restoreTargetPath = (await pathExists(resolvedOriginalPath))
+    ? await createUniquePath(
+        restoreDirectoryPath,
+        basename(resolvedOriginalPath, extension),
+        extension
+      )
+    : resolvedOriginalPath
+
+  await rename(resolvedTrashPath, restoreTargetPath)
+
+  return ensureNode(restoreTargetPath)
 }
 
 export async function importWorkspaceImage(

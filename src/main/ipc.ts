@@ -10,6 +10,7 @@ import type {
   CreateWorkspaceNoteOptions,
   ImportWorkspaceDownloadOptions,
   ImportWorkspacePathsOptions,
+  RestoreWorkspaceDeletedNodeOptions,
   RenameWorkspaceNodeOptions,
   TerminalProvider,
   WorkspaceAssetImport,
@@ -51,8 +52,10 @@ import {
   readImageAssetData,
   readTextFileDocument,
   renameWorkspaceNode,
+  restoreWorkspaceDeletedNode,
   readWorkspaceTree,
   subscribeToFileChanges,
+  trashWorkspaceNode,
   toFileUrl,
   writeTextFileDocument
 } from './workspaces'
@@ -203,6 +206,14 @@ export function registerIpcHandlers(): void {
   )
   ipcMain.handle('workspace:delete-node', async (_event, workspacePath: string, targetPath: string) =>
     deleteWorkspaceNode(workspacePath, targetPath)
+  )
+  ipcMain.handle('workspace:trash-node', async (_event, workspacePath: string, targetPath: string) =>
+    trashWorkspaceNode(workspacePath, targetPath)
+  )
+  ipcMain.handle(
+    'workspace:restore-deleted-node',
+    async (_event, workspacePath: string, options: RestoreWorkspaceDeletedNodeOptions) =>
+      restoreWorkspaceDeletedNode(workspacePath, options)
   )
   ipcMain.handle('file:read', async (_event, filePath: string) => readTextFileDocument(filePath))
   ipcMain.handle('file:metadata', async (_event, filePath: string) => readFileMetadata(filePath))

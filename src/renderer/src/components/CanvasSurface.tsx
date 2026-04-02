@@ -111,6 +111,7 @@ export interface CanvasSurfaceHandle {
   createTerminal: (provider?: TerminalProvider) => void
   focusCanvas: () => void
   focusSelectedTileEditor: () => boolean
+  removeSelectedTiles: () => boolean
   importDiagramSet: (envelope: CanvasDiagramEnvelope) => void
   importExcalidrawContent: (content: unknown, title?: string) => Promise<void>
   spawnEmbedTile: (url: string) => void
@@ -127,6 +128,13 @@ type ShortcutAction = BoardTool | 'markdown' | 'terminal-claude' | 'terminal-cod
 type DrawShapeUpdate = TLShapePartial<TLDrawShape>
 type FrameShapeUpdate = TLShapePartial<TLFrameShape>
 type NoteShapeUpdate = TLShapePartial<TLNoteShape>
+type DeletedTileUndoEntry = {
+  terminalContextRestorations: Array<{
+    contextTileIds: string[]
+    tileId: string
+  }>
+  tiles: CanvasTile[]
+}
 type GestureLikeEvent = Event & {
   clientX?: number
   clientY?: number
@@ -1212,6 +1220,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const renamingInputRef = useRef<HTMLInputElement | null>(null)
     const headingRenameRequestRef = useRef<Map<string, string>>(new Map())
     const frameBoundsRef = useRef<Map<string, FrameBoundsSnapshot>>(new Map())
+    const deletedTileUndoStackRef = useRef<DeletedTileUndoEntry[]>([])
     const stateRef = useRef(state)
     const drawColorRef = useRef<TLDefaultColorStyle>('black')
     const drawSizeRef = useRef<TLDefaultSizeStyle>('m')
@@ -2440,6 +2449,100 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       onStateChange(nextState, options)
     }
 
+    function pushDeletedTileUndoEntry(entry: DeletedTileUndoEntry) {
+      deletedTileUndoStackRef.current = [...deletedTileUndoStackRef.current.slice(-19), entry]
+    }
+
+    function restoreDeletedTileUndoEntry(entry: DeletedTileUndoEntry) {
+      if (entry.tiles.length === 0) {
+        return false
+      }
+
+      const restoredTileIds = entry.tiles.map((tile) => tile.id)
+      const restoredTileIdSet = new Set(restoredTileIds)
+      const existingTilesById = new Map(stateRef.current.tiles.map((tile) => [tile.id, tile]))
+
+      entry.tiles.forEach((tile) => {
+        if (!existingTilesById.has(tile.id)) {
+          existingTilesById.set(tile.id, tile)
+        }
+      })
+
+      const contextRestorationsByTileId = new Map(
+        entry.terminalContextRestorations.map((restoration) => [restoration.tileId, restoration.contextTileIds])
+      )
+
+      const nextTiles = [...existingTilesById.values()]
+        .map((tile) => {
+          if (tile.type !== 'term') {
+            return tile
+          }
+
+          const previousContextTileIds = contextRestorationsByTileId.get(tile.id)
+
+          if (!previousContextTileIds) {
+            return tile
+          }
+
+          const currentContextTileIds = tile.contextTileIds ?? []
+          const currentContextTileIdSet = new Set(currentContextTileIds)
+          const nextContextTileIds: string[] = []
+          const seenContextTileIds = new Set<string>()
+
+          previousContextTileIds.forEach((contextTileId) => {
+            if (
+              (currentContextTileIdSet.has(contextTileId) || restoredTileIdSet.has(contextTileId)) &&
+              !seenContextTileIds.has(contextTileId)
+            ) {
+              nextContextTileIds.push(contextTileId)
+              seenContextTileIds.add(contextTileId)
+            }
+          })
+
+          currentContextTileIds.forEach((contextTileId) => {
+            if (!seenContextTileIds.has(contextTileId)) {
+              nextContextTileIds.push(contextTileId)
+              seenContextTileIds.add(contextTileId)
+            }
+          })
+
+          return sameTileIdList(currentContextTileIds, nextContextTileIds)
+            ? tile
+            : {
+                ...tile,
+                contextTileIds: nextContextTileIds
+              }
+        })
+        .sort((left, right) => (left.zIndex === right.zIndex ? left.id.localeCompare(right.id) : left.zIndex - right.zIndex))
+
+      updateState(
+        {
+          ...stateRef.current,
+          tiles: nextTiles
+        },
+        { immediate: true }
+      )
+
+      setTileSelection(restoredTileIds, {
+        primaryTileId: restoredTileIds[0] ?? null
+      })
+      canvasActiveRef.current = true
+      containerRef.current?.focus()
+      editorRef.current?.focus()
+      return true
+    }
+
+    function undoLastDeletedTiles() {
+      const latestEntry = deletedTileUndoStackRef.current.at(-1)
+
+      if (!latestEntry) {
+        return false
+      }
+
+      deletedTileUndoStackRef.current = deletedTileUndoStackRef.current.slice(0, -1)
+      return restoreDeletedTileUndoEntry(latestEntry)
+    }
+
     function appendTile(tile: CanvasTile, options?: { immediate?: boolean }) {
       updateState(
         {
@@ -3587,6 +3690,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       focusSelectedTileEditor: () => {
         return focusSelectedTileEditor()
       },
+      removeSelectedTiles: () => {
+        if (selectedTileIds.length === 0) {
+          return false
+        }
+
+        deleteTiles(selectedTileIds)
+        return true
+      },
       importDiagramSet: (envelope: CanvasDiagramEnvelope) => {
         importDiagramSet(envelope)
       },
@@ -3685,6 +3796,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         applyDrawColor('black')
       }
     }, [darkMode, drawColor])
+
+    useEffect(() => {
+      deletedTileUndoStackRef.current = []
+    }, [activeWorkspacePath])
 
     useEffect(() => {
       function shouldPreferResolvedWheelOwner(
@@ -3881,6 +3996,25 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       function handleKeyDown(event: KeyboardEvent) {
+        const isUndoShortcut =
+          !event.defaultPrevented &&
+          (event.metaKey || event.ctrlKey) &&
+          !event.shiftKey &&
+          !event.altKey &&
+          event.key.toLowerCase() === 'z'
+
+        if (isUndoShortcut) {
+          if (shortcutsSuspended || !canvasActiveRef.current || keyboardShortcutsBlocked(event.target)) {
+            return
+          }
+
+          if (undoLastDeletedTiles()) {
+            event.preventDefault()
+            event.stopPropagation()
+          }
+          return
+        }
+
         if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
           return
         }
@@ -4299,6 +4433,27 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       const deletedTileIdSet = new Set(normalizedTileIds)
+      const deletedTiles = stateRef.current.tiles.filter((tile) => deletedTileIdSet.has(tile.id))
+
+      pushDeletedTileUndoEntry({
+        terminalContextRestorations: stateRef.current.tiles.flatMap((tile) => {
+          if (tile.type !== 'term' || deletedTileIdSet.has(tile.id)) {
+            return []
+          }
+
+          const contextTileIds = tile.contextTileIds ?? []
+
+          return contextTileIds.some((contextTileId) => deletedTileIdSet.has(contextTileId))
+            ? [
+                {
+                  contextTileIds,
+                  tileId: tile.id
+                }
+              ]
+            : []
+        }),
+        tiles: deletedTiles
+      })
 
       updateState(
         {

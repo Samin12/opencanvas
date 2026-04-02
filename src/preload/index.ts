@@ -19,10 +19,12 @@ import type {
   OfficeViewerBootstrap,
   OfficeViewerSession,
   PresentationPreviewResult,
+  RestoreWorkspaceDeletedNodeOptions,
   RenameWorkspaceNodeOptions,
   TerminalActivityItem,
   TerminalSessionSnapshot,
   TextFileDocument,
+  WorkspaceDeletedNode,
   WorkspaceAssetImport,
   WorkspaceImageImport
 } from '../shared/types'
@@ -154,6 +156,13 @@ const api: CollaboratorApi = {
     ipcRenderer.invoke('workspace:rename-node', workspacePath, options) as Promise<FileTreeNode>,
   deleteWorkspaceNode: (workspacePath: string, targetPath: string) =>
     ipcRenderer.invoke('workspace:delete-node', workspacePath, targetPath) as Promise<void>,
+  trashWorkspaceNode: (workspacePath: string, targetPath: string) =>
+    ipcRenderer.invoke('workspace:trash-node', workspacePath, targetPath) as Promise<WorkspaceDeletedNode>,
+  restoreWorkspaceDeletedNode: (
+    workspacePath: string,
+    options: RestoreWorkspaceDeletedNodeOptions
+  ) =>
+    ipcRenderer.invoke('workspace:restore-deleted-node', workspacePath, options) as Promise<FileTreeNode>,
   readImageAsset: (filePath: string) =>
     ipcRenderer.invoke('file:image-data', filePath) as Promise<ImageAssetData>,
   readFileMetadata: (filePath: string) =>

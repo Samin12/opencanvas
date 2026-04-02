@@ -199,6 +199,16 @@ export interface RenameWorkspaceNodeOptions {
   targetPath: string
 }
 
+export interface WorkspaceDeletedNode {
+  originalPath: string
+  trashPath: string
+}
+
+export interface RestoreWorkspaceDeletedNodeOptions {
+  originalPath: string
+  trashPath: string
+}
+
 export type CanvasDiagramKind =
   | 'flowchart'
   | 'system-architecture'
@@ -390,6 +400,11 @@ export interface CollaboratorApi {
     options: RenameWorkspaceNodeOptions
   ) => Promise<FileTreeNode>
   deleteWorkspaceNode: (workspacePath: string, targetPath: string) => Promise<void>
+  trashWorkspaceNode: (workspacePath: string, targetPath: string) => Promise<WorkspaceDeletedNode>
+  restoreWorkspaceDeletedNode: (
+    workspacePath: string,
+    options: RestoreWorkspaceDeletedNodeOptions
+  ) => Promise<FileTreeNode>
   readImageAsset: (filePath: string) => Promise<ImageAssetData>
   readFileMetadata: (filePath: string) => Promise<FileMetadata>
   readWorkspaceTree: (workspacePath: string) => Promise<FileTreeNode[]>

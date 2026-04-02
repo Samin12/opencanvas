@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import type {
   AppConfig,
   AppUpdateState,
+  CanvasTile,
   CanvasDiagramQueueIndex,
   CanvasState,
   EnsureWorkspaceDiagramToolsResult,
@@ -11,7 +12,8 @@ import type {
   OfficeViewerBootstrap,
   SidebarSide,
   TerminalDependencyState,
-  TerminalProvider
+  TerminalProvider,
+  WorkspaceDeletedNode
 } from '@shared/types'
 
 import { CanvasSurface, type CanvasSurfaceHandle } from './components/CanvasSurface'
@@ -217,6 +219,16 @@ interface PathMoveOperation {
   toPath: string
 }
 
+interface WorkspaceDeletionUndoEntry {
+  removedTiles: CanvasTile[]
+  terminalContextRestorations: Array<{
+    contextTileIds: string[]
+    tileId: string
+  }>
+  trashedNodes: WorkspaceDeletedNode[]
+  workspacePath: string
+}
+
 function rebasePathThroughOperations(
   candidatePath: string | null | undefined,
   operations: PathMoveOperation[]
@@ -310,6 +322,116 @@ function isMissingPathError(error: unknown) {
   return /ENOENT|no such file or directory/i.test(message)
 }
 
+function removeWorkspacePathsFromCanvasState(canvasState: CanvasState, targetPaths: string[]) {
+  const normalizedTargetPaths = dedupeNestedPaths(targetPaths)
+  const removedTileIds = new Set(
+    canvasState.tiles
+      .filter((tile) =>
+        normalizedTargetPaths.some((targetPath) => isSameOrDescendantPath(tile.filePath, targetPath))
+      )
+      .map((tile) => tile.id)
+  )
+
+  if (removedTileIds.size === 0) {
+    return {
+      nextCanvasState: null,
+      removedTiles: [] as CanvasTile[],
+      terminalContextRestorations: [] as WorkspaceDeletionUndoEntry['terminalContextRestorations']
+    }
+  }
+
+  const removedTiles = canvasState.tiles.filter((tile) => removedTileIds.has(tile.id))
+  const terminalContextRestorations = canvasState.tiles.flatMap((tile) => {
+    if (tile.type !== 'term') {
+      return []
+    }
+
+    const removedContextTileIds = (tile.contextTileIds ?? []).filter((contextTileId) =>
+      removedTileIds.has(contextTileId)
+    )
+
+    return removedContextTileIds.length > 0
+      ? [
+          {
+            contextTileIds: removedContextTileIds,
+            tileId: tile.id
+          }
+        ]
+      : []
+  })
+
+  return {
+    nextCanvasState: {
+      ...canvasState,
+      tiles: canvasState.tiles
+        .filter((tile) => !removedTileIds.has(tile.id))
+        .map((tile) =>
+          tile.type === 'term'
+            ? {
+                ...tile,
+                contextTileIds: (tile.contextTileIds ?? []).filter(
+                  (contextTileId) => !removedTileIds.has(contextTileId)
+                )
+              }
+            : tile
+        )
+    },
+    removedTiles,
+    terminalContextRestorations
+  }
+}
+
+function restoreWorkspaceDeletionToCanvasState(
+  canvasState: CanvasState,
+  undoEntry: WorkspaceDeletionUndoEntry
+) {
+  if (undoEntry.removedTiles.length === 0 && undoEntry.terminalContextRestorations.length === 0) {
+    return null
+  }
+
+  const existingTileIds = new Set(canvasState.tiles.map((tile) => tile.id))
+  const restoredTiles = undoEntry.removedTiles.filter((tile) => !existingTileIds.has(tile.id))
+  const restoredTileIds = new Set(restoredTiles.map((tile) => tile.id))
+
+  const nextTiles = [...canvasState.tiles, ...restoredTiles]
+    .map((tile) => {
+      if (tile.type !== 'term') {
+        return tile
+      }
+
+      const restoration = undoEntry.terminalContextRestorations.find(
+        (candidate) => candidate.tileId === tile.id
+      )
+
+      if (!restoration) {
+        return tile
+      }
+
+      const nextContextTileIds = [...(tile.contextTileIds ?? [])]
+
+      for (const contextTileId of restoration.contextTileIds) {
+        if (!restoredTileIds.has(contextTileId) || nextContextTileIds.includes(contextTileId)) {
+          continue
+        }
+
+        nextContextTileIds.push(contextTileId)
+      }
+
+      return nextContextTileIds.length === (tile.contextTileIds ?? []).length
+        ? tile
+        : {
+            ...tile,
+            contextTileIds: nextContextTileIds
+          }
+    })
+    .sort((left, right) => left.zIndex - right.zIndex)
+
+  return {
+    ...canvasState,
+    tiles: nextTiles
+  }
+}
+
 function writeDiagramQueueIndex(indexPath: string, index: CanvasDiagramQueueIndex) {
   return window.collaborator.writeTextFile(indexPath, `${JSON.stringify(index, null, 2)}\n`)
 }
@@ -380,6 +502,7 @@ export default function App() {
   const [loadingWorkspace, setLoadingWorkspace] = useState(false)
   const [pendingSearchResult, setPendingSearchResult] = useState<SearchDialogResult | null>(null)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
+  const [workspaceDeleteUndoStack, setWorkspaceDeleteUndoStack] = useState<WorkspaceDeletionUndoEntry[]>([])
   const [bootError, setBootError] = useState<string | null>(null)
   const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState<string | null>(null)
   const [focusNavigatorVersion, setFocusNavigatorVersion] = useState(0)
@@ -912,6 +1035,7 @@ export default function App() {
   useEffect(() => {
     setSelectedTreePath(null)
     setViewerFile(null)
+    setWorkspaceDeleteUndoStack([])
   }, [activeWorkspace])
 
   useEffect(() => {
@@ -1050,6 +1174,37 @@ export default function App() {
   }, [viewerFile])
 
   useEffect(() => {
+    function handleCanvasDeleteKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
+        return
+      }
+
+      if (searchOpen || viewerFile || keyboardShortcutsBlocked(event.target)) {
+        return
+      }
+
+      if (event.key !== 'Backspace' && event.key !== 'Delete') {
+        return
+      }
+
+      if (!canvasRef.current?.removeSelectedTiles()) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      event.stopPropagation()
+      setActiveKeyboardSurface('canvas')
+    }
+
+    window.addEventListener('keydown', handleCanvasDeleteKeyDown, true)
+
+    return () => {
+      window.removeEventListener('keydown', handleCanvasDeleteKeyDown, true)
+    }
+  }, [searchOpen, viewerFile])
+
+  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       const isEditing = keyboardShortcutsBlocked(event.target)
 
@@ -1143,6 +1298,19 @@ export default function App() {
         return
       }
 
+      if (
+        workspaceDeleteUndoStack.length > 0 &&
+        !event.defaultPrevented &&
+        (event.metaKey || event.ctrlKey) &&
+        !event.shiftKey &&
+        !event.altKey &&
+        event.key.toLowerCase() === 'z'
+      ) {
+        event.preventDefault()
+        void undoLastWorkspaceDelete()
+        return
+      }
+
       const fileToPlace = viewerFile ?? selectedFileNode
 
       if (event.shiftKey && event.key === 'Enter' && fileToPlace) {
@@ -1228,7 +1396,8 @@ export default function App() {
     selectedFileNode,
     sidebarCollapsed,
     sidebarSide,
-    viewerFile
+    viewerFile,
+    workspaceDeleteUndoStack
   ])
 
   useEffect(() => {
@@ -1507,6 +1676,70 @@ export default function App() {
 
     setActiveKeyboardSurface('navigator')
     setRevealNavigatorVersion((current) => current + 1)
+  }
+
+  function pushWorkspaceDeleteUndoEntry(entry: WorkspaceDeletionUndoEntry) {
+    setWorkspaceDeleteUndoStack((current) => [...current.slice(-19), entry])
+  }
+
+  async function undoLastWorkspaceDelete() {
+    if (!activeWorkspace) {
+      return
+    }
+
+    const targetEntryIndex = [...workspaceDeleteUndoStack]
+      .reverse()
+      .findIndex((entry) => entry.workspacePath === activeWorkspace)
+
+    if (targetEntryIndex === -1) {
+      return
+    }
+
+    const stackIndex = workspaceDeleteUndoStack.length - 1 - targetEntryIndex
+    const undoEntry = workspaceDeleteUndoStack[stackIndex]
+
+    if (!undoEntry) {
+      return
+    }
+
+    try {
+      const restoredNodes: FileTreeNode[] = []
+
+      for (const trashedNode of undoEntry.trashedNodes) {
+        const restoredNode = await window.collaborator.restoreWorkspaceDeletedNode(
+          activeWorkspace,
+          trashedNode
+        )
+        restoredNodes.push(restoredNode)
+      }
+
+      const nextTree = await refreshWorkspaceTree(activeWorkspace)
+      const nextSelectedPath = restoredNodes[0]?.path ?? null
+
+      if (nextSelectedPath) {
+        const nextSelectedNode = findNodeByPath(nextTree, nextSelectedPath)
+        setSelectedTreePath(nextSelectedNode?.path ?? nextSelectedPath)
+      }
+
+      const currentCanvasState = canvasStateRef.current
+      const nextCanvasState =
+        currentCanvasState ? restoreWorkspaceDeletionToCanvasState(currentCanvasState, undoEntry) : null
+
+      if (nextCanvasState) {
+        handleCanvasStateChange(nextCanvasState, { immediate: true })
+      }
+
+      setActiveKeyboardSurface('navigator')
+      setFocusNavigatorVersion((current) => current + 1)
+      setWorkspaceDeleteUndoStack((current) => current.filter((_entry, index) => index !== stackIndex))
+      setWorkspaceError(null)
+    } catch (error) {
+      setWorkspaceError(
+        error instanceof Error && error.message
+          ? `Those items could not be restored: ${error.message}`
+          : 'Those items could not be restored.'
+      )
+    }
   }
 
   function selectWorkspaceNode(node: FileTreeNode, options?: { preview?: boolean }) {
@@ -1983,8 +2216,13 @@ export default function App() {
       return
     }
 
+    let trashedNode: WorkspaceDeletedNode | null = null
+
     try {
-      await window.collaborator.deleteWorkspaceNode(activeWorkspace, targetPath)
+      const currentCanvasState = canvasStateRef.current
+      const canvasDeletion =
+        currentCanvasState ? removeWorkspacePathsFromCanvasState(currentCanvasState, [targetPath]) : null
+      trashedNode = await window.collaborator.trashWorkspaceNode(activeWorkspace, targetPath)
       await refreshWorkspaceTree(activeWorkspace)
 
       if (isSameOrDescendantPath(viewerFile?.path, targetPath)) {
@@ -1995,38 +2233,28 @@ export default function App() {
         setSelectedTreePath(null)
       }
 
-      const currentCanvasState = canvasStateRef.current
+      if (canvasDeletion?.nextCanvasState) {
+        handleCanvasStateChange(canvasDeletion.nextCanvasState, { immediate: true })
+      }
 
-      if (currentCanvasState) {
-        const removedTileIds = new Set(
-          currentCanvasState.tiles
-            .filter((tile) => isSameOrDescendantPath(tile.filePath, targetPath))
-            .map((tile) => tile.id)
-        )
-
-        if (removedTileIds.size > 0) {
-          const nextCanvasState: CanvasState = {
-            ...currentCanvasState,
-            tiles: currentCanvasState.tiles
-              .filter((tile) => !removedTileIds.has(tile.id))
-              .map((tile) =>
-                tile.type === 'term'
-                  ? {
-                      ...tile,
-                      contextTileIds: (tile.contextTileIds ?? []).filter(
-                        (contextTileId) => !removedTileIds.has(contextTileId)
-                      )
-                    }
-                  : tile
-              )
-          }
-
-          handleCanvasStateChange(nextCanvasState, { immediate: true })
+      pushWorkspaceDeleteUndoEntry({
+        removedTiles: canvasDeletion?.removedTiles ?? [],
+        terminalContextRestorations: canvasDeletion?.terminalContextRestorations ?? [],
+        trashedNodes: [trashedNode],
+        workspacePath: activeWorkspace
+      })
+      setActiveKeyboardSurface('navigator')
+      setFocusNavigatorVersion((current) => current + 1)
+      setWorkspaceError(null)
+    } catch (error) {
+      if (trashedNode) {
+        try {
+          await window.collaborator.restoreWorkspaceDeletedNode(activeWorkspace, trashedNode)
+        } catch {
+          // Keep the original delete error below; manual recovery is still possible from disk.
         }
       }
 
-      setWorkspaceError(null)
-    } catch (error) {
       setWorkspaceError(
         error instanceof Error && error.message
           ? `That item could not be deleted: ${error.message}`
@@ -2130,14 +2358,20 @@ export default function App() {
     }
 
     const normalizedTargetPaths = dedupeNestedPaths(targetPaths)
+    const trashedNodes: WorkspaceDeletedNode[] = []
 
     if (normalizedTargetPaths.length === 0) {
       return
     }
 
     try {
+      const currentCanvasState = canvasStateRef.current
+      const canvasDeletion = currentCanvasState
+        ? removeWorkspacePathsFromCanvasState(currentCanvasState, normalizedTargetPaths)
+        : null
+
       for (const targetPath of normalizedTargetPaths) {
-        await window.collaborator.deleteWorkspaceNode(activeWorkspace, targetPath)
+        trashedNodes.push(await window.collaborator.trashWorkspaceNode(activeWorkspace, targetPath))
       }
 
       await refreshWorkspaceTree(activeWorkspace)
@@ -2150,40 +2384,30 @@ export default function App() {
         setSelectedTreePath(null)
       }
 
-      const currentCanvasState = canvasStateRef.current
+      if (canvasDeletion?.nextCanvasState) {
+        handleCanvasStateChange(canvasDeletion.nextCanvasState, { immediate: true })
+      }
 
-      if (currentCanvasState) {
-        const removedTileIds = new Set(
-          currentCanvasState.tiles
-            .filter((tile) =>
-              normalizedTargetPaths.some((targetPath) => isSameOrDescendantPath(tile.filePath, targetPath))
-            )
-            .map((tile) => tile.id)
-        )
-
-        if (removedTileIds.size > 0) {
-          const nextCanvasState: CanvasState = {
-            ...currentCanvasState,
-            tiles: currentCanvasState.tiles
-              .filter((tile) => !removedTileIds.has(tile.id))
-              .map((tile) =>
-                tile.type === 'term'
-                  ? {
-                      ...tile,
-                      contextTileIds: (tile.contextTileIds ?? []).filter(
-                        (contextTileId) => !removedTileIds.has(contextTileId)
-                      )
-                    }
-                  : tile
-              )
+      pushWorkspaceDeleteUndoEntry({
+        removedTiles: canvasDeletion?.removedTiles ?? [],
+        terminalContextRestorations: canvasDeletion?.terminalContextRestorations ?? [],
+        trashedNodes,
+        workspacePath: activeWorkspace
+      })
+      setActiveKeyboardSurface('navigator')
+      setFocusNavigatorVersion((current) => current + 1)
+      setWorkspaceError(null)
+    } catch (error) {
+      if (trashedNodes.length > 0) {
+        for (const trashedNode of [...trashedNodes].reverse()) {
+          try {
+            await window.collaborator.restoreWorkspaceDeletedNode(activeWorkspace, trashedNode)
+          } catch {
+            // Keep the original delete error below; manual recovery is still possible from disk.
           }
-
-          handleCanvasStateChange(nextCanvasState, { immediate: true })
         }
       }
 
-      setWorkspaceError(null)
-    } catch (error) {
       setWorkspaceError(
         error instanceof Error && error.message
           ? `Those items could not be deleted: ${error.message}`
