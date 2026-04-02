@@ -25,6 +25,7 @@ const DEFAULT_CONFIG: AppConfig = {
   windowState: DEFAULT_WINDOW_STATE,
   ui: {
     darkMode: true,
+    navigatorZoom: 1,
     sidebarCollapsed: false,
     sidebarSide: 'left',
     sidebarWidth: 320
@@ -83,6 +84,10 @@ function sanitizeConfig(input: Partial<AppConfig> | undefined): AppConfig {
     windowState: sanitizeWindowState(input?.windowState),
     ui: {
       darkMode: Boolean(input?.ui?.darkMode),
+      navigatorZoom:
+        typeof input?.ui?.navigatorZoom === 'number' && Number.isFinite(input.ui.navigatorZoom)
+          ? Math.min(Math.max(input.ui.navigatorZoom, 0.85), 1.35)
+          : DEFAULT_CONFIG.ui.navigatorZoom,
       sidebarCollapsed:
         typeof input?.ui?.sidebarCollapsed === 'boolean'
           ? input.ui.sidebarCollapsed

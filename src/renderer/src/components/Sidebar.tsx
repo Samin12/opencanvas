@@ -31,6 +31,9 @@ const CREATE_NOTE_SHORTCUT_KEY = `${MODIFIER_KEY}+N`
 const CREATE_TERMINAL_SHORTCUT_KEY = 'Shift+T'
 const CREATE_CODEX_TERMINAL_SHORTCUT_KEY = 'Shift+C'
 const ADD_WORKSPACE_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+O`
+const NAVIGATOR_ZOOM_IN_SHORTCUT_KEY = `${MODIFIER_KEY}+=`
+const NAVIGATOR_ZOOM_OUT_SHORTCUT_KEY = `${MODIFIER_KEY}+-`
+const NAVIGATOR_ZOOM_RESET_SHORTCUT_KEY = `${MODIFIER_KEY}+0`
 const TOGGLE_DARK_MODE_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+D`
 const WORKSPACE_SWITCHER_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+W`
 const IS_MAC_PLATFORM =
@@ -370,6 +373,39 @@ function UtilityGhostIconButton({
   )
 }
 
+function NavigatorZoomButton({
+  children,
+  disabled = false,
+  label,
+  onClick,
+  shortcut
+}: {
+  children: ReactNode
+  disabled?: boolean
+  label: string
+  onClick: () => void
+  shortcut?: string | null
+}) {
+  return (
+    <HoverTooltip label={label} placement="bottom" shortcut={shortcut}>
+      <button
+        aria-label={label}
+        data-managed-tooltip="custom"
+        data-shortcut={shortcut ?? undefined}
+        disabled={disabled}
+        className={clsx(
+          'flex h-4 min-w-[1.15rem] items-center justify-center rounded-[999px] border border-transparent px-1 text-[8px] font-semibold leading-none tracking-[0.01em] text-[var(--text-faint)] opacity-80 transition',
+          'hover:border-[color:var(--line)] hover:bg-[color:color-mix(in_srgb,var(--nav-surface)_72%,transparent)] hover:text-[var(--text)] hover:opacity-100',
+          'disabled:cursor-not-allowed disabled:opacity-40'
+        )}
+        onClick={onClick}
+      >
+        {children}
+      </button>
+    </HoverTooltip>
+  )
+}
+
 function workspaceLabel(workspacePath: string): string {
   const parts = workspacePath.split('/').filter(Boolean)
   return parts[parts.length - 1] ?? workspacePath
@@ -489,6 +525,7 @@ interface SidebarProps {
   darkMode: boolean
   focusNavigatorVersion: number
   loadingWorkspace: boolean
+  navigatorZoom: number
   onAddWorkspace: () => void
   onActivateNavigator: () => void
   onCopyWorkspacePath: () => void
@@ -507,6 +544,8 @@ interface SidebarProps {
   onRevealNodeInFinder: (targetPath: string) => void
   onRenameNode: (targetPath: string, nextName: string) => void
   onMoveSidebar: (side: SidebarSide) => void
+  onDecreaseNavigatorZoom: () => void
+  onIncreaseNavigatorZoom: () => void
   onOpenSearch: () => void
   onOpenWorkspacePath: () => void
   onPlaceFile: (node: FileTreeNode) => void
@@ -531,6 +570,7 @@ function SidebarComponent({
   darkMode,
   focusNavigatorVersion,
   loadingWorkspace,
+  navigatorZoom,
   onAddWorkspace,
   onActivateNavigator,
   onCopyWorkspacePath,
@@ -546,6 +586,8 @@ function SidebarComponent({
   onRevealNodeInFinder,
   onRenameNode,
   onMoveSidebar,
+  onDecreaseNavigatorZoom,
+  onIncreaseNavigatorZoom,
   onOpenSearch,
   onOpenWorkspacePath,
   onPlaceFile,
@@ -571,6 +613,7 @@ function SidebarComponent({
   const [collapseAllVersion, setCollapseAllVersion] = useState(0)
   const [expandAllVersion, setExpandAllVersion] = useState(0)
   const [treeFocusVersion, setTreeFocusVersion] = useState(0)
+  const safeNavigatorZoom = Number.isFinite(navigatorZoom) ? navigatorZoom : 1
   const compactBrowserChrome = sidebarWidth < 340
   const normalizedFileQuery = fileQuery.trim().toLowerCase()
   const workspaceFiles = flattenWorkspaceFiles(workspaceTree)
@@ -787,12 +830,28 @@ function SidebarComponent({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col bg-[var(--nav-panel)]">
+      <div className="flex min-h-0 flex-1 flex-col bg-[var(--nav-panel)]" style={{ zoom: safeNavigatorZoom }}>
         <div className="shrink-0 border-b border-[color:var(--line)] bg-[var(--nav-panel)] px-3 py-1.5">
           <div className="mb-1 flex items-center justify-between px-0.5">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <div className={NAV_CAPTION_TEXT_CLASS}>
                 Files
+              </div>
+              <div className="flex items-center gap-0.5">
+                <NavigatorZoomButton
+                  label="Decrease navigator zoom"
+                  onClick={onDecreaseNavigatorZoom}
+                  shortcut={NAVIGATOR_ZOOM_OUT_SHORTCUT_KEY}
+                >
+                  A-
+                </NavigatorZoomButton>
+                <NavigatorZoomButton
+                  label="Increase navigator zoom"
+                  onClick={onIncreaseNavigatorZoom}
+                  shortcut={NAVIGATOR_ZOOM_IN_SHORTCUT_KEY}
+                >
+                  A+
+                </NavigatorZoomButton>
               </div>
             </div>
             {loadingWorkspace ? (
@@ -1090,6 +1149,7 @@ export const Sidebar = memo(SidebarComponent, (previous, next) => {
     previous.darkMode === next.darkMode &&
     previous.focusNavigatorVersion === next.focusNavigatorVersion &&
     previous.loadingWorkspace === next.loadingWorkspace &&
+    previous.navigatorZoom === next.navigatorZoom &&
     previous.navigatorSelected === next.navigatorSelected &&
     previous.sidebarCollapsed === next.sidebarCollapsed &&
     previous.sidebarSide === next.sidebarSide &&

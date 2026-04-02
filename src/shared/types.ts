@@ -63,6 +63,7 @@ export interface AppConfig {
   windowState: WindowState
   ui: {
     darkMode: boolean
+    navigatorZoom: number
     sidebarCollapsed: boolean
     sidebarSide: SidebarSide
     sidebarWidth: number

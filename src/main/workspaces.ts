@@ -25,7 +25,21 @@ const PDF_EXTENSIONS = new Set(['.pdf'])
 const SPREADSHEET_EXTENSIONS = new Set(['.csv', '.tsv', '.xls', '.xlsx', '.ods'])
 const PRESENTATION_EXTENSIONS = new Set(['.ppt', '.pptx', '.odp'])
 const IGNORED_NAMES = new Set(['.DS_Store'])
-const IGNORED_DIRECTORIES = new Set(['.git', 'node_modules', 'dist', 'out'])
+const IGNORED_DIRECTORIES = new Set([
+  '.git',
+  'node_modules',
+  'dist',
+  'out',
+  '.venv',
+  'venv',
+  'env',
+  '__pycache__',
+  '.pytest_cache',
+  '.mypy_cache',
+  '.ruff_cache',
+  '.tox',
+  '.nox'
+])
 const WORKSPACE_METADATA_DIRECTORY = '.claude-canvas'
 const WORKSPACE_ASSETS_DIRECTORY = 'assets'
 const watchedFiles = new Map<string, Set<() => void>>()

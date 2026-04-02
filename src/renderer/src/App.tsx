@@ -314,8 +314,10 @@ export default function App() {
   const [workspaceTree, setWorkspaceTree] = useState<FileTreeNode[]>([])
   const [viewerFile, setViewerFile] = useState<FileTreeNode | null>(null)
   const [selectedTreePath, setSelectedTreePath] = useState<string | null>(null)
+  const [canvasSelectedFilePath, setCanvasSelectedFilePath] = useState<string | null>(null)
   const [sidebarWidth, setSidebarWidth] = useState(320)
   const [darkMode, setDarkMode] = useState(false)
+  const [navigatorZoom, setNavigatorZoom] = useState(1)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [sidebarSide, setSidebarSide] = useState<SidebarSide>('left')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -355,6 +357,8 @@ export default function App() {
     () => (selectedTreeNode?.kind === 'file' ? selectedTreeNode : null),
     [selectedTreeNode]
   )
+  const activeTreePath =
+    activeKeyboardSurface === 'canvas' ? canvasSelectedFilePath : selectedTreePath
   const noteTargetPath = useMemo(() => {
     if (!activeWorkspace) {
       return null
@@ -378,6 +382,21 @@ export default function App() {
   function focusCanvasSurface() {
     setActiveKeyboardSurface('canvas')
     canvasRef.current?.focusCanvas()
+  }
+
+  function updateNavigatorZoom(nextZoom: number) {
+    const safeNextZoom = Number.isFinite(nextZoom) ? nextZoom : 1
+    const safeCurrentZoom = Number.isFinite(navigatorZoom) ? navigatorZoom : 1
+    const clampedZoom = clamp(Math.round(safeNextZoom * 100) / 100, 0.85, 1.35)
+
+    if (Math.abs(clampedZoom - safeCurrentZoom) < 0.001) {
+      return
+    }
+
+    setNavigatorZoom(clampedZoom)
+    void persistUi({
+      navigatorZoom: clampedZoom
+    })
   }
 
   useEffect(() => {
@@ -406,6 +425,9 @@ export default function App() {
         setCanvasState(payload.canvasState)
         setSidebarWidth(payload.config.ui.sidebarWidth)
         setDarkMode(payload.config.ui.darkMode)
+        setNavigatorZoom(
+          Number.isFinite(payload.config.ui.navigatorZoom) ? payload.config.ui.navigatorZoom : 1
+        )
         setSidebarCollapsed(payload.config.ui.sidebarCollapsed)
         setSidebarSide(payload.config.ui.sidebarSide)
         setOfficeViewer(payload.officeViewer)
@@ -423,6 +445,20 @@ export default function App() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!canvasSelectedFilePath) {
+      return
+    }
+
+    if (
+      !activeWorkspace ||
+      !isSameOrDescendantPath(canvasSelectedFilePath, activeWorkspace) ||
+      !findNodeByPath(workspaceTree, canvasSelectedFilePath)
+    ) {
+      setCanvasSelectedFilePath(null)
+    }
+  }, [activeWorkspace, canvasSelectedFilePath, workspaceTree])
 
   async function flushPendingCanvasSave() {
     if (canvasSaveTimerRef.current !== null) {
@@ -1087,6 +1123,26 @@ export default function App() {
       }
 
       if (event.metaKey || event.ctrlKey) {
+        if (activeKeyboardSurface === 'navigator') {
+          if (event.key === '=' || event.key === '+') {
+            event.preventDefault()
+            updateNavigatorZoom(navigatorZoom + 0.1)
+            return
+          }
+
+          if (event.key === '-') {
+            event.preventDefault()
+            updateNavigatorZoom(navigatorZoom - 0.1)
+            return
+          }
+
+          if (event.key === '0') {
+            event.preventDefault()
+            updateNavigatorZoom(1)
+            return
+          }
+        }
+
         if (event.key === '=' || event.key === '+') {
           event.preventDefault()
           canvasRef.current?.zoomIn()
@@ -1122,7 +1178,9 @@ export default function App() {
     }
   }, [
     activeWorkspace,
+    activeKeyboardSurface,
     darkMode,
+    navigatorZoom,
     noteTargetPath,
     searchOpen,
     selectedFileNode,
@@ -1267,6 +1325,7 @@ export default function App() {
     setConfig(saved)
     setSidebarWidth(saved.ui.sidebarWidth)
     setDarkMode(saved.ui.darkMode)
+    setNavigatorZoom(Number.isFinite(saved.ui.navigatorZoom) ? saved.ui.navigatorZoom : 1)
     setSidebarCollapsed(saved.ui.sidebarCollapsed)
     setSidebarSide(saved.ui.sidebarSide)
   }
@@ -1394,6 +1453,19 @@ export default function App() {
   function previewFile(file: FileTreeNode) {
     setSelectedTreePath(file.path)
     setViewerFile(file)
+  }
+
+  function handleCanvasSelectedFilePathChange(filePath: string | null) {
+    if (!filePath) {
+      setCanvasSelectedFilePath(null)
+      return
+    }
+
+    if (!activeWorkspace || !isSameOrDescendantPath(filePath, activeWorkspace)) {
+      return
+    }
+
+    setCanvasSelectedFilePath((currentPath) => (currentPath === filePath ? currentPath : filePath))
   }
 
   function selectWorkspaceNode(node: FileTreeNode, options?: { preview?: boolean }) {
@@ -2110,11 +2182,12 @@ export default function App() {
             className="min-h-0 min-w-[220px] max-w-[480px] opacity-100 transition-[width,opacity] duration-200"
           >
             <Sidebar
-              activeTreePath={selectedTreePath}
+              activeTreePath={activeTreePath}
               config={config}
               darkMode={darkMode}
               focusNavigatorVersion={focusNavigatorVersion}
               loadingWorkspace={loadingWorkspace}
+              navigatorZoom={navigatorZoom}
               navigatorSelected={activeKeyboardSurface === 'navigator'}
               onAddWorkspace={() => void addWorkspace()}
               onActivateNavigator={activateNavigatorSurface}
@@ -2146,6 +2219,8 @@ export default function App() {
               onRenameNode={renameWorkspaceNode}
               onOpenWorkspacePath={() => void openActiveWorkspacePath()}
               onMoveSidebar={setSidebarPlacement}
+              onDecreaseNavigatorZoom={() => updateNavigatorZoom(navigatorZoom - 0.1)}
+              onIncreaseNavigatorZoom={() => updateNavigatorZoom(navigatorZoom + 0.1)}
               onOpenSearch={() => {
                 setSearchScope('workspace')
                 setSearchOpen(true)
@@ -2320,6 +2395,7 @@ export default function App() {
               })
             }
             onImportImageFile={importWorkspaceImageFile}
+            onSelectedFilePathChange={handleCanvasSelectedFilePathChange}
             onOpenFile={previewFile}
             onRenameNode={renameWorkspaceNode}
             onStateChange={handleCanvasStateChange}
@@ -2371,11 +2447,12 @@ export default function App() {
             className="min-h-0 min-w-[220px] max-w-[480px] opacity-100 transition-[width,opacity] duration-200"
           >
             <Sidebar
-              activeTreePath={selectedTreePath}
+              activeTreePath={activeTreePath}
               config={config}
               darkMode={darkMode}
               focusNavigatorVersion={focusNavigatorVersion}
               loadingWorkspace={loadingWorkspace}
+              navigatorZoom={navigatorZoom}
               navigatorSelected={activeKeyboardSurface === 'navigator'}
               onAddWorkspace={() => void addWorkspace()}
               onActivateNavigator={activateNavigatorSurface}
@@ -2407,6 +2484,8 @@ export default function App() {
               onRenameNode={renameWorkspaceNode}
               onOpenWorkspacePath={() => void openActiveWorkspacePath()}
               onMoveSidebar={setSidebarPlacement}
+              onDecreaseNavigatorZoom={() => updateNavigatorZoom(navigatorZoom - 0.1)}
+              onIncreaseNavigatorZoom={() => updateNavigatorZoom(navigatorZoom + 0.1)}
               onOpenSearch={() => {
                 setSearchScope('workspace')
                 setSearchOpen(true)

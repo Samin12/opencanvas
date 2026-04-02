@@ -88,6 +88,11 @@ interface FileTreeProps {
 }
 
 const FILE_ICON_SIZE = 14
+const TREE_INDENT_STEP = 15
+const TREE_GUIDE_OFFSET = 7
+const TREE_ROW_START_PADDING = 4
+const TREE_ELBOW_WIDTH = 7
+const DEFAULT_DIRECTORY_EXPANDED = true
 
 interface FileGlyphDef {
   color: string
@@ -169,7 +174,11 @@ const FILENAME_ICON_MAP: Record<string, FileGlyphDef> = {
 }
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
-  return expanded ? <CaretDown size={10} weight="bold" aria-hidden="true" /> : <CaretRight size={10} weight="bold" aria-hidden="true" />
+  return expanded ? (
+    <CaretDown size={9} weight="bold" aria-hidden="true" />
+  ) : (
+    <CaretRight size={9} weight="bold" aria-hidden="true" />
+  )
 }
 
 function FolderIcon() {
@@ -300,6 +309,18 @@ function directoryExpansionState(nodes: FileTreeNode[], expanded: boolean) {
   return Object.fromEntries(Object.keys(directoryPaths).map((path) => [path, expanded]))
 }
 
+function isDirectoryExpanded(
+  expanded: Record<string, boolean>,
+  path: string,
+  queryActive: boolean
+) {
+  if (queryActive) {
+    return true
+  }
+
+  return expanded[path] ?? DEFAULT_DIRECTORY_EXPANDED
+}
+
 interface VisibleTreeEntry {
   depth: number
   node: FileTreeNode
@@ -348,7 +369,7 @@ function visibleTreeEntries(
       return [currentEntry]
     }
 
-    const isExpanded = queryActive ? true : expanded[node.path] ?? true
+    const isExpanded = isDirectoryExpanded(expanded, node.path, queryActive)
 
     return [
       currentEntry,
@@ -386,9 +407,6 @@ interface PointerDragState {
   startX: number
   startY: number
 }
-
-const TREE_INDENT_STEP = 18
-const TREE_GUIDE_OFFSET = 8
 
 function displayFileNameParts(node: FileTreeNode) {
   const extension = node.extension?.trim().toLowerCase() ?? ''
@@ -543,6 +561,7 @@ export function FileTree({
   const dialogInputRef = useRef<HTMLInputElement | null>(null)
   const treeRootRef = useRef<HTMLDivElement | null>(null)
   const rowRefs = useRef(new Map<string, HTMLButtonElement>())
+  const revealedActivePathRef = useRef<string | null>(null)
   const suppressClickRef = useRef(false)
   const trimmedQuery = query.trim().toLowerCase()
   const visibleNodes = trimmedQuery ? filterNodes(nodes, trimmedQuery) : nodes
@@ -643,6 +662,38 @@ export function FileTree({
 
     setFocusedPath(nextFocusedPath)
   }, [activePath, flatVisibleEntries, focusedPath])
+
+  useEffect(() => {
+    if (!activePath) {
+      revealedActivePathRef.current = null
+      return
+    }
+
+    if (revealedActivePathRef.current === activePath) {
+      return
+    }
+
+    if (!flatVisibleEntries.some((entry) => entry.node.path === activePath)) {
+      return
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const row = rowRefs.current.get(activePath)
+
+      if (!row) {
+        return
+      }
+
+      row.scrollIntoView({
+        block: 'nearest'
+      })
+      revealedActivePathRef.current = activePath
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+    }
+  }, [activePath, flatVisibleEntries])
 
   useEffect(() => {
     dragStateRef.current = dragState
@@ -777,7 +828,7 @@ export function FileTree({
   function toggleDirectory(path: string) {
     setExpanded((current) => ({
       ...current,
-      [path]: !current[path]
+      [path]: !isDirectoryExpanded(current, path, false)
     }))
   }
 
@@ -932,7 +983,7 @@ export function FileTree({
         return
       }
 
-      const isExpanded = queryActive ? true : expanded[currentEntry.node.path] ?? true
+      const isExpanded = isDirectoryExpanded(expanded, currentEntry.node.path, queryActive)
 
       if (!isExpanded) {
         setExpanded((current) => ({
@@ -956,7 +1007,7 @@ export function FileTree({
       event.preventDefault()
       event.stopPropagation()
 
-      if (currentEntry.node.kind === 'directory' && (expanded[currentEntry.node.path] ?? true) && !queryActive) {
+      if (currentEntry.node.kind === 'directory' && isDirectoryExpanded(expanded, currentEntry.node.path, queryActive)) {
         setExpanded((current) => ({
           ...current,
           [currentEntry.node.path]: false
@@ -1019,7 +1070,7 @@ export function FileTree({
     }
 
     const directoryHover = dropElement.dataset.fileTreeDirectory === 'true'
-    const isExpanded = trimmedQuery ? true : expanded[candidatePath] ?? true
+    const isExpanded = isDirectoryExpanded(expanded, candidatePath, Boolean(trimmedQuery))
     scheduleDirectoryExpand(candidatePath, directoryHover && !isExpanded)
 
     return candidatePath
@@ -1044,7 +1095,7 @@ export function FileTree({
     const directoryHover = dropElement.dataset.fileTreeDirectory === 'true'
 
     if (candidatePath && directoryHover) {
-      const isExpanded = trimmedQuery ? true : expanded[candidatePath] ?? true
+      const isExpanded = isDirectoryExpanded(expanded, candidatePath, Boolean(trimmedQuery))
       scheduleDirectoryExpand(candidatePath, !isExpanded)
     } else {
       clearPendingExpand()
@@ -1391,7 +1442,7 @@ export function FileTree({
         className="pointer-events-none absolute top-1/2 h-px -translate-y-1/2 bg-[var(--nav-tree-line)]"
         style={{
           left: `${TREE_GUIDE_OFFSET + (depth - 1) * TREE_INDENT_STEP}px`,
-          width: `${TREE_INDENT_STEP - 6}px`
+          width: `${TREE_ELBOW_WIDTH}px`
         }}
       />
     )
@@ -1400,10 +1451,10 @@ export function FileTree({
   function renderEntry(entry: VisibleTreeEntry) {
     const { depth, node, parentPath } = entry
     const isFocused = focusedPath === node.path
-    const rowPaddingLeft = depth * TREE_INDENT_STEP + 6
+    const rowPaddingLeft = depth * TREE_INDENT_STEP + TREE_ROW_START_PADDING
 
     if (node.kind === 'directory') {
-      const isExpanded = queryActive ? true : expanded[node.path] ?? true
+      const isExpanded = isDirectoryExpanded(expanded, node.path, queryActive)
       const childCount = directChildCount(node)
       const isDropTarget = dropTargetPath === node.path || externalDropTargetPath === node.path
 
@@ -1425,7 +1476,7 @@ export function FileTree({
               'flex w-full cursor-grab items-center gap-1.5 rounded-[var(--radius-control)] border border-transparent py-[3px] pr-1.5 text-left text-[11px] font-medium leading-[1.2rem] transition active:cursor-grabbing focus-visible:outline-none',
               'hover:bg-[var(--nav-surface-hover)]',
               activePath === node.path &&
-                'bg-[color:color-mix(in_srgb,var(--surface-selected)_86%,transparent)] text-[var(--text)]',
+                'border-[color:color-mix(in_srgb,var(--accent)_24%,var(--line-strong))] bg-[color:color-mix(in_srgb,var(--accent-soft)_52%,var(--surface-selected))] text-[var(--text)]',
               isFocused &&
                 'border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent-soft)_62%,transparent)] text-[var(--text)]',
               dragState?.sourcePath === node.path && 'opacity-55',
@@ -1455,7 +1506,7 @@ export function FileTree({
             title={`Toggle folder: ${node.name}. Use ${TREE_COLLAPSE_ALL_SHORTCUT_KEY} or ${TREE_EXPAND_ALL_SHORTCUT_KEY} to collapse or expand everything.`}
             onPointerDown={(event) => startDraggingNode(event, node)}
           >
-            <span className="flex h-3 w-3 shrink-0 items-center justify-center text-[var(--text-faint)]">
+            <span className="flex h-2.5 w-2.5 shrink-0 items-center justify-center text-[var(--text-faint)]">
               <ChevronIcon expanded={isExpanded} />
             </span>
             <span
@@ -1470,7 +1521,7 @@ export function FileTree({
               className={clsx(
                 'ml-2 shrink-0 rounded-full border px-1.5 py-[1px] text-center text-[9px] font-medium leading-none',
                 activePath === node.path || dropTargetPath === node.path
-                  ? 'border-current/18 bg-white/10 text-current'
+                  ? 'border-current/24 bg-white/12 text-current'
                   : 'border-[color:var(--line)] bg-[var(--nav-badge)] text-[var(--text-faint)]'
               )}
               title={
@@ -1506,7 +1557,7 @@ export function FileTree({
             'flex w-full cursor-grab items-center gap-1.5 rounded-[var(--radius-control)] border border-transparent py-[3px] pr-1.5 text-left text-[11px] font-medium leading-[1.2rem] transition active:cursor-grabbing focus-visible:outline-none',
             dragState?.sourcePath === node.path && 'opacity-55',
             activePath === node.path
-              ? 'bg-[color:color-mix(in_srgb,var(--surface-selected)_86%,transparent)] text-[var(--text)]'
+              ? 'border-[color:color-mix(in_srgb,var(--accent)_24%,var(--line-strong))] bg-[color:color-mix(in_srgb,var(--accent-soft)_52%,var(--surface-selected))] text-[var(--text)]'
               : 'text-[var(--text-dim)] hover:bg-[var(--nav-surface-hover)]',
             isFocused &&
               'border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent-soft)_62%,transparent)] text-[var(--text)]',
@@ -1543,7 +1594,7 @@ export function FileTree({
           onPointerDown={(event) => startDraggingNode(event, node)}
           title={`Preview ${node.name}. Double-click or ${PLACE_ON_CANVAS_SHORTCUT_KEY} to place it on the canvas.`}
         >
-          <span className="flex h-3 w-3 shrink-0 items-center justify-center text-transparent">
+          <span className="flex h-2.5 w-2.5 shrink-0 items-center justify-center text-transparent">
             <ChevronIcon expanded={false} />
           </span>
           <FileKindIcon darkMode={darkMode} fileKind={node.fileKind} fileName={node.name} />

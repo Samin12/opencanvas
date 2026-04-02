@@ -113,7 +113,7 @@ function selectionInsidePrimaryHeading(editor: TiptapEditor | null | undefined) 
     return false
   }
 
-  return $from.before() === 0
+  return $from.index(0) === 0
 }
 
 function markdownFromPlainTextPaste(rawText: string) {
@@ -1509,10 +1509,6 @@ function RichNoteEditor({
 
     const nextHeading = primaryHeadingFromEditor(activeEditor)
 
-    if (lastPublishedHeadingRef.current === nextHeading) {
-      return
-    }
-
     lastPublishedHeadingRef.current = nextHeading
     onPrimaryHeadingChange(nextHeading)
   }
@@ -1602,8 +1598,13 @@ function RichNoteEditor({
               return true
             }
 
-            if (event.key === 'Enter' && selectionInsidePrimaryHeading(editor)) {
-              publishPrimaryHeading(editor)
+            if (event.key === 'Enter' && !event.shiftKey && selectionInsidePrimaryHeading(editor)) {
+              const submittedHeading = primaryHeadingFromEditor(editor)
+
+              window.requestAnimationFrame(() => {
+                lastPublishedHeadingRef.current = submittedHeading
+                onPrimaryHeadingChange?.(submittedHeading)
+              })
             }
 
             return false

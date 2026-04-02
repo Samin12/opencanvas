@@ -94,6 +94,7 @@ interface CanvasSurfaceProps {
     targetDirectoryPath: string | null
   ) => Promise<FileTreeNode[]>
   onImportImageFile: (file: File) => Promise<FileTreeNode | null>
+  onSelectedFilePathChange?: (filePath: string | null) => void
   onOpenFile: (node: FileTreeNode) => void
   onRenameNode: (
     targetPath: string,
@@ -1185,6 +1186,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       onImportExternalDownload,
       onImportExternalPaths,
       onImportImageFile,
+      onSelectedFilePathChange,
       onOpenFile,
       onRenameNode,
       onStateChange,
@@ -3669,6 +3671,20 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         setHoveredTileId(null)
       }
     }, [hoveredTileId, selectedTileId, selectedTileIds, state.tiles])
+
+    useEffect(() => {
+      if (!onSelectedFilePathChange) {
+        return
+      }
+
+      if (selectedTileIds.length !== 1 || !selectedTileId) {
+        onSelectedFilePathChange(null)
+        return
+      }
+
+      const selectedTile = state.tiles.find((tile) => tile.id === selectedTileId) ?? null
+      onSelectedFilePathChange(selectedTile?.filePath ?? null)
+    }, [onSelectedFilePathChange, selectedTileId, selectedTileIds, state.tiles])
 
     useEffect(() => {
       if (activeBoardTool !== 'draw') {
