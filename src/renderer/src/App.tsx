@@ -321,6 +321,14 @@ function shortcutHandledByFocusedControl(target: EventTarget | null) {
   return false
 }
 
+function isUnavailableWorkspaceTrashApi(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  return /workspace:trash-node/i.test(error.message) || /No handler registered/i.test(error.message)
+}
+
 function emptyCanvasState(): CanvasState {
   return {
     version: 1,
@@ -2253,7 +2261,15 @@ export default function App() {
       const canvasDeletion =
         currentCanvasState ? removeWorkspacePathsFromCanvasState(currentCanvasState, [targetPath]) : null
       if (canTrashWorkspaceNode) {
-        trashedNode = await window.collaborator.trashWorkspaceNode(activeWorkspace, targetPath)
+        try {
+          trashedNode = await window.collaborator.trashWorkspaceNode(activeWorkspace, targetPath)
+        } catch (error) {
+          if (!isUnavailableWorkspaceTrashApi(error)) {
+            throw error
+          }
+
+          await window.collaborator.deleteWorkspaceNode(activeWorkspace, targetPath)
+        }
       } else {
         await window.collaborator.deleteWorkspaceNode(activeWorkspace, targetPath)
       }
@@ -2415,7 +2431,15 @@ export default function App() {
 
       for (const targetPath of normalizedTargetPaths) {
         if (canTrashWorkspaceNode) {
-          trashedNodes.push(await window.collaborator.trashWorkspaceNode(activeWorkspace, targetPath))
+          try {
+            trashedNodes.push(await window.collaborator.trashWorkspaceNode(activeWorkspace, targetPath))
+          } catch (error) {
+            if (!isUnavailableWorkspaceTrashApi(error)) {
+              throw error
+            }
+
+            await window.collaborator.deleteWorkspaceNode(activeWorkspace, targetPath)
+          }
         } else {
           await window.collaborator.deleteWorkspaceNode(activeWorkspace, targetPath)
         }
