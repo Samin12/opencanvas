@@ -574,8 +574,8 @@ function SidebarComponent({
   const compactBrowserChrome = sidebarWidth < 340
   const normalizedFileQuery = fileQuery.trim().toLowerCase()
   const workspaceFiles = flattenWorkspaceFiles(workspaceTree)
-  const searchFieldLabel = fileBrowserMode === 'recent' ? 'Search recent files' : 'Search files and folders'
-  const searchPlaceholder = compactBrowserChrome ? 'Search…' : fileBrowserMode === 'recent' ? 'Search recent…' : 'Search files…'
+  const searchFieldLabel = fileBrowserMode === 'recent' ? 'Search recent files' : 'Search files'
+  const searchPlaceholder = compactBrowserChrome ? 'Search' : fileBrowserMode === 'recent' ? 'Search recent' : 'Search files'
   const visibleRecentFiles = workspaceFiles
     .filter((node) => (normalizedFileQuery ? matchesFileQuery(node, normalizedFileQuery) : true))
     .sort((left, right) => {
@@ -788,8 +788,8 @@ function SidebarComponent({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col bg-[var(--nav-panel)]">
-        <div className="shrink-0 border-b border-[color:var(--line)] bg-[var(--nav-panel)] px-3.5 py-2">
-          <div className="mb-1.5 flex items-center justify-between px-0.5">
+        <div className="shrink-0 border-b border-[color:var(--line)] bg-[var(--nav-panel)] px-3 py-1.5">
+          <div className="mb-1 flex items-center justify-between px-0.5">
             <div className="flex items-center gap-2">
               <div className={NAV_CAPTION_TEXT_CLASS}>
                 Files
@@ -798,21 +798,21 @@ function SidebarComponent({
             {loadingWorkspace ? (
               <div className="text-[10px] font-medium text-[var(--text-faint)]">Refreshing…</div>
             ) : activeWorkspacePath ? (
-              <div className="rounded-[999px] border border-[color:var(--line)] bg-[var(--nav-badge)] px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
+              <div className="rounded-[999px] border border-[color:var(--line)] bg-[var(--nav-badge)] px-2 py-[3px] text-[9px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
                 {workspaceFiles.length}
                 {compactBrowserChrome ? '' : ' Files'}
               </div>
             ) : null}
           </div>
-          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-stretch gap-2">
-            <div className="flex items-stretch gap-1.5">
-              <div className="flex h-10 items-center gap-0.5 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] p-0.5">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-stretch gap-1.5">
+            <div className="flex items-stretch gap-1">
+              <div className="flex h-9 items-center gap-0.5 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] p-0.5">
                 <HoverTooltip label="Show recent files">
                   <button
                     aria-label="Show recent files"
                     data-managed-tooltip="custom"
                     className={clsx(
-                      'flex h-9 w-9 items-center justify-center rounded-[7px] transition',
+                      'flex h-8 w-8 items-center justify-center rounded-[7px] transition',
                       fileBrowserMode === 'recent'
                         ? 'bg-[var(--nav-surface-hover)] text-[var(--text)]'
                         : 'text-[var(--text-faint)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]'
@@ -827,7 +827,7 @@ function SidebarComponent({
                     aria-label="Show folder tree"
                     data-managed-tooltip="custom"
                     className={clsx(
-                      'flex h-9 w-9 items-center justify-center rounded-[7px] transition',
+                      'flex h-8 w-8 items-center justify-center rounded-[7px] transition',
                       fileBrowserMode === 'tree'
                         ? 'bg-[var(--nav-surface-hover)] text-[var(--text)]'
                         : 'text-[var(--text-faint)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]'
@@ -848,7 +848,7 @@ function SidebarComponent({
                     aria-label="Sort recent files"
                     data-managed-tooltip="custom"
                     className={clsx(
-                      'flex h-9 w-9 items-center justify-center rounded-[7px] transition',
+                      'flex h-8 w-8 items-center justify-center rounded-[7px] transition',
                       fileBrowserMode === 'recent'
                         ? 'bg-[var(--nav-surface-hover)] text-[var(--text)]'
                         : 'text-[var(--text-faint)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]'
@@ -872,7 +872,7 @@ function SidebarComponent({
                 </HoverTooltip>
               </div>
               {fileBrowserMode === 'tree' ? (
-                <div className="flex h-10 items-center gap-0.5 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] p-0.5">
+                <div className="flex h-9 items-center gap-0.5 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] p-0.5">
                   <HoverTooltip
                     label="Collapse all folders"
                     shortcut={TREE_COLLAPSE_ALL_SHORTCUT_KEY}
@@ -881,7 +881,7 @@ function SidebarComponent({
                       aria-label="Collapse all folders"
                       data-managed-tooltip="custom"
                       data-shortcut={TREE_COLLAPSE_ALL_SHORTCUT_KEY}
-                      className="flex h-9 w-9 items-center justify-center rounded-[7px] text-[var(--text-faint)] transition hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]"
+                      className="flex h-8 w-8 items-center justify-center rounded-[7px] text-[var(--text-faint)] transition hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]"
                       disabled={!activeWorkspacePath}
                       onClick={() => setCollapseAllVersion((current) => current + 1)}
                     >
@@ -896,7 +896,7 @@ function SidebarComponent({
                       aria-label="Expand all folders"
                       data-managed-tooltip="custom"
                       data-shortcut={TREE_EXPAND_ALL_SHORTCUT_KEY}
-                      className="flex h-9 w-9 items-center justify-center rounded-[7px] text-[var(--text-faint)] transition hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]"
+                      className="flex h-8 w-8 items-center justify-center rounded-[7px] text-[var(--text-faint)] transition hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]"
                       disabled={!activeWorkspacePath}
                       onClick={() => setExpandAllVersion((current) => current + 1)}
                     >
@@ -907,11 +907,11 @@ function SidebarComponent({
               ) : null}
             </div>
             <div className="relative min-w-0 flex-1">
-              <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[var(--text-faint)]">
+              <span className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center text-[var(--text-faint)]">
                 <SearchIcon />
               </span>
               {!compactBrowserChrome ? (
-                <span className="pointer-events-none absolute right-3 top-1/2 flex h-[1.4rem] min-w-[3.8rem] -translate-y-1/2 items-center justify-center rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-panel)] px-1.5 text-[10px] font-medium leading-none text-[var(--text-faint)] opacity-80">
+                <span className="pointer-events-none absolute right-2.5 top-1/2 flex h-5 min-w-[3.25rem] -translate-y-1/2 items-center justify-center rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-panel)] px-1.5 text-[9px] font-medium leading-none text-[var(--text-faint)] opacity-80">
                   {SEARCH_SHORTCUT_HINT}
                 </span>
               ) : null}
@@ -922,8 +922,8 @@ function SidebarComponent({
                 placeholder={searchPlaceholder}
                 title={composeTooltipLabel(searchFieldLabel, SEARCH_SHORTCUT_KEY)}
                 className={clsx(
-                  'sidebar-preview-field h-10 w-full rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] pl-[2.375rem] outline-none transition focus:border-[color:var(--accent)]',
-                  compactBrowserChrome ? 'pr-3.5' : 'pr-[6.35rem]'
+                  'sidebar-preview-field h-9 w-full rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] pl-8 outline-none transition focus:border-[color:var(--accent)]',
+                  compactBrowserChrome ? 'pr-3' : 'pr-[5.3rem]'
                 )}
               />
             </div>
@@ -938,7 +938,7 @@ function SidebarComponent({
         </div>
         <div
           className={clsx(
-            'min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-[var(--radius-surface)] bg-[var(--nav-panel)] px-2.5 pb-2 pt-2.5',
+            'min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-[var(--radius-surface)] bg-[var(--nav-panel)] px-1.5 pb-2 pt-2',
             navigatorSelected && 'shadow-[inset_0_0_0_1px_var(--accent)]'
           )}
           onFocusCapture={onActivateNavigator}
@@ -979,7 +979,7 @@ function SidebarComponent({
                             }}
                             title="Click to preview. Double-click or press Shift+Enter to place on canvas."
                           >
-                            <FileKindIcon darkMode={darkMode} fileKind={file.fileKind} />
+                            <FileKindIcon darkMode={darkMode} fileKind={file.fileKind} fileName={file.name} />
                             <div className="min-w-0 flex-1">
                               <div className="truncate text-[12px] font-medium leading-[1.2rem] text-[var(--text)]">
                                 {file.name}

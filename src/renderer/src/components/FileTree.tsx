@@ -11,6 +11,41 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 
+import type { Icon as PhosphorIcon } from '@phosphor-icons/react'
+import {
+  CaretDown,
+  CaretRight,
+  FileArchive,
+  FileAudio,
+  FileC,
+  FileCode,
+  FileCpp,
+  FileCSharp,
+  FileCss,
+  FileCsv,
+  FileDoc,
+  FileHtml,
+  FileImage,
+  FileIni,
+  FileJpg,
+  FileJs,
+  FileJsx,
+  FileMd,
+  FilePdf,
+  FilePng,
+  FilePy,
+  FileRs,
+  FileSql,
+  FileSvg,
+  FileText,
+  FileTs,
+  FileTsx,
+  FileVideo,
+  FileVue,
+  FileXls,
+  FileZip,
+  FolderSimple
+} from '@phosphor-icons/react'
 import clsx from 'clsx'
 
 import type { FileTreeNode } from '@shared/types'
@@ -52,203 +87,165 @@ interface FileTreeProps {
   rootDirectoryPath: string | null
 }
 
+const FILE_ICON_SIZE = 14
+
+interface FileGlyphDef {
+  color: string
+  Icon: PhosphorIcon
+}
+
+const EXTENSION_ICON_MAP: Record<string, FileGlyphDef> = {
+  '.ts': { Icon: FileTs, color: '#5c9bcf' },
+  '.tsx': { Icon: FileTsx, color: '#5c9bcf' },
+  '.mts': { Icon: FileTs, color: '#5c9bcf' },
+  '.cts': { Icon: FileTs, color: '#5c9bcf' },
+  '.js': { Icon: FileJs, color: '#c8a35a' },
+  '.jsx': { Icon: FileJsx, color: '#c8a35a' },
+  '.mjs': { Icon: FileJs, color: '#c8a35a' },
+  '.cjs': { Icon: FileJs, color: '#c8a35a' },
+  '.py': { Icon: FilePy, color: '#7aab6e' },
+  '.rs': { Icon: FileRs, color: '#c07a53' },
+  '.c': { Icon: FileC, color: '#7a8aab' },
+  '.h': { Icon: FileC, color: '#7a8aab' },
+  '.cpp': { Icon: FileCpp, color: '#7a8aab' },
+  '.hpp': { Icon: FileCpp, color: '#7a8aab' },
+  '.cc': { Icon: FileCpp, color: '#7a8aab' },
+  '.cs': { Icon: FileCSharp, color: '#8a7aab' },
+  '.html': { Icon: FileHtml, color: '#c07a6e' },
+  '.htm': { Icon: FileHtml, color: '#c07a6e' },
+  '.css': { Icon: FileCss, color: '#8a7aab' },
+  '.scss': { Icon: FileCss, color: '#9a6e8a' },
+  '.less': { Icon: FileCss, color: '#9a6e8a' },
+  '.vue': { Icon: FileVue, color: '#7aab7a' },
+  '.svelte': { Icon: FileCode, color: '#c07a53' },
+  '.svg': { Icon: FileSvg, color: '#c8a35a' },
+  '.json': { Icon: FileCode, color: '#8a8a7a' },
+  '.yaml': { Icon: FileIni, color: '#8a8a7a' },
+  '.yml': { Icon: FileIni, color: '#8a8a7a' },
+  '.toml': { Icon: FileIni, color: '#8a8a7a' },
+  '.ini': { Icon: FileIni, color: '#8a8a7a' },
+  '.env': { Icon: FileIni, color: '#8a8a7a' },
+  '.sql': { Icon: FileSql, color: '#7a8aab' },
+  '.csv': { Icon: FileCsv, color: '#7aab6e' },
+  '.xml': { Icon: FileCode, color: '#c07a6e' },
+  '.png': { Icon: FilePng, color: '#8a7aab' },
+  '.jpg': { Icon: FileJpg, color: '#8a7aab' },
+  '.jpeg': { Icon: FileJpg, color: '#8a7aab' },
+  '.gif': { Icon: FileImage, color: '#8a7aab' },
+  '.webp': { Icon: FileImage, color: '#8a7aab' },
+  '.ico': { Icon: FileImage, color: '#8a7aab' },
+  '.mp3': { Icon: FileAudio, color: '#c07a6e' },
+  '.wav': { Icon: FileAudio, color: '#c07a6e' },
+  '.ogg': { Icon: FileAudio, color: '#c07a6e' },
+  '.mp4': { Icon: FileVideo, color: '#c07a6e' },
+  '.webm': { Icon: FileVideo, color: '#c07a6e' },
+  '.mov': { Icon: FileVideo, color: '#c07a6e' },
+  '.pdf': { Icon: FilePdf, color: '#c07a6e' },
+  '.doc': { Icon: FileDoc, color: '#5c9bcf' },
+  '.docx': { Icon: FileDoc, color: '#5c9bcf' },
+  '.xls': { Icon: FileXls, color: '#7aab6e' },
+  '.xlsx': { Icon: FileXls, color: '#7aab6e' },
+  '.zip': { Icon: FileZip, color: '#8a8a7a' },
+  '.tar': { Icon: FileArchive, color: '#8a8a7a' },
+  '.gz': { Icon: FileArchive, color: '#8a8a7a' },
+  '.7z': { Icon: FileArchive, color: '#8a8a7a' },
+  '.md': { Icon: FileText, color: '#74bf93' },
+  '.mdx': { Icon: FileMd, color: '#5c9bcf' },
+  '.sh': { Icon: FileCode, color: '#7aab6e' },
+  '.bash': { Icon: FileCode, color: '#7aab6e' },
+  '.zsh': { Icon: FileCode, color: '#7aab6e' },
+  '.fish': { Icon: FileCode, color: '#7aab6e' },
+  '.go': { Icon: FileCode, color: '#5c9bcf' },
+  '.java': { Icon: FileCode, color: '#c07a53' },
+  '.kt': { Icon: FileCode, color: '#8a7aab' },
+  '.rb': { Icon: FileCode, color: '#c07a6e' },
+  '.swift': { Icon: FileCode, color: '#c07a53' }
+}
+
+const FILENAME_ICON_MAP: Record<string, FileGlyphDef> = {
+  Dockerfile: { Icon: FileCode, color: '#5c9bcf' },
+  Makefile: { Icon: FileCode, color: '#8a8a7a' },
+  LICENSE: { Icon: FileText, color: '#8a8a7a' }
+}
+
 function ChevronIcon({ expanded }: { expanded: boolean }) {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      className={clsx(
-        'h-3 w-3 fill-none stroke-current stroke-[1.45] transition-transform',
-        expanded ? 'rotate-90' : 'rotate-0'
-      )}
-    >
-      <path d="m6 4.75 4 3.25-4 3.25" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
+  return expanded ? <CaretDown size={10} weight="bold" aria-hidden="true" /> : <CaretRight size={10} weight="bold" aria-hidden="true" />
 }
 
 function FolderIcon() {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
-    >
-      <path d="M2.25 4.25A1.75 1.75 0 0 1 4 2.5H6.2L7.45 3.8H12A1.75 1.75 0 0 1 13.75 5.55V11.75A1.75 1.75 0 0 1 12 13.5H4A1.75 1.75 0 0 1 2.25 11.75V4.25Z" />
-    </svg>
-  )
+  return <FolderSimple size={FILE_ICON_SIZE} weight="regular" aria-hidden="true" />
 }
 
-function NoteIcon() {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
-    >
-      <path d="M3 4.35C3 3.39 3.77 2.6 4.75 2.6H7.3C7.87 2.6 8.4 2.84 8.8 3.25C9.2 2.84 9.73 2.6 10.3 2.6H12.05C13.03 2.6 13.8 3.39 13.8 4.35V11.85C13.8 12.23 13.49 12.55 13.1 12.55H10.3C9.73 12.55 9.2 12.79 8.8 13.2C8.4 12.79 7.87 12.55 7.3 12.55H4.5C3.84 12.55 3.3 12.02 3.3 11.35V4.35H3Z" />
-      <path d="M8.8 3.35V13.15" />
-    </svg>
-  )
+function fallbackFileGlyph(fileKind: FileTreeNode['fileKind'], darkMode: boolean): FileGlyphDef {
+  if (fileKind === 'note') {
+    return { Icon: FileText, color: darkMode ? '#74bf93' : '#1f8a61' }
+  }
+
+  if (fileKind === 'image') {
+    return { Icon: FileImage, color: '#8a7aab' }
+  }
+
+  if (fileKind === 'video') {
+    return { Icon: FileVideo, color: '#c07a6e' }
+  }
+
+  if (fileKind === 'pdf') {
+    return { Icon: FilePdf, color: '#c07a6e' }
+  }
+
+  if (fileKind === 'spreadsheet') {
+    return { Icon: FileXls, color: '#7aab6e' }
+  }
+
+  if (fileKind === 'presentation') {
+    return { Icon: FileDoc, color: '#8a7aab' }
+  }
+
+  return { Icon: FileCode, color: darkMode ? '#c1c5bd' : '#70756c' }
 }
 
-function CodeIcon() {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.28] [stroke-linecap:round] [stroke-linejoin:round]"
-    >
-      <path d="M4 2.5H8.9L12.5 6.05V12A1.5 1.5 0 0 1 11 13.5H4A1.5 1.5 0 0 1 2.5 12V4A1.5 1.5 0 0 1 4 2.5Z" />
-      <path d="M8.7 2.75V6H12" />
-      <path d="M5.7 9.2 4.5 10.3 5.7 11.4" />
-      <path d="M8 9.2 9.2 10.3 8 11.4" />
-      <path d="M7.25 8.8 6.55 11.75" />
-    </svg>
-  )
-}
-
-function ImageIcon() {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.28] [stroke-linecap:round] [stroke-linejoin:round]"
-    >
-      <rect x="2.5" y="2.75" width="11" height="10.5" rx="1.5" />
-      <circle cx="5.4" cy="5.55" r="0.9" />
-      <path d="m4.2 11 2.25-2.5 1.65 1.55 2.15-2.35 1.55 1.9" />
-    </svg>
-  )
-}
-
-function VideoIcon() {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.28] [stroke-linecap:round] [stroke-linejoin:round]"
-    >
-      <rect x="2.5" y="3" width="8" height="10" rx="1.5" />
-      <path d="M10.5 6.1 13.5 4.75V11.25L10.5 9.9" />
-      <path d="M5.7 6.2 8.45 8 5.7 9.8V6.2Z" />
-    </svg>
-  )
-}
-
-function PdfIcon() {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.28] [stroke-linecap:round] [stroke-linejoin:round]"
-    >
-      <path d="M4 2.5H8.9L12.5 6.05V12A1.5 1.5 0 0 1 11 13.5H4A1.5 1.5 0 0 1 2.5 12V4A1.5 1.5 0 0 1 4 2.5Z" />
-      <path d="M8.7 2.75V6H12" />
-      <path d="M4.9 10.95h.85a.9.9 0 1 0 0-1.8H4.9v2.7" />
-      <path d="M7.35 11.85V9.15H8a1.35 1.35 0 1 1 0 2.7h-.65Z" />
-      <path d="M10.9 9.15H9.4v2.7" />
-      <path d="M9.4 10.45H10.55" />
-    </svg>
-  )
-}
-
-function SpreadsheetIcon() {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.28] [stroke-linecap:round] [stroke-linejoin:round]"
-    >
-      <rect x="2.5" y="2.5" width="11" height="11" rx="1.6" />
-      <path d="M2.75 6H13.25M6 2.75V13.25M9.75 2.75V13.25M2.75 9.75H13.25" />
-    </svg>
-  )
-}
-
-function PresentationIcon() {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.28] [stroke-linecap:round] [stroke-linejoin:round]"
-    >
-      <path d="M3.25 3.25H12.75V10.75H3.25Z" />
-      <path d="M8 10.75V13.1M5.75 13.1H10.25" />
-      <path d="M5.1 8.8 6.75 6.6 7.95 7.75 10.2 4.95 11.1 6.05" />
-    </svg>
-  )
-}
-
-function iconToneClasses(
-  kind: 'directory' | 'note' | 'code' | 'image' | 'video' | 'pdf' | 'spreadsheet' | 'presentation',
+function resolveFileGlyph(
+  fileName: string | null | undefined,
+  fileKind: FileTreeNode['fileKind'],
   darkMode: boolean
 ) {
-  if (kind === 'directory') {
-    return darkMode ? 'text-[#d8d9d4]' : 'text-[#53584f]'
+  if (fileName) {
+    const namedGlyph = FILENAME_ICON_MAP[fileName]
+
+    if (namedGlyph) {
+      return namedGlyph
+    }
+
+    const extensionIndex = fileName.lastIndexOf('.')
+
+    if (extensionIndex >= 0) {
+      const extension = fileName.slice(extensionIndex).toLowerCase()
+      const extensionGlyph = EXTENSION_ICON_MAP[extension]
+
+      if (extensionGlyph) {
+        return extensionGlyph
+      }
+    }
   }
 
-  if (kind === 'note') {
-    return darkMode ? 'text-[#66d1ae]' : 'text-[#1a8a67]'
-  }
-
-  if (kind === 'image') {
-    return darkMode ? 'text-[#7cc8ea]' : 'text-[#3e91b6]'
-  }
-
-  if (kind === 'video') {
-    return darkMode ? 'text-[#e0b073]' : 'text-[#ae7640]'
-  }
-
-  if (kind === 'pdf') {
-    return darkMode ? 'text-[#e79d9d]' : 'text-[#b56666]'
-  }
-
-  if (kind === 'spreadsheet') {
-    return darkMode ? 'text-[#9acc92]' : 'text-[#5d9460]'
-  }
-
-  if (kind === 'presentation') {
-    return darkMode ? 'text-[#d8b2de]' : 'text-[#9a6aa3]'
-  }
-
-  return darkMode ? 'text-[#c1c5bd]' : 'text-[#70756c]'
+  return fallbackFileGlyph(fileKind, darkMode)
 }
 
 export function FileKindIcon({
   darkMode,
-  fileKind
+  fileKind,
+  fileName
 }: {
   darkMode: boolean
   fileKind: FileTreeNode['fileKind']
+  fileName?: string | null
 }) {
-  const kind =
-    fileKind === 'note' ||
-    fileKind === 'image' ||
-    fileKind === 'video' ||
-    fileKind === 'pdf' ||
-    fileKind === 'spreadsheet' ||
-    fileKind === 'presentation'
-      ? fileKind
-      : 'code'
+  const glyph = resolveFileGlyph(fileName, fileKind, darkMode)
+  const GlyphIcon = glyph.Icon
 
   return (
-    <span className={clsx('flex h-3.5 w-3.5 items-center justify-center', iconToneClasses(kind, darkMode))}>
-      {kind === 'note' ? (
-        <NoteIcon />
-      ) : kind === 'image' ? (
-        <ImageIcon />
-      ) : kind === 'video' ? (
-        <VideoIcon />
-      ) : kind === 'pdf' ? (
-        <PdfIcon />
-      ) : kind === 'spreadsheet' ? (
-        <SpreadsheetIcon />
-      ) : kind === 'presentation' ? (
-        <PresentationIcon />
-      ) : (
-        <CodeIcon />
-      )}
+    <span className="flex h-3.5 w-3.5 items-center justify-center" style={{ color: glyph.color }}>
+      <GlyphIcon size={FILE_ICON_SIZE} weight="regular" aria-hidden="true" />
     </span>
   )
 }
@@ -390,6 +387,9 @@ interface PointerDragState {
   startY: number
 }
 
+const TREE_INDENT_STEP = 18
+const TREE_GUIDE_OFFSET = 8
+
 function displayFileNameParts(node: FileTreeNode) {
   const extension = node.extension?.trim().toLowerCase() ?? ''
 
@@ -440,6 +440,39 @@ function dialogSelectionRange(dialog: TreeInputDialogState) {
 
 function directChildCount(node: FileTreeNode) {
   return node.kind === 'directory' ? node.children?.length ?? 0 : 0
+}
+
+function formatTreeTimestamp(updatedAt?: number) {
+  if (!updatedAt) {
+    return null
+  }
+
+  const targetDate = new Date(updatedAt)
+  const now = new Date()
+  const sameDay =
+    targetDate.getFullYear() === now.getFullYear() &&
+    targetDate.getMonth() === now.getMonth() &&
+    targetDate.getDate() === now.getDate()
+
+  if (sameDay) {
+    return new Intl.DateTimeFormat(undefined, {
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(updatedAt)
+  }
+
+  const sameYear = targetDate.getFullYear() === now.getFullYear()
+
+  return new Intl.DateTimeFormat(undefined, sameYear
+    ? {
+        day: '2-digit',
+        month: 'short'
+      }
+    : {
+        day: '2-digit',
+        month: 'short',
+        year: '2-digit'
+      }).format(updatedAt)
 }
 
 function directoryNameTone(nodeName: string, darkMode: boolean) {
@@ -1336,8 +1369,38 @@ export function FileTree({
     }
   }, [dragState, expanded, onMoveFile, rootDirectoryPath, trimmedQuery])
 
-  function renderNode(node: FileTreeNode, depth: number) {
+  function renderTreeGuides(depth: number) {
+    return Array.from({ length: depth }, (_, index) => (
+      <span
+        key={index}
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-y-[-1px] w-px bg-[var(--nav-tree-line)]"
+        style={{ left: `${TREE_GUIDE_OFFSET + index * TREE_INDENT_STEP}px` }}
+      />
+    ))
+  }
+
+  function renderTreeElbow(depth: number) {
+    if (depth === 0) {
+      return null
+    }
+
+    return (
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1/2 h-px -translate-y-1/2 bg-[var(--nav-tree-line)]"
+        style={{
+          left: `${TREE_GUIDE_OFFSET + (depth - 1) * TREE_INDENT_STEP}px`,
+          width: `${TREE_INDENT_STEP - 6}px`
+        }}
+      />
+    )
+  }
+
+  function renderEntry(entry: VisibleTreeEntry) {
+    const { depth, node, parentPath } = entry
     const isFocused = focusedPath === node.path
+    const rowPaddingLeft = depth * TREE_INDENT_STEP + 6
 
     if (node.kind === 'directory') {
       const isExpanded = queryActive ? true : expanded[node.path] ?? true
@@ -1345,128 +1408,113 @@ export function FileTree({
       const isDropTarget = dropTargetPath === node.path || externalDropTargetPath === node.path
 
       return (
-        <div key={node.path} className="space-y-0.5" role="none">
-          <div className="relative">
-            {depth > 0 ? (
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute left-[-12px] top-1/2 h-px w-3 -translate-y-1/2 bg-[var(--nav-tree-line)]"
-              />
-            ) : null}
-            <button
-              ref={(element) => setRowRef(node.path, element)}
-              data-file-tree-node="true"
-              data-file-tree-directory="true"
-              data-file-tree-drop-path={node.path}
-              role="treeitem"
-              aria-expanded={isExpanded}
-              aria-selected={activePath === node.path}
-              tabIndex={keyboardActive && isFocused ? 0 : -1}
-              className={clsx(
-                'flex w-full cursor-grab items-center gap-1.5 px-1.5 py-[2px] text-left text-[11px] font-medium leading-[1.15rem] transition active:cursor-grabbing focus-visible:outline-none',
-                'rounded-[var(--radius-control)] border border-transparent hover:bg-[var(--nav-surface-hover)]',
-                activePath === node.path &&
-                  'border-[color:var(--line)] bg-[color:color-mix(in_srgb,var(--surface-selected)_82%,transparent)] text-[var(--text)]',
-                isFocused && 'border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent-soft)_70%,transparent)]',
-                dragState?.sourcePath === node.path && 'opacity-55',
-                isDropTarget &&
-                  'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
-              )}
-              onMouseDown={(event) => {
-                if (event.button === 2) {
-                  event.preventDefault()
-                  event.stopPropagation()
-                }
-              }}
-              onClick={() => {
-                if (consumeSuppressedClick()) {
-                  return
-                }
+        <div key={node.path} className="relative" role="none">
+          {renderTreeGuides(depth)}
+          {renderTreeElbow(depth)}
+          <button
+            ref={(element) => setRowRef(node.path, element)}
+            data-file-tree-node="true"
+            data-file-tree-directory="true"
+            data-file-tree-drop-path={node.path}
+            role="treeitem"
+            aria-expanded={isExpanded}
+            aria-level={depth + 1}
+            aria-selected={activePath === node.path}
+            tabIndex={keyboardActive && isFocused ? 0 : -1}
+            className={clsx(
+              'flex w-full cursor-grab items-center gap-1.5 rounded-[var(--radius-control)] border border-transparent py-[3px] pr-1.5 text-left text-[11px] font-medium leading-[1.2rem] transition active:cursor-grabbing focus-visible:outline-none',
+              'hover:bg-[var(--nav-surface-hover)]',
+              activePath === node.path &&
+                'bg-[color:color-mix(in_srgb,var(--surface-selected)_86%,transparent)] text-[var(--text)]',
+              isFocused &&
+                'border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent-soft)_62%,transparent)] text-[var(--text)]',
+              dragState?.sourcePath === node.path && 'opacity-55',
+              isDropTarget && 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
+            )}
+            style={{ paddingLeft: `${rowPaddingLeft}px` }}
+            onMouseDown={(event) => {
+              if (event.button === 2) {
+                event.preventDefault()
+                event.stopPropagation()
+              }
+            }}
+            onClick={() => {
+              if (consumeSuppressedClick()) {
+                return
+              }
 
-                onSelectNode(node)
-                toggleDirectory(node.path)
-              }}
-              onFocus={() => setFocusedPath(node.path)}
-              onDragEnterCapture={handleExternalDragEnter}
-              onDragLeaveCapture={handleExternalDragLeave}
-              onDragOverCapture={handleExternalDragOver}
-              onDropCapture={handleExternalDrop}
-              onContextMenu={(event) => openContextMenu(event, node, node.path)}
-              title={`Toggle folder: ${node.name}. Use ${TREE_COLLAPSE_ALL_SHORTCUT_KEY} or ${TREE_EXPAND_ALL_SHORTCUT_KEY} to collapse or expand everything.`}
-              onPointerDown={(event) => startDraggingNode(event, node)}
+              onSelectNode(node)
+              toggleDirectory(node.path)
+            }}
+            onFocus={() => setFocusedPath(node.path)}
+            onDragEnterCapture={handleExternalDragEnter}
+            onDragLeaveCapture={handleExternalDragLeave}
+            onDragOverCapture={handleExternalDragOver}
+            onDropCapture={handleExternalDrop}
+            onContextMenu={(event) => openContextMenu(event, node, node.path)}
+            title={`Toggle folder: ${node.name}. Use ${TREE_COLLAPSE_ALL_SHORTCUT_KEY} or ${TREE_EXPAND_ALL_SHORTCUT_KEY} to collapse or expand everything.`}
+            onPointerDown={(event) => startDraggingNode(event, node)}
+          >
+            <span className="flex h-3 w-3 shrink-0 items-center justify-center text-[var(--text-faint)]">
+              <ChevronIcon expanded={isExpanded} />
+            </span>
+            <span
+              className="flex h-3.5 w-3.5 shrink-0 items-center justify-center text-[var(--text-faint)]"
             >
-              <span className="flex h-3 w-3 shrink-0 items-center justify-center text-[var(--text-faint)]">
-                <ChevronIcon expanded={isExpanded} />
-              </span>
-              <span
-                className={clsx(
-                  'flex h-3.5 w-3.5 shrink-0 items-center justify-center',
-                  iconToneClasses('directory', darkMode)
-                )}
-              >
-                <FolderIcon />
-              </span>
-              <span className={clsx('min-w-0 flex-1 truncate', directoryNameTone(node.name, darkMode))}>
-                {node.name}
-              </span>
-              <span
-                className={clsx(
-                  'shrink-0 rounded-full border px-1.5 py-[1px] text-[9px] font-semibold leading-none',
-                  activePath === node.path || dropTargetPath === node.path
-                    ? 'border-current/20 bg-white/10 text-current'
-                    : 'border-[color:var(--line)] bg-[var(--nav-badge)] text-[var(--text-faint)]'
-                )}
-                title={
-                  node.descendantFileCount !== undefined
-                    ? `${childCount} direct item${childCount === 1 ? '' : 's'}, ${node.descendantFileCount} file${node.descendantFileCount === 1 ? '' : 's'} inside`
-                    : `${childCount} direct item${childCount === 1 ? '' : 's'}`
-                }
-              >
-                {childCount}
-              </span>
-            </button>
-          </div>
-          {isExpanded ? (
-            <div className="relative ml-4">
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute bottom-1 left-[7px] top-0 w-px bg-[var(--nav-tree-line)]"
-              />
-              <div className="space-y-0.5 pl-3.5">{node.children?.map((child) => renderNode(child, depth + 1))}</div>
-            </div>
-          ) : null}
+              <FolderIcon />
+            </span>
+            <span className={clsx('min-w-0 flex-1 truncate', directoryNameTone(node.name, darkMode))}>
+              {node.name}
+            </span>
+            <span
+              className={clsx(
+                'ml-2 shrink-0 rounded-full border px-1.5 py-[1px] text-center text-[9px] font-medium leading-none',
+                activePath === node.path || dropTargetPath === node.path
+                  ? 'border-current/18 bg-white/10 text-current'
+                  : 'border-[color:var(--line)] bg-[var(--nav-badge)] text-[var(--text-faint)]'
+              )}
+              title={
+                node.descendantFileCount !== undefined
+                  ? `${childCount} direct item${childCount === 1 ? '' : 's'}, ${node.descendantFileCount} file${node.descendantFileCount === 1 ? '' : 's'} inside`
+                  : `${childCount} direct item${childCount === 1 ? '' : 's'}`
+              }
+            >
+              {childCount}
+            </span>
+          </button>
         </div>
       )
     }
 
-  const { extensionLabel, stem } = displayFileNameParts(node)
-  const parentDropTargetPath = parentDirectoryPath(node.path) ?? rootDirectoryPath ?? null
+    const { extensionLabel, stem } = displayFileNameParts(node)
+    const parentDropTargetPath = parentDirectoryPath(node.path) ?? rootDirectoryPath ?? null
+    const timestampLabel = formatTreeTimestamp(node.updatedAt)
 
-  return (
+    return (
       <div key={node.path} className="relative" role="none">
-        {depth > 0 ? (
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute left-[-12px] top-1/2 h-px w-3 -translate-y-1/2 bg-[var(--nav-tree-line)]"
-          />
-        ) : null}
+        {renderTreeGuides(depth)}
+        {renderTreeElbow(depth)}
         <button
           ref={(element) => setRowRef(node.path, element)}
           data-file-tree-node="true"
-          data-file-tree-drop-path={parentDirectoryPath(node.path) ?? rootDirectoryPath ?? undefined}
+          data-file-tree-drop-path={parentDropTargetPath ?? undefined}
           role="treeitem"
+          aria-level={depth + 1}
           aria-selected={activePath === node.path}
           tabIndex={keyboardActive && isFocused ? 0 : -1}
           className={clsx(
-            'flex w-full cursor-grab items-center gap-1.5 px-1.5 py-[2px] text-left text-[11px] font-medium leading-[1.15rem] transition active:cursor-grabbing focus-visible:outline-none',
-            'rounded-[var(--radius-control)] border border-transparent',
+            'flex w-full cursor-grab items-center gap-1.5 rounded-[var(--radius-control)] border border-transparent py-[3px] pr-1.5 text-left text-[11px] font-medium leading-[1.2rem] transition active:cursor-grabbing focus-visible:outline-none',
             dragState?.sourcePath === node.path && 'opacity-55',
             activePath === node.path
-              ? 'border-[color:var(--line)] bg-[color:color-mix(in_srgb,var(--surface-selected)_82%,transparent)] text-[var(--text)]'
+              ? 'bg-[color:color-mix(in_srgb,var(--surface-selected)_86%,transparent)] text-[var(--text)]'
               : 'text-[var(--text-dim)] hover:bg-[var(--nav-surface-hover)]',
-            isFocused && 'border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent-soft)_70%,transparent)] text-[var(--text)]',
-            parentDropTargetPath && externalDropTargetPath === parentDropTargetPath && 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
+            isFocused &&
+              'border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent-soft)_62%,transparent)] text-[var(--text)]',
+            parentDropTargetPath &&
+              externalDropTargetPath === parentDropTargetPath &&
+              'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
           )}
+          style={{ paddingLeft: `${rowPaddingLeft}px` }}
           onMouseDown={(event) => {
             if (event.button === 2) {
               event.preventDefault()
@@ -1486,7 +1534,7 @@ export function FileTree({
           onDragOverCapture={handleExternalDragOver}
           onDropCapture={handleExternalDrop}
           onContextMenu={(event) =>
-            openContextMenu(event, node, parentDirectoryPath(node.path) ?? rootDirectoryPath ?? node.path)
+            openContextMenu(event, node, parentDropTargetPath ?? rootDirectoryPath ?? node.path)
           }
           onDoubleClick={(event) => {
             event.preventDefault()
@@ -1498,15 +1546,20 @@ export function FileTree({
           <span className="flex h-3 w-3 shrink-0 items-center justify-center text-transparent">
             <ChevronIcon expanded={false} />
           </span>
-          <FileKindIcon darkMode={darkMode} fileKind={node.fileKind} />
+          <FileKindIcon darkMode={darkMode} fileKind={node.fileKind} fileName={node.name} />
           <span className="min-w-0 flex-1 truncate">
             <span className="truncate text-current">{stem}</span>
             {extensionLabel ? (
-              <span className="ml-1 align-middle text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--text-faint)]">
-                {extensionLabel}
+              <span className="align-middle text-[10px] font-medium text-[var(--text-faint)] opacity-80">
+                .{extensionLabel}
               </span>
             ) : null}
           </span>
+          {timestampLabel ? (
+            <span className="ml-2 shrink-0 text-[9px] font-medium leading-none text-[var(--text-faint)] opacity-75">
+              {timestampLabel}
+            </span>
+          ) : null}
         </button>
       </div>
     )
@@ -1573,7 +1626,7 @@ export function FileTree({
       aria-label="Workspace file tree"
       tabIndex={-1}
       className={clsx(
-        'space-y-0.5 font-[var(--font-ui)] text-[11px] outline-none',
+        'space-y-px font-[var(--font-ui)] text-[11px] outline-none',
         dragState?.active && 'select-none'
       )}
       data-file-tree-root-drop={rootDirectoryPath ? 'true' : undefined}
@@ -1613,7 +1666,7 @@ export function FileTree({
           {externalDragActive ? 'Drop Here To Import Into Workspace Root' : 'Drop Here To Move To Workspace Root'}
         </div>
       ) : null}
-      {visibleNodes.map((node) => renderNode(node, 0))}
+      {flatVisibleEntries.map((entry) => renderEntry(entry))}
       {rootDirectoryPath && (dragState?.active || externalDragActive) ? (
         <div
           data-file-tree-root-drop="true"
@@ -1640,7 +1693,11 @@ export function FileTree({
                 {dragState.sourceKind === 'directory' ? (
                   <FolderIcon />
                 ) : (
-                  <FileKindIcon darkMode={darkMode} fileKind={dragState.sourceFileKind} />
+                  <FileKindIcon
+                    darkMode={darkMode}
+                    fileKind={dragState.sourceFileKind}
+                    fileName={dragState.sourceName}
+                  />
                 )}
               </span>
               <div className="min-w-0">
