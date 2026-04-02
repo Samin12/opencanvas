@@ -92,6 +92,20 @@ function collectDirectoryPaths(nodes: FileTreeNode[]): string[] {
   return paths
 }
 
+function flattenTreePaths(nodes: FileTreeNode[]): string[] {
+  const paths: string[] = []
+
+  for (const node of nodes) {
+    paths.push(node.path)
+
+    if (node.children?.length) {
+      paths.push(...flattenTreePaths(node.children))
+    }
+  }
+
+  return paths
+}
+
 function workspaceMetadataPath(workspacePath: string): string {
   return `${workspacePath}/.claude-canvas`
 }
@@ -212,6 +226,50 @@ function dedupeNestedPaths(paths: string[]) {
   }
 
   return acceptedPaths
+}
+
+function preferredTreePathAfterDeletion(
+  previousNodes: FileTreeNode[],
+  nextNodes: FileTreeNode[],
+  deletedPaths: string[]
+) {
+  const normalizedDeletedPaths = dedupeNestedPaths(deletedPaths)
+
+  if (normalizedDeletedPaths.length === 0) {
+    return null
+  }
+
+  const previousPaths = flattenTreePaths(previousNodes)
+  const firstDeletedIndex = previousPaths.findIndex((path) =>
+    normalizedDeletedPaths.some((deletedPath) => isSameOrDescendantPath(path, deletedPath))
+  )
+
+  if (firstDeletedIndex === -1) {
+    return null
+  }
+
+  const isDeletedPath = (path: string) =>
+    normalizedDeletedPaths.some((deletedPath) => isSameOrDescendantPath(path, deletedPath))
+
+  const existsInNextTree = (path: string) => Boolean(findNodeByPath(nextNodes, path))
+
+  for (let index = firstDeletedIndex + 1; index < previousPaths.length; index += 1) {
+    const candidatePath = previousPaths[index]
+
+    if (!isDeletedPath(candidatePath) && existsInNextTree(candidatePath)) {
+      return candidatePath
+    }
+  }
+
+  for (let index = firstDeletedIndex - 1; index >= 0; index -= 1) {
+    const candidatePath = previousPaths[index]
+
+    if (!isDeletedPath(candidatePath) && existsInNextTree(candidatePath)) {
+      return candidatePath
+    }
+  }
+
+  return null
 }
 
 interface PathMoveOperation {
@@ -2217,32 +2275,45 @@ export default function App() {
     }
 
     let trashedNode: WorkspaceDeletedNode | null = null
+    const canTrashWorkspaceNode =
+      typeof window.collaborator.trashWorkspaceNode === 'function' &&
+      typeof window.collaborator.restoreWorkspaceDeletedNode === 'function'
 
     try {
       const currentCanvasState = canvasStateRef.current
       const canvasDeletion =
         currentCanvasState ? removeWorkspacePathsFromCanvasState(currentCanvasState, [targetPath]) : null
-      trashedNode = await window.collaborator.trashWorkspaceNode(activeWorkspace, targetPath)
-      await refreshWorkspaceTree(activeWorkspace)
+      if (canTrashWorkspaceNode) {
+        trashedNode = await window.collaborator.trashWorkspaceNode(activeWorkspace, targetPath)
+      } else {
+        await window.collaborator.deleteWorkspaceNode(activeWorkspace, targetPath)
+      }
+      const nextTree = await refreshWorkspaceTree(activeWorkspace)
+      const nextSelectedPath = preferredTreePathAfterDeletion(workspaceTree, nextTree, [targetPath])
 
       if (isSameOrDescendantPath(viewerFile?.path, targetPath)) {
         setViewerFile(null)
       }
 
       if (isSameOrDescendantPath(selectedTreePath, targetPath)) {
-        setSelectedTreePath(null)
+        setSelectedTreePath(nextSelectedPath)
       }
 
       if (canvasDeletion?.nextCanvasState) {
         handleCanvasStateChange(canvasDeletion.nextCanvasState, { immediate: true })
       }
 
-      pushWorkspaceDeleteUndoEntry({
-        removedTiles: canvasDeletion?.removedTiles ?? [],
-        terminalContextRestorations: canvasDeletion?.terminalContextRestorations ?? [],
-        trashedNodes: [trashedNode],
-        workspacePath: activeWorkspace
-      })
+      if (trashedNode) {
+        pushWorkspaceDeleteUndoEntry({
+          removedTiles: canvasDeletion?.removedTiles ?? [],
+          terminalContextRestorations: canvasDeletion?.terminalContextRestorations ?? [],
+          trashedNodes: [trashedNode],
+          workspacePath: activeWorkspace
+        })
+      }
+      if (!isSameOrDescendantPath(selectedTreePath, targetPath) && nextSelectedPath) {
+        setSelectedTreePath((currentPath) => currentPath ?? nextSelectedPath)
+      }
       setActiveKeyboardSurface('navigator')
       setFocusNavigatorVersion((current) => current + 1)
       setWorkspaceError(null)
@@ -2359,6 +2430,9 @@ export default function App() {
 
     const normalizedTargetPaths = dedupeNestedPaths(targetPaths)
     const trashedNodes: WorkspaceDeletedNode[] = []
+    const canTrashWorkspaceNode =
+      typeof window.collaborator.trashWorkspaceNode === 'function' &&
+      typeof window.collaborator.restoreWorkspaceDeletedNode === 'function'
 
     if (normalizedTargetPaths.length === 0) {
       return
@@ -2371,29 +2445,46 @@ export default function App() {
         : null
 
       for (const targetPath of normalizedTargetPaths) {
-        trashedNodes.push(await window.collaborator.trashWorkspaceNode(activeWorkspace, targetPath))
+        if (canTrashWorkspaceNode) {
+          trashedNodes.push(await window.collaborator.trashWorkspaceNode(activeWorkspace, targetPath))
+        } else {
+          await window.collaborator.deleteWorkspaceNode(activeWorkspace, targetPath)
+        }
       }
 
-      await refreshWorkspaceTree(activeWorkspace)
+      const nextTree = await refreshWorkspaceTree(activeWorkspace)
+      const nextSelectedPath = preferredTreePathAfterDeletion(
+        workspaceTree,
+        nextTree,
+        normalizedTargetPaths
+      )
 
       if (normalizedTargetPaths.some((targetPath) => isSameOrDescendantPath(viewerFile?.path, targetPath))) {
         setViewerFile(null)
       }
 
       if (normalizedTargetPaths.some((targetPath) => isSameOrDescendantPath(selectedTreePath, targetPath))) {
-        setSelectedTreePath(null)
+        setSelectedTreePath(nextSelectedPath)
       }
 
       if (canvasDeletion?.nextCanvasState) {
         handleCanvasStateChange(canvasDeletion.nextCanvasState, { immediate: true })
       }
 
-      pushWorkspaceDeleteUndoEntry({
-        removedTiles: canvasDeletion?.removedTiles ?? [],
-        terminalContextRestorations: canvasDeletion?.terminalContextRestorations ?? [],
-        trashedNodes,
-        workspacePath: activeWorkspace
-      })
+      if (trashedNodes.length > 0) {
+        pushWorkspaceDeleteUndoEntry({
+          removedTiles: canvasDeletion?.removedTiles ?? [],
+          terminalContextRestorations: canvasDeletion?.terminalContextRestorations ?? [],
+          trashedNodes,
+          workspacePath: activeWorkspace
+        })
+      }
+      if (
+        !normalizedTargetPaths.some((targetPath) => isSameOrDescendantPath(selectedTreePath, targetPath)) &&
+        nextSelectedPath
+      ) {
+        setSelectedTreePath((currentPath) => currentPath ?? nextSelectedPath)
+      }
       setActiveKeyboardSurface('navigator')
       setFocusNavigatorVersion((current) => current + 1)
       setWorkspaceError(null)

@@ -1144,12 +1144,6 @@ export function FileTree({
     }
 
     if ((event.key === 'Backspace' || event.key === 'Delete') && selectedPaths.length > 0) {
-      const deleteShortcutPressed = (event.metaKey || event.ctrlKey) && !event.altKey
-
-      if (!deleteShortcutPressed) {
-        return
-      }
-
       const treeRoot = treeRootRef.current
       const activeElement = document.activeElement
       const treeHasFocus = Boolean(
