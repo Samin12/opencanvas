@@ -74,7 +74,6 @@ const SLASH_COMMAND_INPUT_PATTERN = /^\/([a-z0-9-]+)\s$/i
 const SLASH_COMMAND_ENTER_PATTERN = /^\/([a-z0-9-]+)\s*$/i
 const SLASH_COMMAND_MENU_PATTERN = /^\/([a-z0-9-]*)$/i
 const HORIZONTAL_RULE_MARKER_PATTERN = /^(?:---|___|\*\*\*)$/
-const TASK_LINE_ENTER_PATTERN = /^\s*(?:[-+*]\s+)?\[\s*(x|X)?\]\s+(.+)$/
 const OUTLINE_PARENT_NODE_NAMES = new Set(['bulletList', 'orderedList', 'taskList'])
 const OUTLINE_ITEM_TYPES = ['taskItem', 'listItem'] as const
 const OUTLINE_BLOCK_NODE_NAMES = new Set(['paragraph', 'heading', 'codeBlock', 'blockquote'])
@@ -796,16 +795,6 @@ export const MarkdownShortcutExtension = Extension.create({
           }
 
           return runSlashCommand(command, this.editor.chain(), shortcut.range)
-        }
-
-        const taskShortcutMatch = shortcut.text.match(TASK_LINE_ENTER_PATTERN)
-
-        if (taskShortcutMatch) {
-          return insertTaskList(this.editor.chain(), shortcut.range, {
-            checked: (taskShortcutMatch[1] ?? '').toLowerCase() === 'x',
-            createTrailingItem: true,
-            text: taskShortcutMatch[2]?.trimEnd() ?? ''
-          })
         }
 
         if (HORIZONTAL_RULE_MARKER_PATTERN.test(shortcut.text.trim())) {
