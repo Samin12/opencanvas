@@ -658,7 +658,6 @@ function RichNoteEditor({
   const measureFrameRef = useRef<number | null>(null)
   const saveRequestIdRef = useRef(0)
   const saveTimerRef = useRef<number | null>(null)
-  const headingTimerRef = useRef<number | null>(null)
   const lastPublishedHeadingRef = useRef<string | null>(null)
   const [slashMenuState, setSlashMenuState] = useState<SlashMenuState | null>(null)
   const [slashMenuIndex, setSlashMenuIndex] = useState(0)
@@ -670,7 +669,6 @@ function RichNoteEditor({
     slashMenuItems[slashMenuItems.length === 0 ? -1 : Math.min(slashMenuIndex, slashMenuItems.length - 1)] ??
     null
   slashMenuStateRef.current = slashMenuState
-  slashMenuIndexRef.current = slashMenuIndex
   slashMenuItemsRef.current = slashMenuItems
 
   function closeSlashMenu() {
@@ -705,6 +703,7 @@ function RichNoteEditor({
     key: string
     preventDefault: () => void
     stopPropagation: () => void
+    stopImmediatePropagation?: () => void
   }) {
     if (!slashMenuStateRef.current) {
       return false
@@ -712,6 +711,7 @@ function RichNoteEditor({
 
     if (event.key === 'ArrowDown') {
       event.preventDefault()
+      event.stopImmediatePropagation?.()
       event.stopPropagation()
       setSlashMenuIndexImmediate(slashMenuIndexRef.current + 1)
       return true
@@ -719,6 +719,7 @@ function RichNoteEditor({
 
     if (event.key === 'ArrowUp') {
       event.preventDefault()
+      event.stopImmediatePropagation?.()
       event.stopPropagation()
       setSlashMenuIndexImmediate(slashMenuIndexRef.current - 1)
       return true
@@ -728,12 +729,14 @@ function RichNoteEditor({
 
     if ((event.key === 'Enter' || event.key === 'Tab') && highlightedSlashMenuItem) {
       event.preventDefault()
+      event.stopImmediatePropagation?.()
       event.stopPropagation()
       return applySlashMenuCommand(highlightedSlashMenuItem.command)
     }
 
     if (event.key === 'Escape') {
       event.preventDefault()
+      event.stopImmediatePropagation?.()
       event.stopPropagation()
       closeSlashMenu()
       return true
@@ -806,8 +809,6 @@ function RichNoteEditor({
 
     closeSlashMenu()
     scheduleContentMeasurement()
-    schedulePrimaryHeadingPublish(editor)
-
     return true
   }
 
@@ -1005,10 +1006,6 @@ function RichNoteEditor({
         window.clearTimeout(saveTimerRef.current)
       }
 
-      if (headingTimerRef.current !== null) {
-        window.clearTimeout(headingTimerRef.current)
-      }
-
       if (measureFrameRef.current !== null) {
         window.cancelAnimationFrame(measureFrameRef.current)
       }
@@ -1031,8 +1028,6 @@ function RichNoteEditor({
 
       latestSavedRef.current = updated.content
       onDocumentChange(updated)
-      publishPrimaryHeading(editor)
-
       if (latestDraftRef.current === updated.content) {
         onStatusChange('idle')
         return
@@ -1053,13 +1048,6 @@ function RichNoteEditor({
     }
   }
 
-  function clearScheduledHeadingPublish() {
-    if (headingTimerRef.current !== null) {
-      window.clearTimeout(headingTimerRef.current)
-      headingTimerRef.current = null
-    }
-  }
-
   function publishPrimaryHeading(activeEditor: TiptapEditor | null | undefined) {
     if (!onPrimaryHeadingChange) {
       return
@@ -1074,19 +1062,6 @@ function RichNoteEditor({
     lastPublishedHeadingRef.current = nextHeading
     onPrimaryHeadingChange(nextHeading)
   }
-
-  function schedulePrimaryHeadingPublish(activeEditor: TiptapEditor | null | undefined) {
-    if (!onPrimaryHeadingChange) {
-      return
-    }
-
-    clearScheduledHeadingPublish()
-    headingTimerRef.current = window.setTimeout(() => {
-      headingTimerRef.current = null
-      publishPrimaryHeading(activeEditor)
-    }, 420)
-  }
-
   function flushSave() {
     clearScheduledSave()
 
@@ -1171,7 +1146,6 @@ function RichNoteEditor({
             }
 
             if (event.key === 'Enter' && selectionInsidePrimaryHeading(editor)) {
-              clearScheduledHeadingPublish()
               publishPrimaryHeading(editor)
             }
 
@@ -1224,7 +1198,6 @@ function RichNoteEditor({
       onUpdate: ({ editor: activeEditor }: { editor: TiptapEditor }) => {
         queueSave(isEditorSemanticallyEmpty(activeEditor) ? '' : activeEditor.getMarkdown())
         scheduleContentMeasurement()
-        schedulePrimaryHeadingPublish(activeEditor)
         syncSlashMenu(activeEditor)
       },
       onSelectionUpdate: ({ editor: activeEditor }: { editor: TiptapEditor }) => {
@@ -1331,6 +1304,23 @@ function RichNoteEditor({
       window.cancelAnimationFrame(frameId)
     }
   }, [slashMenuIndex, slashMenuItems.length, slashMenuState])
+
+  useEffect(() => {
+    if (!editor) {
+      return
+    }
+
+    const editorElement = editor.view.dom
+    const handleNativeSlashMenuKeyDown = (event: KeyboardEvent) => {
+      handleSlashMenuKeyDown(event)
+    }
+
+    editorElement.addEventListener('keydown', handleNativeSlashMenuKeyDown, true)
+
+    return () => {
+      editorElement.removeEventListener('keydown', handleNativeSlashMenuKeyDown, true)
+    }
+  }, [editor])
 
   useEffect(() => {
     if (!autoSizeEnabled || !editor) {
