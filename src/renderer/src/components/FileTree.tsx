@@ -341,13 +341,14 @@ function directoryExpansionState(nodes: FileTreeNode[], expanded: boolean) {
 function isDirectoryExpanded(
   expanded: Record<string, boolean>,
   path: string,
-  queryActive: boolean
+  queryActive: boolean,
+  defaultExpanded: boolean
 ) {
   if (queryActive) {
     return true
   }
 
-  return expanded[path] ?? DEFAULT_DIRECTORY_EXPANDED
+  return expanded[path] ?? defaultExpanded
 }
 
 interface VisibleTreeEntry {
@@ -385,7 +386,8 @@ function visibleTreeEntries(
   expanded: Record<string, boolean>,
   queryActive: boolean,
   depth = 0,
-  parentPath: string | null = null
+  parentPath: string | null = null,
+  defaultExpanded = DEFAULT_DIRECTORY_EXPANDED
 ): VisibleTreeEntry[] {
   return nodes.flatMap((node) => {
     const currentEntry: VisibleTreeEntry = {
@@ -398,12 +400,19 @@ function visibleTreeEntries(
       return [currentEntry]
     }
 
-    const isExpanded = isDirectoryExpanded(expanded, node.path, queryActive)
+    const isExpanded = isDirectoryExpanded(expanded, node.path, queryActive, defaultExpanded)
 
     return [
       currentEntry,
       ...(isExpanded
-        ? visibleTreeEntries(node.children ?? [], expanded, queryActive, depth + 1, node.path)
+        ? visibleTreeEntries(
+            node.children ?? [],
+            expanded,
+            queryActive,
+            depth + 1,
+            node.path,
+            defaultExpanded
+          )
         : [])
     ]
   })
@@ -665,6 +674,7 @@ export function FileTree({
   rootDirectoryPath
 }: FileTreeProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [defaultDirectoryExpanded, setDefaultDirectoryExpanded] = useState(DEFAULT_DIRECTORY_EXPANDED)
   const [selectedPaths, setSelectedPaths] = useState<string[]>(activePath ? [activePath] : [])
   const [selectionAnchorPath, setSelectionAnchorPath] = useState<string | null>(activePath)
   const [dragState, setDragState] = useState<PointerDragState | null>(null)
@@ -683,19 +693,30 @@ export function FileTree({
   const treeRootRef = useRef<HTMLDivElement | null>(null)
   const rowRefs = useRef(new Map<string, HTMLButtonElement>())
   const revealedActivePathRef = useRef<string | null>(null)
+  const collapsedActivePathRef = useRef<string | null>(null)
   const suppressClickRef = useRef(false)
   const trimmedQuery = query.trim().toLowerCase()
   const visibleNodes = trimmedQuery ? filterNodes(nodes, trimmedQuery) : nodes
   const queryActive = trimmedQuery.length > 0
   const selectedPathSet = useMemo(() => new Set(selectedPaths), [selectedPaths])
   const flatVisibleEntries = useMemo(
-    () => visibleTreeEntries(visibleNodes, expanded, queryActive),
-    [expanded, queryActive, visibleNodes]
+    () => visibleTreeEntries(visibleNodes, expanded, queryActive, 0, null, defaultDirectoryExpanded),
+    [defaultDirectoryExpanded, expanded, queryActive, visibleNodes]
   )
 
   useEffect(() => {
-    setExpanded((current) => ({ ...collectDirectoryPaths(nodes), ...current }))
-  }, [nodes])
+    const directoryPaths = collectDirectoryPaths(nodes)
+
+    setExpanded((current) => {
+      const nextExpanded: Record<string, boolean> = {}
+
+      for (const path of Object.keys(directoryPaths)) {
+        nextExpanded[path] = current[path] ?? defaultDirectoryExpanded
+      }
+
+      return nextExpanded
+    })
+  }, [defaultDirectoryExpanded, nodes])
 
   useEffect(() => {
     setSelectedPaths((current) => current.filter((path) => Boolean(findTreeNodeByPath(nodes, path))))
@@ -704,18 +725,37 @@ export function FileTree({
     )
   }, [nodes])
 
-  useEffect(() => {
+  function collapseAllDirectories() {
+    collapsedActivePathRef.current = activePath ?? null
+    setDefaultDirectoryExpanded(false)
     setExpanded(directoryExpansionState(nodes, false))
+  }
+
+  function expandAllDirectories() {
+    collapsedActivePathRef.current = null
+    setDefaultDirectoryExpanded(true)
+    setExpanded(directoryExpansionState(nodes, true))
+  }
+
+  useEffect(() => {
+    collapseAllDirectories()
   }, [collapseAllVersion])
 
   useEffect(() => {
-    setExpanded(directoryExpansionState(nodes, true))
+    expandAllDirectories()
   }, [expandAllVersion])
 
   useEffect(() => {
     if (!activePath) {
+      collapsedActivePathRef.current = null
       return
     }
+
+    if (collapsedActivePathRef.current === activePath) {
+      return
+    }
+
+    collapsedActivePathRef.current = null
 
     const ancestorPaths = findAncestorDirectoryPaths(nodes, activePath)
 
@@ -996,7 +1036,7 @@ export function FileTree({
   function toggleDirectory(path: string) {
     setExpanded((current) => ({
       ...current,
-      [path]: !isDirectoryExpanded(current, path, false)
+      [path]: !isDirectoryExpanded(current, path, false, defaultDirectoryExpanded)
     }))
   }
 
@@ -1015,7 +1055,11 @@ export function FileTree({
     }
 
     expandTimerRef.current = window.setTimeout(() => {
-      setExpanded((current) => (current[path] ? current : { ...current, [path]: true }))
+      setExpanded((current) =>
+        isDirectoryExpanded(current, path, false, defaultDirectoryExpanded)
+          ? current
+          : { ...current, [path]: true }
+      )
       expandTimerRef.current = null
     }, 320)
   }
@@ -1174,14 +1218,14 @@ export function FileTree({
     if (event.shiftKey && event.key === 'ArrowLeft') {
       event.preventDefault()
       event.stopPropagation()
-      setExpanded(directoryExpansionState(nodes, false))
+      collapseAllDirectories()
       return
     }
 
     if (event.shiftKey && event.key === 'ArrowRight') {
       event.preventDefault()
       event.stopPropagation()
-      setExpanded(directoryExpansionState(nodes, true))
+      expandAllDirectories()
       return
     }
 
@@ -1233,7 +1277,12 @@ export function FileTree({
         return
       }
 
-      const isExpanded = isDirectoryExpanded(expanded, currentEntry.node.path, queryActive)
+      const isExpanded = isDirectoryExpanded(
+        expanded,
+        currentEntry.node.path,
+        queryActive,
+        defaultDirectoryExpanded
+      )
 
       if (!isExpanded) {
         setExpanded((current) => ({
@@ -1257,7 +1306,10 @@ export function FileTree({
       event.preventDefault()
       event.stopPropagation()
 
-      if (currentEntry.node.kind === 'directory' && isDirectoryExpanded(expanded, currentEntry.node.path, queryActive)) {
+      if (
+        currentEntry.node.kind === 'directory' &&
+        isDirectoryExpanded(expanded, currentEntry.node.path, queryActive, defaultDirectoryExpanded)
+      ) {
         setExpanded((current) => ({
           ...current,
           [currentEntry.node.path]: false
@@ -1320,7 +1372,12 @@ export function FileTree({
     }
 
     const directoryHover = dropElement.dataset.fileTreeDirectory === 'true'
-    const isExpanded = isDirectoryExpanded(expanded, candidatePath, Boolean(trimmedQuery))
+    const isExpanded = isDirectoryExpanded(
+      expanded,
+      candidatePath,
+      Boolean(trimmedQuery),
+      defaultDirectoryExpanded
+    )
     scheduleDirectoryExpand(candidatePath, directoryHover && !isExpanded)
 
     return candidatePath
@@ -1345,7 +1402,12 @@ export function FileTree({
     const directoryHover = dropElement.dataset.fileTreeDirectory === 'true'
 
     if (candidatePath && directoryHover) {
-      const isExpanded = isDirectoryExpanded(expanded, candidatePath, Boolean(trimmedQuery))
+      const isExpanded = isDirectoryExpanded(
+        expanded,
+        candidatePath,
+        Boolean(trimmedQuery),
+        defaultDirectoryExpanded
+      )
       scheduleDirectoryExpand(candidatePath, !isExpanded)
     } else {
       clearPendingExpand()
@@ -1813,7 +1875,7 @@ export function FileTree({
     const rowPaddingLeft = depth * TREE_INDENT_STEP + TREE_ROW_START_PADDING
 
     if (node.kind === 'directory') {
-      const isExpanded = isDirectoryExpanded(expanded, node.path, queryActive)
+      const isExpanded = isDirectoryExpanded(expanded, node.path, queryActive, defaultDirectoryExpanded)
       const childCount = directChildCount(node)
       const isDropTarget = dropTargetPath === node.path || externalDropTargetPath === node.path
 

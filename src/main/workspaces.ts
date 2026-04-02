@@ -309,23 +309,20 @@ async function resolveStats(targetPath: string) {
   const currentStats = await lstat(targetPath)
 
   if (currentStats.isSymbolicLink()) {
-    const resolvedPath = await realpath(targetPath)
-    const resolvedStats = await stat(resolvedPath)
+    const resolvedStats = await stat(targetPath)
     return {
-      path: resolvedPath,
       stats: resolvedStats
     }
   }
 
   return {
-    path: targetPath,
     stats: currentStats
   }
 }
 
 async function buildNode(targetPath: string): Promise<FileTreeNode | null> {
   try {
-    const { path, stats } = await resolveStats(targetPath)
+    const { stats } = await resolveStats(targetPath)
     const createdAt = stats.birthtimeMs > 0 ? stats.birthtimeMs : stats.mtimeMs
     const name = basename(targetPath)
 
@@ -338,10 +335,10 @@ async function buildNode(targetPath: string): Promise<FileTreeNode | null> {
         return null
       }
 
-      const entries = await readdir(path, { withFileTypes: true })
+      const entries = await readdir(targetPath, { withFileTypes: true })
       const children = (
         await Promise.all(
-          entries.map((entry) => buildNode(`${path}/${entry.name}`))
+          entries.map((entry) => buildNode(`${targetPath}/${entry.name}`))
         )
       ).filter((child): child is FileTreeNode => child !== null)
 
@@ -365,21 +362,21 @@ async function buildNode(targetPath: string): Promise<FileTreeNode | null> {
       return {
         descendantFileCount,
         name,
-        path,
+        path: targetPath,
         kind: 'directory',
         children,
         updatedAt
       }
     }
 
-    const extension = extname(path).toLowerCase()
+    const extension = extname(targetPath).toLowerCase()
 
     return {
       name,
-      path,
+      path: targetPath,
       kind: 'file',
       extension,
-      fileKind: detectFileKind(path),
+      fileKind: detectFileKind(targetPath),
       size: stats.size,
       updatedAt: createdAt
     }
