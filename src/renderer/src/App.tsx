@@ -1232,37 +1232,6 @@ export default function App() {
   }, [viewerFile])
 
   useEffect(() => {
-    function handleCanvasDeleteKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
-        return
-      }
-
-      if (searchOpen || viewerFile || keyboardShortcutsBlocked(event.target)) {
-        return
-      }
-
-      if (event.key !== 'Backspace' && event.key !== 'Delete') {
-        return
-      }
-
-      if (!canvasRef.current?.removeSelectedTiles()) {
-        return
-      }
-
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      event.stopPropagation()
-      setActiveKeyboardSurface('canvas')
-    }
-
-    window.addEventListener('keydown', handleCanvasDeleteKeyDown, true)
-
-    return () => {
-      window.removeEventListener('keydown', handleCanvasDeleteKeyDown, true)
-    }
-  }, [searchOpen, viewerFile])
-
-  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       const isEditing = keyboardShortcutsBlocked(event.target)
 

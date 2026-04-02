@@ -4062,11 +4062,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           if (selectedTileIds.length > 0) {
             event.preventDefault()
             event.stopPropagation()
-            deleteTiles(selectedTileIds)
             return
           }
 
-          if (selectedShapeIds.length > 0 && editorRef.current) {
+          if (event.key === 'Delete' && selectedShapeIds.length > 0 && editorRef.current) {
             event.preventDefault()
             event.stopPropagation()
             editorRef.current.deleteShapes(selectedShapeIds)
