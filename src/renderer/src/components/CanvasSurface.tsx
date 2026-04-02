@@ -3189,6 +3189,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       setTileSelection([tile.id])
     }
 
+    async function createMarkdownNoteAtClientPoint(clientX: number, clientY: number) {
+      const createdNode = await onCreateMarkdownCard({
+        initialContent: '',
+        targetDirectoryPath: importTargetDirectoryPath ?? activeWorkspacePath ?? undefined
+      })
+
+      if (!createdNode) {
+        return
+      }
+
+      spawnFileTileAtClientPoint(createdNode, clientX, clientY)
+    }
+
     function focusSelectedTileEditor() {
       if (!containerRef.current || !selectedTileId || selectedTileIds.length !== 1) {
         return false
@@ -4838,7 +4851,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             return
           }
 
-          createTerminalAt(event.clientX, event.clientY)
+          void createMarkdownNoteAtClientPoint(event.clientX, event.clientY)
         }}
         onDragOverCapture={handleDragOverCapture}
         onDropCapture={handleDropCapture}
