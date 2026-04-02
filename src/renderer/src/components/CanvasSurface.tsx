@@ -394,6 +394,40 @@ const PREVIEW_SHORTCUT_ITEMS: Array<{ key: string; label: string }> = [
   { key: PLACE_ON_CANVAS_SHORTCUT_KEY, label: 'Place preview and return to canvas' },
   { key: 'Esc', label: 'Close preview' }
 ]
+const SHORTCUT_GUIDE_TIPS: Array<{ title: string; body: string }> = [
+  {
+    title: 'Drag files directly into the canvas',
+    body: 'Drag a file from the navigator and drop it where you want it to land.'
+  },
+  {
+    title: 'Use real markdown files for persistent notes',
+    body: `Press \`${MARKDOWN_SHORTCUT_KEY}\` or use the sidebar note button to create a real .md file in the selected folder.`
+  },
+  {
+    title: 'Use canvas notes for fast scratch work',
+    body: 'Press `N` to place a sticky note on the canvas, then convert it to a markdown file from the bottom dock when it becomes real work.'
+  },
+  {
+    title: 'Edit note and code tiles fast',
+    body: 'Select a note or code tile and press `Enter`, or click into the tile, to jump straight into editing.'
+  },
+  {
+    title: 'Paste links and media',
+    body: `Press \`${PASTE_IMAGE_SHORTCUT_KEY}\` with an image, or paste a supported URL, to create canvas content quickly.`
+  },
+  {
+    title: 'Drop Finder files and folders',
+    body: 'Images, videos, PDFs, spreadsheets, presentations, folders, and supported URLs can all be dropped onto the canvas.'
+  },
+  {
+    title: 'Send context into terminals',
+    body: 'Drag a file tile or frame bundle handle onto a terminal connector dot to attach that context.'
+  },
+  {
+    title: 'Bundle related work',
+    body: 'Press `G` or `Shift+G` to draw a group frame, then drop related files inside it before sending the bundle into Claude or Codex.'
+  }
+]
 const DRAW_COLOR_ITEMS: Array<{
   color: TLDefaultColorStyle
   darkModeLabel?: string
@@ -444,6 +478,41 @@ function drawColorLabel(
   return darkMode && item.darkModeLabel ? item.darkModeLabel : item.label
 }
 
+function shortcutGuideSection(title: string, items: Array<{ key: string; label: string }>) {
+  return [`## ${title}`, ...items.map((item) => `- \`${item.key}\` ${item.label}`)]
+}
+
+function shortcutGuideMarkdown() {
+  return [
+    '# Open Canvas Guide',
+    '',
+    'This note is generated from the app shortcut registry and the main canvas workflows.',
+    '',
+    ...shortcutGuideSection('App Shortcuts', APP_SHORTCUT_ITEMS),
+    '',
+    ...shortcutGuideSection('Navigator Shortcuts', NAVIGATOR_SHORTCUT_ITEMS),
+    '',
+    ...shortcutGuideSection('Preview Shortcuts', PREVIEW_SHORTCUT_ITEMS),
+    '',
+    ...shortcutGuideSection(
+      'Canvas Shortcuts',
+      SHORTCUT_ITEMS.map((item) => ({
+        key: item.key,
+        label: item.label
+      }))
+    ),
+    '',
+    '## Canvas Tips',
+    ...SHORTCUT_GUIDE_TIPS.map((tip) => `- **${tip.title}:** ${tip.body}`),
+    '',
+    '## Quick Start',
+    '- Open or select a workspace folder in the left rail.',
+    '- Drag files from the navigator into the canvas to place them spatially.',
+    '- Use markdown tiles for editable notes and code tiles for editable source files.',
+    '- Use the bottom dock to switch tools, zoom, convert sticky notes, and now regenerate this guide any time.'
+  ].join('\n')
+}
+
 function boardToolFromEditorToolId(toolId: string): BoardTool | null {
   switch (toolId) {
     case 'arrow':
@@ -469,7 +538,7 @@ function isTileSelectionBackgroundTarget(target: HTMLElement | null) {
 function QuickActionIcon({ action }: { action: BoardTool }) {
   if (action === 'select') {
     return (
-      <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-current">
+      <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
         <path d="M3 2.5v11l3.1-3.2 2 3.2 1.3-.8-2-3.2H12L3 2.5Z" />
       </svg>
     )
@@ -480,7 +549,7 @@ function QuickActionIcon({ action }: { action: BoardTool }) {
       <svg
         viewBox="0 0 16 16"
         aria-hidden="true"
-        className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+        className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
       >
         <path d="M3.25 2.75h9.5v10.5h-6l-3.5-3.5Z" />
         <path d="M6.75 13.25V9.75H3.25" />
@@ -493,7 +562,7 @@ function QuickActionIcon({ action }: { action: BoardTool }) {
       <svg
         viewBox="0 0 16 16"
         aria-hidden="true"
-        className="h-4 w-4 fill-none stroke-current stroke-[1.35]"
+        className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.35]"
       >
         <rect x="3" y="3" width="10" height="10" rx="1.8" />
       </svg>
@@ -505,7 +574,7 @@ function QuickActionIcon({ action }: { action: BoardTool }) {
       <svg
         viewBox="0 0 16 16"
         aria-hidden="true"
-        className="h-4 w-4 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
+        className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.35] [stroke-linecap:round] [stroke-linejoin:round]"
       >
         <path d="m3.25 12.75 1.1-3.25L10.9 2.95a1.1 1.1 0 0 1 1.55 0l.6.6a1.1 1.1 0 0 1 0 1.55L6.5 11.65l-3.25 1.1Z" />
         <path d="m9.85 4 2.15 2.15" />
@@ -1131,6 +1200,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const [focusedTerminal, setFocusedTerminal] = useState<{ mode: TerminalUiMode; tileId: string } | null>(null)
     const [tileRefreshTokens, setTileRefreshTokens] = useState<Record<string, number>>({})
     const [convertingStickyNote, setConvertingStickyNote] = useState(false)
+    const [creatingShortcutGuide, setCreatingShortcutGuide] = useState(false)
     const [renamingTileId, setRenamingTileId] = useState<string | null>(null)
     const [renamingValue, setRenamingValue] = useState('')
     const [zoomIndicator, setZoomIndicator] = useState<string | null>(null)
@@ -2124,6 +2194,30 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       appendTile(createdTile, { immediate: true })
       setTileSelection([createdTile.id])
+    }
+
+    async function createShortcutGuideNote() {
+      if (!activeWorkspacePath || creatingShortcutGuide) {
+        return
+      }
+
+      setCreatingShortcutGuide(true)
+
+      try {
+        const createdNode = await onCreateMarkdownCard({
+          baseName: 'Open Canvas Guide',
+          initialContent: shortcutGuideMarkdown(),
+          targetDirectoryPath: importTargetDirectoryPath ?? activeWorkspacePath
+        })
+
+        if (!createdNode) {
+          return
+        }
+
+        spawnFileTile(createdNode)
+      } finally {
+        setCreatingShortcutGuide(false)
+      }
     }
 
     function detachContextTile(terminalTileId: string, sourceTileId: string) {
@@ -4413,181 +4507,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         onDragOverCapture={handleDragOverCapture}
         onDropCapture={handleDropCapture}
       >
-        <div
-          data-canvas-ui="true"
-          className="group absolute right-3 top-3 z-[220]"
-        >
-          <div className="flex min-h-10 w-10 max-w-[calc(100vw-1.5rem)] origin-top-right items-start overflow-hidden rounded-[var(--radius-surface)] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] shadow-[0_10px_22px_rgba(15,23,42,0.12)] backdrop-blur transition-[width,max-height,border-radius] duration-200 ease-out max-h-10 group-hover:w-[28rem] group-hover:max-h-[26rem] group-hover:rounded-[var(--radius-surface)] group-focus-within:w-[28rem] group-focus-within:max-h-[26rem] group-focus-within:rounded-[var(--radius-surface)]">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center self-start text-[13px] font-semibold tracking-[0.2em] text-[var(--text-dim)]">
-              ?
-            </div>
-            <div className="min-w-0 flex-1 self-stretch overflow-y-auto pr-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-              <div className="pt-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
-                Shortcut Guide
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                {APP_SHORTCUT_ITEMS.map((shortcut) => (
-                  <div
-                    key={shortcut.label}
-                    className="flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-left"
-                  >
-                    <span className="min-w-0 flex-1 whitespace-normal text-[11px] font-semibold uppercase leading-[1.35] tracking-[0.08em] text-[var(--text-dim)]">
-                      {shortcut.label}
-                    </span>
-                    <span className="shrink-0 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-1)] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
-                      {shortcut.key}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
-                Navigator
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                {NAVIGATOR_SHORTCUT_ITEMS.map((shortcut) => (
-                  <div
-                    key={shortcut.label}
-                    className="flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-left"
-                  >
-                    <span className="min-w-0 flex-1 whitespace-normal text-[11px] font-semibold uppercase leading-[1.35] tracking-[0.08em] text-[var(--text-dim)]">
-                      {shortcut.label}
-                    </span>
-                    <span className="shrink-0 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-1)] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
-                      {shortcut.key}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
-                Preview
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                {PREVIEW_SHORTCUT_ITEMS.map((shortcut) => (
-                  <div
-                    key={shortcut.label}
-                    className="flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-left"
-                  >
-                    <span className="min-w-0 flex-1 whitespace-normal text-[11px] font-semibold uppercase leading-[1.35] tracking-[0.08em] text-[var(--text-dim)]">
-                      {shortcut.label}
-                    </span>
-                    <span className="shrink-0 rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-1)] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
-                      {shortcut.key}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
-                Canvas Tools
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-2 pb-3">
-                {SHORTCUT_ITEMS.map((shortcut) => {
-                  const isActive =
-                    isBoardToolAction(shortcut.action) && activeBoardTool === shortcut.action
-                  const isDisabled = shortcut.action === 'markdown' && !activeWorkspacePath
-
-                  return (
-                    <button
-                      key={shortcut.action}
-                      disabled={isDisabled}
-                      className={clsx(
-                        'flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[var(--radius-control)] border px-3 py-2 text-left transition',
-                        isActive
-                          ? 'border-[color:var(--text)] bg-[var(--text)] text-[var(--surface-0)]'
-                          : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:text-[var(--text)]',
-                        isDisabled && 'cursor-not-allowed opacity-45 hover:border-[color:var(--line)] hover:text-[var(--text-dim)]'
-                      )}
-                      onClick={() => runShortcutAction(shortcut.action)}
-                    >
-                      <span className="min-w-0 flex-1 whitespace-normal text-[11px] font-semibold uppercase leading-[1.35] tracking-[0.08em]">
-                        {shortcut.label}
-                      </span>
-                      <span
-                        className={clsx(
-                          'shrink-0 rounded-[var(--radius-control)] border px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em]',
-                          isActive
-                            ? 'border-white/25 bg-white/12 text-white'
-                            : 'border-[color:var(--line)] bg-[var(--surface-1)] text-[var(--text-faint)]'
-                        )}
-                      >
-                        {shortcut.key}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-              <div className="grid gap-2 border-t border-[color:var(--line)] py-3 text-[11px] leading-5 text-[var(--text-dim)]">
-                <div>
-                  <span className="font-semibold text-[var(--text)]">Canvas Note:</span> press{' '}
-                  <span className="font-[var(--font-mono)] text-[10px] uppercase tracking-[0.08em] text-[var(--text)]">
-                    N
-                  </span>{' '}
-                  to place a note on the canvas.
-                </div>
-                <div>
-                  <span className="font-semibold text-[var(--text)]">New .md file:</span> use the
-                  shortcut{' '}
-                  <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
-                    {MARKDOWN_SHORTCUT_KEY}
-                  </span>{' '}
-                  or the sidebar button. It creates <span className="text-[var(--text)]">Untitled.md</span>{' '}
-                  in the selected folder, or beside the selected file.
-                </div>
-                <div>
-                  <span className="font-semibold text-[var(--text)]">Paste media or link:</span> press{' '}
-                  <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
-                    {PASTE_IMAGE_SHORTCUT_KEY}
-                  </span>{' '}
-                  with an image or a supported URL, or drop Finder files, folders, images, videos,
-                  PDFs, spreadsheets, presentations, or URLs onto the canvas. External imports are saved in the
-                  selected folder when possible, otherwise in{' '}
-                  <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
-                    the workspace root
-                  </span>{' '}
-                  . Clipboard/media imports still use{' '}
-                  <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
-                    .claude-canvas/assets
-                  </span>{' '}
-                  inside the active workspace.
-                </div>
-                <div>
-                  <span className="font-semibold text-[var(--text)]">Send to a terminal:</span>{' '}
-                  drag a file, image, video, PDF, spreadsheet, presentation, or frame bundle dot onto a terminal dot.
-                </div>
-                <div>
-                  <span className="font-semibold text-[var(--text)]">Remove selected tile:</span> press{' '}
-                  <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
-                    Backspace
-                  </span>{' '}
-                  or{' '}
-                  <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
-                    Delete
-                  </span>
-                  .
-                </div>
-                <div>
-                  <span className="font-semibold text-[var(--text)]">Edit selected note or code tile:</span>{' '}
-                  press{' '}
-                  <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
-                    Enter
-                  </span>{' '}
-                  to jump into the file and start typing.
-                </div>
-                <div>
-                  <span className="font-semibold text-[var(--text)]">Group bundle:</span> press{' '}
-                  <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
-                    G
-                  </span>{' '}
-                  or{' '}
-                  <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
-                    Shift+G
-                  </span>{' '}
-                  to draw a group, drop files inside it, then drag the blue handle into Claude.
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
         {linkSourceTile ? (
           <div className="pointer-events-none absolute left-3 top-3 z-[210] rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[color:var(--surface-overlay)] px-3 py-1.5 text-[11px] font-medium tracking-[0.12em] text-[var(--text-dim)] backdrop-blur">
             Drag <span className="text-[var(--text)]">{linkSourceTile.title}</span> into a terminal
@@ -5440,7 +5359,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           data-canvas-ui="true"
           className="absolute bottom-0 right-0 z-[220] overflow-hidden rounded-tl-[var(--radius-surface)] border-l border-t border-[color:var(--line)] bg-[color:var(--surface-overlay)] shadow-[0_-8px_24px_rgba(15,23,42,0.1)] backdrop-blur"
         >
-          <div className="flex items-center gap-1.5 border-b border-[color:var(--line)] px-3 py-2">
+          <div className="flex items-center gap-1 border-b border-[color:var(--line)] px-2.5 py-1.5">
             {QUICK_ACTION_ITEMS.map((action) => {
               const isActive = activeBoardTool === action.action
 
@@ -5451,7 +5370,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     data-managed-tooltip="custom"
                     data-shortcut={action.key}
                     className={clsx(
-                      'flex h-9 w-9 items-center justify-center rounded-[var(--radius-control)] border transition',
+                      'flex h-8 w-8 items-center justify-center rounded-[var(--radius-control)] border transition',
                       isActive
                         ? 'border-[color:var(--text)] bg-[var(--text)] text-[var(--surface-0)]'
                         : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:text-[var(--text)]'
@@ -5470,6 +5389,31 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 </HoverTooltip>
               )
             })}
+            <HoverTooltip
+              label={
+                activeWorkspacePath
+                  ? 'Add shortcut guide note to canvas'
+                  : 'Add a workspace to save the shortcut guide'
+              }
+            >
+              <button
+                type="button"
+                aria-label="Add shortcut guide note to canvas"
+                data-managed-tooltip="custom"
+                className="ml-0.5 flex h-8 w-8 items-center justify-center rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--surface-0)] text-[0.95rem] font-semibold leading-none tracking-[0.02em] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-45"
+                disabled={!activeWorkspacePath || creatingShortcutGuide}
+                onClick={() => {
+                  void createShortcutGuideNote()
+                }}
+                title={
+                  activeWorkspacePath
+                    ? 'Add shortcut guide note to canvas'
+                    : 'Add a workspace to save the shortcut guide'
+                }
+              >
+                {creatingShortcutGuide ? '…' : '?'}
+              </button>
+            </HoverTooltip>
           </div>
 
           {activeBoardTool === 'draw' ? (

@@ -107,6 +107,21 @@ select {
   font-family: var(--font-ui);
 }
 
+.sidebar-preview-field {
+  font-family: "Inter", sans-serif !important;
+  font-size: 8px !important;
+  font-weight: 400 !important;
+  line-height: 1.1 !important;
+  letter-spacing: 0.01em !important;
+  color: var(--text-faint) !important;
+}
+
+.sidebar-preview-field::placeholder {
+  font: inherit;
+  color: var(--text-faint) !important;
+  opacity: 1 !important;
+}
+
 button {
   cursor: pointer;
 }

@@ -40,14 +40,13 @@ const SIDEBAR_RIGHT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2192' : null
 const SIDEBAR_TOGGLE_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2193' : null
 const NAV_TITLE_TEXT_CLASS =
   'truncate text-[15px] font-semibold leading-[1.05] tracking-[-0.02em] text-[var(--text)]'
-const NAV_CONTROL_TEXT_CLASS = 'text-[13px] font-medium leading-none text-[var(--text)]'
-const NAV_META_TEXT_CLASS = 'text-[11px] leading-[1.35] text-[var(--text-dim)]'
+const NAV_META_TEXT_CLASS = 'text-[11px] font-normal leading-[1.35] text-[var(--text-dim)]'
 const NAV_CAPTION_TEXT_CLASS =
   'text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-faint)]'
 
 function SearchIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.4]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3 w-3 fill-none stroke-current stroke-[1.35]">
       <circle cx="7" cy="7" r="4.25" />
       <path d="M10.25 10.25L13.5 13.5" strokeLinecap="round" />
     </svg>
@@ -59,7 +58,7 @@ function TreeViewIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3 w-3 fill-none stroke-current stroke-[1.25] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <rect x="2.25" y="2.75" width="4" height="3.75" rx="0.8" />
       <rect x="2.25" y="9.5" width="4" height="3.75" rx="0.8" />
@@ -74,7 +73,7 @@ function ExpandTreeIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3 w-3 fill-none stroke-current stroke-[1.25] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="M2.5 3.25H13.5M2.5 8H9.75M2.5 12.75H9.75" />
       <path d="M11.25 6.1V9.9M9.35 8H13.15" />
@@ -87,7 +86,7 @@ function CollapseTreeIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3 w-3 fill-none stroke-current stroke-[1.25] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="M2.5 3.25H13.5M2.5 8H13.5M2.5 12.75H13.5" />
       <path d="M9.35 8H13.15" />
@@ -100,7 +99,7 @@ function RecentFilesIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3 w-3 fill-none stroke-current stroke-[1.25] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="M4 2.5H8.9L12.5 6.05V12A1.5 1.5 0 0 1 11 13.5H4A1.5 1.5 0 0 1 2.5 12V4A1.5 1.5 0 0 1 4 2.5Z" />
       <path d="M8.7 2.75V6H12" />
@@ -113,7 +112,7 @@ function RecentFilesIcon() {
 
 function ClockIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.25 w-3.25 fill-none stroke-current stroke-[1.35]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-[0.7rem] w-[0.7rem] fill-none stroke-current stroke-[1.3]">
       <circle cx="8" cy="8" r="5.1" />
       <path d="M8 5.25V8.2L10.2 9.3" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -125,7 +124,7 @@ function SortArrowIcon({ ascending }: { ascending: boolean }) {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className={clsx('h-3 w-3 fill-current transition-transform', ascending && 'rotate-180')}
+      className={clsx('h-[0.65rem] w-[0.65rem] fill-current transition-transform', ascending && 'rotate-180')}
     >
       <path d="M8 11.9L3.8 6.8H12.2L8 11.9Z" />
     </svg>
@@ -134,7 +133,7 @@ function SortArrowIcon({ ascending }: { ascending: boolean }) {
 
 function AddWorkspaceIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.75 w-3.75 fill-none stroke-current stroke-[1.3]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3 w-3 fill-none stroke-current stroke-[1.25]">
       <path d="M2.25 4.25A1.75 1.75 0 0 1 4 2.5H6.5L8 4h4A1.75 1.75 0 0 1 13.75 5.75V11.75A1.75 1.75 0 0 1 12 13.5H4A1.75 1.75 0 0 1 2.25 11.75V4.25Z" strokeLinejoin="round" />
       <path d="M11 8H8M9.5 6.5V9.5" strokeLinecap="round" />
     </svg>
@@ -143,7 +142,7 @@ function AddWorkspaceIcon() {
 
 function NewNoteIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.75 w-3.75 fill-none stroke-current stroke-[1.3]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3 w-3 fill-none stroke-current stroke-[1.25]">
       <path d="M4 2.25H9.25L12.5 5.5V12A1.75 1.75 0 0 1 10.75 13.75H4A1.75 1.75 0 0 1 2.25 12V4A1.75 1.75 0 0 1 4 2.25Z" strokeLinejoin="round" />
       <path d="M9 2.75V5.75H12" strokeLinejoin="round" />
       <path d="M8 8H5M8 10.5H5" strokeLinecap="round" />
@@ -153,7 +152,7 @@ function NewNoteIcon() {
 
 function ClaudeTerminalIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.75 w-3.75 fill-none stroke-current stroke-[1.3]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3 w-3 fill-none stroke-current stroke-[1.25]">
       <rect x="2" y="2.5" width="12" height="11" rx="2" />
       <path d="M4.5 6L6.75 8L4.5 10" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M8.25 10H11.5" strokeLinecap="round" />
@@ -164,7 +163,7 @@ function ClaudeTerminalIcon() {
 
 function CodexTerminalIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.75 w-3.75 fill-none stroke-current stroke-[1.3]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3 w-3 fill-none stroke-current stroke-[1.25]">
       <rect x="2" y="2.5" width="12" height="11" rx="2" />
       <path d="M5.1 6.2L3.9 8L5.1 9.8" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M10.9 6.2L12.1 8L10.9 9.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -178,7 +177,7 @@ function ChevronDownIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3 w-3 fill-none stroke-current stroke-[1.25] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="m4.5 6.25 3.5 3.5 3.5-3.5" />
     </svg>
@@ -190,7 +189,7 @@ function TrashIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-3.75 w-3.75 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3 w-3 fill-none stroke-current stroke-[1.25] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="M3.5 4.5H12.5" />
       <path d="M6 2.75H10" />
@@ -206,7 +205,7 @@ function FolderOpenIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-3.75 w-3.75 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3 w-3 fill-none stroke-current stroke-[1.25] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <path d="M2.25 4.25A1.75 1.75 0 0 1 4 2.5H6.35L7.75 4H12A1.75 1.75 0 0 1 13.75 5.75V11.75A1.75 1.75 0 0 1 12 13.5H4A1.75 1.75 0 0 1 2.25 11.75V4.25Z" />
       <path d="M8.25 6.25H11.75V9.75" />
@@ -220,7 +219,7 @@ function CopyIcon() {
     <svg
       viewBox="0 0 16 16"
       aria-hidden="true"
-      className="h-3.75 w-3.75 fill-none stroke-current stroke-[1.3] [stroke-linecap:round] [stroke-linejoin:round]"
+      className="h-3 w-3 fill-none stroke-current stroke-[1.25] [stroke-linecap:round] [stroke-linejoin:round]"
     >
       <rect x="5.25" y="3.25" width="7.5" height="9.5" rx="1.5" />
       <path d="M3.25 10.75V5A1.75 1.75 0 0 1 5 3.25" />
@@ -230,7 +229,7 @@ function CopyIcon() {
 
 function SidebarIcon({ collapsed }: { collapsed: boolean }) {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.25]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3 w-3 fill-none stroke-current stroke-[1.2]">
       <rect x="1.75" y="2.25" width="12.5" height="11.5" rx="1.1" />
       <path d="M5.5 2.75V13.25" />
       {collapsed ? (
@@ -244,7 +243,7 @@ function SidebarIcon({ collapsed }: { collapsed: boolean }) {
 
 function DockSidePreviewIcon({ side }: { side: SidebarSide }) {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.25]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3 w-3 fill-none stroke-current stroke-[1.2]">
       <rect x="1.75" y="2.25" width="12.5" height="11.5" rx="1.1" />
       <path d={side === 'left' ? 'M5.25 2.75V13.25' : 'M10.75 2.75V13.25'} />
     </svg>
@@ -254,7 +253,7 @@ function DockSidePreviewIcon({ side }: { side: SidebarSide }) {
 function ThemeIcon({ darkMode }: { darkMode: boolean }) {
   if (darkMode) {
     return (
-      <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.3]">
+      <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3 w-3 fill-none stroke-current stroke-[1.25]">
         <path
           d="M10.9 1.75C8.25 2.1 6.2 4.35 6.2 7.15C6.2 10.2 8.7 12.65 11.75 12.65C12.35 12.65 12.95 12.55 13.45 12.35C12.55 13.45 11.15 14.1 9.6 14.1C6.85 14.1 4.6 11.9 4.6 9.1C4.6 6.15 6.95 3.7 9.85 3.7C10.2 3.7 10.55 3.75 10.9 3.85V1.75Z"
           strokeLinejoin="round"
@@ -264,7 +263,7 @@ function ThemeIcon({ darkMode }: { darkMode: boolean }) {
   }
 
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current stroke-[1.3]">
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3 w-3 fill-none stroke-current stroke-[1.25]">
       <circle cx="8" cy="8" r="2.9" />
       <path d="M8 1.5V3.2M8 12.8V14.5M14.5 8H12.8M3.2 8H1.5M12.6 3.4L11.35 4.65M4.65 11.35L3.4 12.6M12.6 12.6L11.35 11.35M4.65 4.65L3.4 3.4" strokeLinecap="round" />
     </svg>
@@ -653,7 +652,10 @@ function SidebarComponent({
   }, [focusNavigatorVersion])
 
   return (
-    <aside className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-r border-[color:var(--line)] bg-[var(--nav-panel)] font-[var(--font-ui)]">
+    <aside
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-r border-[color:var(--line)] bg-[var(--nav-panel)]"
+      style={{ fontFamily: 'Inter, sans-serif' }}
+    >
       <div className="relative shrink-0 border-b border-[color:var(--line)] px-3 pb-1.5 pt-[32px]">
         <div aria-hidden="true" className="app-drag-region absolute inset-x-0 top-0 h-10" />
         <div className="app-drag-region flex items-center gap-2">
@@ -708,8 +710,7 @@ function SidebarComponent({
                   data-managed-tooltip="custom"
                   data-shortcut={WORKSPACE_SWITCHER_SHORTCUT_KEY}
                   className={clsx(
-                    'h-9 w-full appearance-none rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] px-3 pr-9 outline-none transition focus:border-[color:var(--accent)]',
-                    NAV_CONTROL_TEXT_CLASS
+                    'sidebar-preview-field h-9 w-full appearance-none rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] px-3 pr-9 outline-none transition focus:border-[color:var(--accent)]'
                   )}
                   value={config.activeWorkspace}
                   onChange={(event) => onSelectWorkspace(Number(event.target.value))}
@@ -927,8 +928,7 @@ function SidebarComponent({
                 placeholder={searchPlaceholder}
                 title={composeTooltipLabel(searchFieldLabel, SEARCH_SHORTCUT_KEY)}
                 className={clsx(
-                  'h-9 w-full rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] pl-[2.125rem] outline-none transition placeholder:text-[var(--text-faint)] focus:border-[color:var(--accent)]',
-                  NAV_CONTROL_TEXT_CLASS,
+                  'sidebar-preview-field h-9 w-full rounded-[var(--radius-control)] border border-[color:var(--line)] bg-[var(--nav-surface)] pl-[2.125rem] outline-none transition focus:border-[color:var(--accent)]',
                   compactBrowserChrome ? 'pr-3' : 'pr-[6rem]'
                 )}
               />
@@ -942,7 +942,7 @@ function SidebarComponent({
             </div>
           ) : null}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[var(--nav-panel)] px-2 py-1.5">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[var(--nav-panel)] px-2.5 pb-2 pt-2.5">
           {activeWorkspacePath ? (
             fileBrowserMode === 'recent' ? (
               workspaceFiles.length === 0 ? (
