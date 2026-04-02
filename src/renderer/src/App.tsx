@@ -924,6 +924,42 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    function handleBoardTraversalKeyDown(event: KeyboardEvent) {
+      const isEditing = keyboardShortcutsBlocked(event.target)
+
+      if (isEditing) {
+        return
+      }
+
+      if (!event.metaKey && !event.ctrlKey && event.altKey && event.shiftKey) {
+        const boardTraversalStep =
+          event.code === 'ArrowRight' ? 1 : event.code === 'ArrowLeft' ? -1 : 0
+
+        if (boardTraversalStep !== 0) {
+          event.preventDefault()
+          event.stopImmediatePropagation()
+          event.stopPropagation()
+
+          if (viewerFile) {
+            setViewerFile(null)
+          }
+
+          window.requestAnimationFrame(() => {
+            canvasRef.current?.focusCanvas()
+            canvasRef.current?.cycleBoardSelection(boardTraversalStep as 1 | -1)
+          })
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleBoardTraversalKeyDown, true)
+
+    return () => {
+      window.removeEventListener('keydown', handleBoardTraversalKeyDown, true)
+    }
+  }, [viewerFile])
+
+  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       const isEditing = keyboardShortcutsBlocked(event.target)
 

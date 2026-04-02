@@ -325,7 +325,7 @@ function outlineItemAttributes(parentAttributes: Record<string, unknown> = {}) {
   }
 }
 
-function currentOutlineItem(editor: Editor) {
+export function currentOutlineItem(editor: Editor) {
   let itemType: OutlineItemType | null = null
   let listItemPos: ReturnType<(typeof listHelpers)['findListItemPos']> = null
 
@@ -386,7 +386,7 @@ function outlineSiblingPos(parentListPos: number, parentListNode: { child: (inde
   return offset
 }
 
-function moveCurrentOutlineItem(editor: Editor, direction: 'up' | 'down') {
+export function moveCurrentOutlineItem(editor: Editor, direction: 'up' | 'down') {
   const outlineItem = currentOutlineItem(editor)
 
   if (!outlineItem) {
@@ -430,7 +430,7 @@ function moveCurrentOutlineItem(editor: Editor, direction: 'up' | 'down') {
   return true
 }
 
-function setCurrentOutlineItemCollapsed(editor: Editor, collapsed: boolean) {
+export function setCurrentOutlineItemCollapsed(editor: Editor, collapsed: boolean) {
   const outlineItem = currentOutlineItem(editor)
 
   if (!outlineItem || !outlineItemHasNestedList(outlineItem.itemNode)) {
@@ -450,7 +450,7 @@ function setCurrentOutlineItemCollapsed(editor: Editor, collapsed: boolean) {
   return true
 }
 
-function toggleCurrentOutlineItemCollapsed(editor: Editor) {
+export function toggleCurrentOutlineItemCollapsed(editor: Editor) {
   const outlineItem = currentOutlineItem(editor)
 
   if (!outlineItem || !outlineItemHasNestedList(outlineItem.itemNode)) {
@@ -458,6 +458,40 @@ function toggleCurrentOutlineItemCollapsed(editor: Editor) {
   }
 
   return setCurrentOutlineItemCollapsed(editor, !Boolean(outlineItem.itemNode.attrs.collapsed))
+}
+
+export function indentCurrentOutlineItem(editor: Editor) {
+  const outlineItem = currentOutlineItem(editor)
+
+  if (!outlineItem) {
+    return false
+  }
+
+  return editor.commands.sinkListItem(outlineItem.itemType)
+}
+
+export function outdentCurrentOutlineItem(editor: Editor) {
+  const outlineItem = currentOutlineItem(editor)
+
+  if (!outlineItem) {
+    return false
+  }
+
+  return editor.commands.liftListItem(outlineItem.itemType)
+}
+
+export function transformCurrentBlockToList(
+  editor: Editor,
+  command: Extract<SlashCommand, 'bulletList' | 'orderedList' | 'taskList'>
+) {
+  switch (command) {
+    case 'bulletList':
+      return editor.commands.toggleBulletList()
+    case 'orderedList':
+      return editor.commands.toggleOrderedList()
+    case 'taskList':
+      return editor.commands.toggleTaskList()
+  }
 }
 
 export const MarkdownListItem = ListItem.extend({
@@ -501,11 +535,19 @@ export const MarkdownShortcutExtension = Extension.create({
 
   addKeyboardShortcuts() {
     return {
+      Tab: () => indentCurrentOutlineItem(this.editor),
+      'Shift-Tab': () => outdentCurrentOutlineItem(this.editor),
       'Mod-Enter': () => toggleCurrentOutlineItemCollapsed(this.editor),
       'Mod-Alt-ArrowLeft': () => setCurrentOutlineItemCollapsed(this.editor, true),
       'Mod-Alt-ArrowRight': () => setCurrentOutlineItemCollapsed(this.editor, false),
       'Mod-Shift-ArrowDown': () => moveCurrentOutlineItem(this.editor, 'down'),
       'Mod-Shift-ArrowUp': () => moveCurrentOutlineItem(this.editor, 'up'),
+      'Mod-Alt-5': () => transformCurrentBlockToList(this.editor, 'bulletList'),
+      'Mod-Shift-5': () => transformCurrentBlockToList(this.editor, 'bulletList'),
+      'Mod-Alt-6': () => transformCurrentBlockToList(this.editor, 'orderedList'),
+      'Mod-Shift-6': () => transformCurrentBlockToList(this.editor, 'orderedList'),
+      'Mod-Alt-7': () => transformCurrentBlockToList(this.editor, 'taskList'),
+      'Mod-Shift-7': () => transformCurrentBlockToList(this.editor, 'taskList'),
       Enter: () => {
         const shortcut = currentShortcutRange(this.editor)
 

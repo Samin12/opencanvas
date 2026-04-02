@@ -558,18 +558,14 @@ function TerminalPaneComponent(props: TerminalPaneProps) {
 
     syncTerminalWheelAttributes(hostRef.current, isSelected)
 
-    if (!isSelected) {
+    if (!isSelected || focusMode !== 'shell') {
       return
-    }
-
-    if (focusMode !== 'shell') {
-      onFocusModeChange('shell')
     }
 
     window.requestAnimationFrame(() => {
       terminalRef.current?.focus()
     })
-  }, [focusMode, isSelected, onFocusModeChange])
+  }, [focusMode, isSelected])
 
   useEffect(() => {
     if (!terminalRef.current) {

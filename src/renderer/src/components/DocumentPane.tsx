@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom'
 
 import type { Editor as TiptapEditor, Range } from '@tiptap/core'
 import { Markdown } from '@tiptap/markdown'
+import { TextSelection } from '@tiptap/pm/state'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { TaskList } from '@tiptap/extension-list'
 import StarterKit from '@tiptap/starter-kit'
@@ -31,12 +32,17 @@ import {
 } from '../utils/markdownImages'
 import {
   currentSlashCommandQuery,
+  currentOutlineItem,
+  indentCurrentOutlineItem,
   MARKDOWN_SLASH_COMMAND_OPTIONS,
   MarkdownListItem,
   runSlashCommand,
   type SlashCommand,
   MarkdownShortcutExtension,
-  MarkdownTaskItem
+  MarkdownTaskItem,
+  moveCurrentOutlineItem,
+  outdentCurrentOutlineItem,
+  toggleCurrentOutlineItemCollapsed
 } from '../utils/markdownShortcuts'
 
 const COLLABORATOR_FILE_MIME = 'application/x-collaborator-file'
@@ -661,6 +667,8 @@ function RichNoteEditor({
   const lastPublishedHeadingRef = useRef<string | null>(null)
   const [slashMenuState, setSlashMenuState] = useState<SlashMenuState | null>(null)
   const [slashMenuIndex, setSlashMenuIndex] = useState(0)
+  const [outlineNavigationPos, setOutlineNavigationPos] = useState<number | null>(null)
+  const outlineNavigationPosRef = useRef<number | null>(null)
   const autoSizeEnabled =
     variant === 'tile' && noteSizingMode === 'auto' && Boolean(onNoteContentHeightChange)
   const resolvedNoteViewScale = variant === 'tile' ? clampNoteViewScale(noteViewScale) : 1
@@ -670,6 +678,7 @@ function RichNoteEditor({
     null
   slashMenuStateRef.current = slashMenuState
   slashMenuItemsRef.current = slashMenuItems
+  outlineNavigationPosRef.current = outlineNavigationPos
 
   function closeSlashMenu() {
     slashMenuIndexRef.current = 0
@@ -839,12 +848,259 @@ function RichNoteEditor({
       return
     }
 
+    clearOutlineNavigation()
+
     if (position === 'end') {
       editor.commands.focus('end')
       return
     }
 
     editor.commands.focus()
+  }
+
+  function clearOutlineNavigation() {
+    outlineNavigationPosRef.current = null
+    setOutlineNavigationPos(null)
+  }
+
+  function collectOutlineNavigationTargets(activeEditor: TiptapEditor) {
+    const targets: number[] = []
+
+    activeEditor.state.doc.descendants((node, pos, parent) => {
+      if (node.type.name === 'listItem' || node.type.name === 'taskItem') {
+        targets.push(pos)
+        return !Boolean(node.attrs.collapsed)
+      }
+
+      if (
+        (node.type.name === 'paragraph' || node.type.name === 'heading' || node.type.name === 'codeBlock') &&
+        parent?.type.name !== 'listItem' &&
+        parent?.type.name !== 'taskItem'
+      ) {
+        targets.push(pos)
+      }
+
+      return true
+    })
+
+    return targets
+  }
+
+  function currentOutlineNavigationTargetPos(activeEditor: TiptapEditor) {
+    const outlineItem = currentOutlineItem(activeEditor)
+
+    if (outlineItem) {
+      return outlineItem.itemPos
+    }
+
+    const { $from } = activeEditor.state.selection
+
+    for (let depth = $from.depth; depth > 0; depth -= 1) {
+      const node = $from.node(depth)
+      const parentNode = depth > 0 ? $from.node(depth - 1) : null
+
+      if (
+        (node.type.name === 'paragraph' || node.type.name === 'heading' || node.type.name === 'codeBlock') &&
+        parentNode?.type.name !== 'listItem' &&
+        parentNode?.type.name !== 'taskItem'
+      ) {
+        return $from.before(depth)
+      }
+    }
+
+    return collectOutlineNavigationTargets(activeEditor)[0] ?? null
+  }
+
+  function focusOutlineNavigationTarget(activeEditor: TiptapEditor, targetPos: number) {
+    const targetNode = activeEditor.state.doc.nodeAt(targetPos)
+
+    if (!targetNode) {
+      return false
+    }
+
+    const selectionPos =
+      targetNode.type.name === 'listItem' || targetNode.type.name === 'taskItem'
+        ? Math.min(targetPos + 2, targetPos + targetNode.nodeSize - 2)
+        : targetPos + 1
+
+    const tr = activeEditor.state.tr.setSelection(
+      TextSelection.near(activeEditor.state.doc.resolve(selectionPos))
+    )
+
+    activeEditor.view.dispatch(tr.scrollIntoView())
+    activeEditor.view.focus()
+    outlineNavigationPosRef.current = targetPos
+    setOutlineNavigationPos(targetPos)
+    return true
+  }
+
+  function activateOutlineNavigation(activeEditor: TiptapEditor) {
+    const targetPos = currentOutlineNavigationTargetPos(activeEditor)
+
+    if (targetPos === null) {
+      return false
+    }
+
+    return focusOutlineNavigationTarget(activeEditor, targetPos)
+  }
+
+  function moveOutlineNavigation(activeEditor: TiptapEditor, direction: -1 | 1) {
+    const targets = collectOutlineNavigationTargets(activeEditor)
+
+    if (targets.length === 0) {
+      return false
+    }
+
+    const currentPos = outlineNavigationPosRef.current ?? currentOutlineNavigationTargetPos(activeEditor)
+    const currentIndex = currentPos === null ? -1 : targets.indexOf(currentPos)
+    const nextIndex =
+      currentIndex === -1
+        ? direction > 0
+          ? 0
+          : targets.length - 1
+        : Math.max(0, Math.min(targets.length - 1, currentIndex + direction))
+    const nextPos = targets[nextIndex]
+
+    if (typeof nextPos !== 'number') {
+      return false
+    }
+
+    return focusOutlineNavigationTarget(activeEditor, nextPos)
+  }
+
+  function syncOutlineNavigationHighlight(activeEditor: TiptapEditor, targetPos: number | null) {
+    const hostElement = editorHostRef.current
+
+    if (!hostElement) {
+      return
+    }
+
+    hostElement.toggleAttribute('data-outline-navigation', targetPos !== null)
+    hostElement
+      .querySelectorAll<HTMLElement>('[data-outline-selected="true"]')
+      .forEach((element) => element.removeAttribute('data-outline-selected'))
+
+    if (targetPos === null) {
+      return
+    }
+
+    const targetNode = activeEditor.view.nodeDOM(targetPos)
+
+    if (!(targetNode instanceof HTMLElement)) {
+      return
+    }
+
+    const highlightTarget =
+      targetNode.matches('li')
+        ? targetNode.querySelector<HTMLElement>(':scope > div > p:first-child, :scope > p:first-child') ?? targetNode
+        : targetNode
+
+    highlightTarget.setAttribute('data-outline-selected', 'true')
+    highlightTarget.scrollIntoView({
+      block: 'nearest'
+    })
+  }
+
+  function handleOutlineNavigationKeyDown(event: {
+    altKey?: boolean
+    ctrlKey?: boolean
+    key: string
+    metaKey?: boolean
+    nativeEvent?: KeyboardEvent
+    preventDefault: () => void
+    shiftKey?: boolean
+    stopImmediatePropagation?: () => void
+    stopPropagation: () => void
+  }) {
+    if (!editor) {
+      return false
+    }
+
+    const modifierKey = Boolean(event.metaKey || event.ctrlKey)
+    const navigationActive = outlineNavigationPosRef.current !== null
+
+    const stopCapturedEvent = () => {
+      event.preventDefault()
+      event.stopImmediatePropagation?.()
+      event.stopPropagation()
+      event.nativeEvent?.stopImmediatePropagation()
+    }
+
+    if (!navigationActive) {
+      if (!modifierKey && !event.altKey && event.key === 'Escape') {
+        stopCapturedEvent()
+        return activateOutlineNavigation(editor)
+      }
+
+      return false
+    }
+
+    if (!modifierKey && !event.altKey && event.key === 'Escape') {
+      stopCapturedEvent()
+      return activateOutlineNavigation(editor)
+    }
+
+    if (!modifierKey && !event.altKey && event.key === 'ArrowDown') {
+      stopCapturedEvent()
+      return moveOutlineNavigation(editor, 1)
+    }
+
+    if (!modifierKey && !event.altKey && event.key === 'ArrowUp') {
+      stopCapturedEvent()
+      return moveOutlineNavigation(editor, -1)
+    }
+
+    if (!modifierKey && !event.altKey && event.key === 'Tab') {
+      stopCapturedEvent()
+      return event.shiftKey ? outdentCurrentOutlineItem(editor) : indentCurrentOutlineItem(editor)
+    }
+
+    if (modifierKey && event.shiftKey && event.key === 'ArrowDown') {
+      stopCapturedEvent()
+      const moved = moveCurrentOutlineItem(editor, 'down')
+
+      if (moved) {
+        activateOutlineNavigation(editor)
+      }
+
+      return moved
+    }
+
+    if (modifierKey && event.shiftKey && event.key === 'ArrowUp') {
+      stopCapturedEvent()
+      const moved = moveCurrentOutlineItem(editor, 'up')
+
+      if (moved) {
+        activateOutlineNavigation(editor)
+      }
+
+      return moved
+    }
+
+    if (modifierKey && !event.shiftKey && event.key === 'Enter') {
+      stopCapturedEvent()
+      const toggled = toggleCurrentOutlineItemCollapsed(editor)
+
+      if (toggled) {
+        activateOutlineNavigation(editor)
+      }
+
+      return toggled
+    }
+
+    if (!modifierKey && !event.altKey && event.key === 'Enter') {
+      stopCapturedEvent()
+      clearOutlineNavigation()
+      editor.commands.focus()
+      return true
+    }
+
+    if (!modifierKey && !event.altKey && event.key.length === 1) {
+      clearOutlineNavigation()
+      return false
+    }
+
+    return false
   }
 
   function dropInsertionPosition(clientX: number, clientY: number) {
@@ -1100,6 +1356,7 @@ function RichNoteEditor({
         MarkdownListItem,
         TaskList,
         MarkdownTaskItem.configure({
+          nested: true,
           HTMLAttributes: {
             'data-type': 'taskItem'
           }
@@ -1202,6 +1459,10 @@ function RichNoteEditor({
       },
       onSelectionUpdate: ({ editor: activeEditor }: { editor: TiptapEditor }) => {
         syncSlashMenu(activeEditor)
+
+        if (outlineNavigationPosRef.current !== null) {
+          setOutlineNavigationPos(currentOutlineNavigationTargetPos(activeEditor))
+        }
       }
     },
     [filePath, variant]
@@ -1230,6 +1491,7 @@ function RichNoteEditor({
       latestDraftRef.current = initialContent
       latestSavedRef.current = normalizedInitialContent
       lastPublishedHeadingRef.current = null
+      setOutlineNavigationPos(null)
       closeSlashMenu()
       return
     }
@@ -1385,6 +1647,14 @@ function RichNoteEditor({
   }, [autoSizeEnabled, editor])
 
   useEffect(() => {
+    if (!editor) {
+      return
+    }
+
+    syncOutlineNavigationHighlight(editor, outlineNavigationPos)
+  }, [editor, outlineNavigationPos])
+
+  useEffect(() => {
     if (!editor || !slashMenuState) {
       return
     }
@@ -1494,7 +1764,11 @@ function RichNoteEditor({
         onDragOverCapture={handleImageDragOver}
         onDropCapture={handleImageDrop}
         onKeyDownCapture={(event) => {
-          handleSlashMenuKeyDown(event)
+          if (handleSlashMenuKeyDown(event)) {
+            return
+          }
+
+          handleOutlineNavigationKeyDown(event)
         }}
         onPasteCapture={handleImagePaste}
         onPointerEnter={() => {
@@ -1504,6 +1778,7 @@ function RichNoteEditor({
         }}
         onPointerDown={(event) => {
           event.stopPropagation()
+          clearOutlineNavigation()
 
           if (variant !== 'tile') {
             focusEditor()
@@ -1511,6 +1786,7 @@ function RichNoteEditor({
         }}
         onDoubleClick={(event) => {
           event.stopPropagation()
+          clearOutlineNavigation()
 
           if (variant === 'tile') {
             focusEditor()

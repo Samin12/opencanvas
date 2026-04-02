@@ -29,6 +29,7 @@ import {
   type TLFrameShape,
   type TLNoteShape,
   type TLShapePartial,
+  type TLShapeId,
   type TLTextShape,
   toRichText
 } from '@tldraw/tlschema'
@@ -105,6 +106,7 @@ interface CanvasSurfaceProps {
 }
 
 export interface CanvasSurfaceHandle {
+  cycleBoardSelection: (step: 1 | -1) => boolean
   createTerminal: (provider?: TerminalProvider) => void
   focusCanvas: () => void
   focusSelectedTileEditor: () => boolean
@@ -166,6 +168,17 @@ type HoveredConnectionState =
       sourceKind: 'tile'
       sourceTileId: string
       terminalTileId: string
+    }
+type TraversableBoardItem =
+  | {
+      bounds: { height: number; width: number; x: number; y: number }
+      id: TLShapeId
+      kind: 'shape'
+    }
+  | {
+      bounds: { height: number; width: number; x: number; y: number }
+      id: string
+      kind: 'tile'
     }
 
 interface FrameContextGroup {
@@ -351,6 +364,9 @@ const SEARCH_SHORTCUT_KEY = `${MODIFIER_KEY}+K / ${MODIFIER_KEY}+O`
 const ADD_WORKSPACE_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+O`
 const WORKSPACE_SWITCHER_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+W`
 const TOGGLE_DARK_MODE_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+D`
+const NEXT_BOARD_ITEM_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Option+Shift+→' : 'Alt+Shift+→'
+const PREVIOUS_BOARD_ITEM_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Option+Shift+←' : 'Alt+Shift+←'
+const INTERACT_WITH_SELECTED_ITEM_SHORTCUT_KEY = 'Enter'
 const NOTE_VIEW_SCALE_MIN = 0.85
 const NOTE_VIEW_SCALE_MAX = 1.45
 const NOTE_VIEW_SCALE_STEP = 0.12
@@ -394,7 +410,16 @@ const PREVIEW_SHORTCUT_ITEMS: Array<{ key: string; label: string }> = [
   { key: PLACE_ON_CANVAS_SHORTCUT_KEY, label: 'Place preview and return to canvas' },
   { key: 'Esc', label: 'Close preview' }
 ]
+const BOARD_NAVIGATION_SHORTCUT_ITEMS: Array<{ key: string; label: string }> = [
+  { key: NEXT_BOARD_ITEM_SHORTCUT_KEY, label: 'Next board item' },
+  { key: PREVIOUS_BOARD_ITEM_SHORTCUT_KEY, label: 'Previous board item' },
+  { key: INTERACT_WITH_SELECTED_ITEM_SHORTCUT_KEY, label: 'Interact with selection' }
+]
 const SHORTCUT_GUIDE_TIPS: Array<{ title: string; body: string }> = [
+  {
+    title: 'Cycle across board items from the keyboard',
+    body: `Press \`${NEXT_BOARD_ITEM_SHORTCUT_KEY}\` to move forward or \`${PREVIOUS_BOARD_ITEM_SHORTCUT_KEY}\` to move backward through canvas items only. The board recenters on the selected tile, note, box, arrow, frame, or text shape.`
+  },
   {
     title: 'Drag files directly into the canvas',
     body: 'Drag a file from the navigator and drop it where you want it to land.'
@@ -493,6 +518,8 @@ function shortcutGuideMarkdown() {
     ...shortcutGuideSection('Navigator Shortcuts', NAVIGATOR_SHORTCUT_ITEMS),
     '',
     ...shortcutGuideSection('Preview Shortcuts', PREVIEW_SHORTCUT_ITEMS),
+    '',
+    ...shortcutGuideSection('Board Navigation', BOARD_NAVIGATION_SHORTCUT_ITEMS),
     '',
     ...shortcutGuideSection(
       'Canvas Shortcuts',
@@ -1462,6 +1489,21 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       bringTileToFront(tileId)
     }
 
+    function focusSelectedTerminalShell() {
+      if (!selectedTileId || selectedTileIds.length !== 1) {
+        return false
+      }
+
+      const selectedTile = tileById(selectedTileId)
+
+      if (!selectedTile || selectedTile.type !== 'term') {
+        return false
+      }
+
+      focusTerminal(selectedTile.id, 'shell')
+      return true
+    }
+
     function selectedStickyNoteFromEditor(editor: Editor) {
       const selectedShape = editor.getOnlySelectedShape()
 
@@ -1491,6 +1533,135 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       return selectedShape as TLNoteShape | TLTextShape
+    }
+
+    function traversableBoardItems(): TraversableBoardItem[] {
+      const tileItems: TraversableBoardItem[] = stateRef.current.tiles.map((tile) => ({
+        kind: 'tile',
+        id: tile.id,
+        bounds: {
+          x: tile.x,
+          y: tile.y,
+          width: tile.width,
+          height: tile.height
+        }
+      }))
+      const editor = editorRef.current
+      const shapeItems: TraversableBoardItem[] = editor
+        ? editor
+            .getCurrentPageShapes()
+            .flatMap((shape) => {
+              const bounds = editor.getShapePageBounds(shape.id)
+
+              if (!bounds) {
+                return []
+              }
+
+              return [
+                {
+                  kind: 'shape' as const,
+                  id: shape.id,
+                  bounds: {
+                    x: bounds.x,
+                    y: bounds.y,
+                    width: bounds.w,
+                    height: bounds.h
+                  }
+                }
+              ]
+            })
+        : []
+
+      return [...tileItems, ...shapeItems].sort((left, right) => {
+        if (Math.abs(left.bounds.y - right.bounds.y) > 12) {
+          return left.bounds.y - right.bounds.y
+        }
+
+        if (Math.abs(left.bounds.x - right.bounds.x) > 12) {
+          return left.bounds.x - right.bounds.x
+        }
+
+        if (left.kind !== right.kind) {
+          return left.kind === 'tile' ? -1 : 1
+        }
+
+        return left.id.localeCompare(right.id)
+      })
+    }
+
+    function currentTraversableBoardItem(items: TraversableBoardItem[]) {
+      if (selectedTileId && selectedTileIds.length === 1) {
+        return items.find((item) => item.kind === 'tile' && item.id === selectedTileId) ?? null
+      }
+
+      const selectedShapeIds = editorRef.current?.getSelectedShapeIds() ?? []
+      const primaryShapeId = selectedShapeIds[0] ?? null
+
+      if (!primaryShapeId) {
+        return null
+      }
+
+      return items.find((item) => item.kind === 'shape' && item.id === primaryShapeId) ?? null
+    }
+
+    function centerViewportOnBounds(bounds: { height: number; width: number; x: number; y: number }) {
+      const container = containerRef.current
+
+      if (!container) {
+        return
+      }
+
+      const rect = container.getBoundingClientRect()
+      const { zoom } = stateRef.current.viewport
+      const centerX = bounds.x + bounds.width / 2
+      const centerY = bounds.y + bounds.height / 2
+
+      setViewport({
+        ...stateRef.current.viewport,
+        panX: rect.width / 2 - centerX * zoom,
+        panY: rect.height / 2 - centerY * zoom
+      })
+    }
+
+    function selectTraversableBoardItem(item: TraversableBoardItem) {
+      canvasActiveRef.current = true
+      containerRef.current?.focus()
+      editorRef.current?.focus()
+
+      if (item.kind === 'tile') {
+        editorRef.current?.setSelectedShapes([])
+        setFocusedTerminal(null)
+        setTileSelection([item.id])
+        bringTileToFront(item.id)
+        centerViewportOnBounds(item.bounds)
+        return
+      }
+
+      clearTileSelection()
+      setFocusedTerminal(null)
+      editorRef.current?.setCurrentTool('select')
+      editorRef.current?.setSelectedShapes([item.id])
+      centerViewportOnBounds(item.bounds)
+    }
+
+    function cycleBoardSelection(step: 1 | -1) {
+      const items = traversableBoardItems()
+
+      if (items.length === 0) {
+        return false
+      }
+
+      const currentItem = currentTraversableBoardItem(items)
+      const currentIndex = currentItem ? items.findIndex((item) => item.kind === currentItem.kind && item.id === currentItem.id) : -1
+      const nextIndex =
+        currentIndex === -1
+          ? step > 0
+            ? 0
+            : items.length - 1
+          : (currentIndex + step + items.length) % items.length
+
+      selectTraversableBoardItem(items[nextIndex] as TraversableBoardItem)
+      return true
     }
 
     function startEditingSelectedRichTextShape(options?: { selectAll?: boolean }) {
@@ -3400,6 +3571,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
 
     useImperativeHandle(ref, () => ({
+      cycleBoardSelection: (step: 1 | -1) => {
+        return cycleBoardSelection(step)
+      },
       createTerminal: (provider = 'claude') => {
         createTerminalNearCenter(provider)
       },
@@ -3767,6 +3941,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
         if (event.key === 'Enter' && !event.shiftKey) {
           if (focusSelectedTileEditor()) {
+            event.preventDefault()
+            event.stopPropagation()
+            return
+          }
+
+          if (focusSelectedTerminalShell()) {
             event.preventDefault()
             event.stopPropagation()
             return
