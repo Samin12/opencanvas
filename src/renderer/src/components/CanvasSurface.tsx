@@ -56,6 +56,16 @@ import {
   hasExternalPathPayload
 } from '../utils/externalDropPaths'
 import { keyboardShortcutsBlocked } from '../utils/keyboard'
+import {
+  FOCUS_CANVAS_SHORTCUT_KEY,
+  FOCUS_NAVIGATOR_SHORTCUT_KEY,
+  MODIFIER_KEY,
+  PLACE_ON_CANVAS_SHORTCUT_KEY,
+  TREE_COLLAPSE_ALL_SHORTCUT_KEY,
+  TREE_COLLAPSE_SHORTCUT_KEY,
+  TREE_EXPAND_ALL_SHORTCUT_KEY,
+  TREE_EXPAND_SHORTCUT_KEY
+} from '../utils/navigatorShortcuts'
 import { composeTooltipLabel } from '../utils/buttonTooltips'
 import { renderCanvasDiagramSet } from '../utils/canvasDiagramRenderer'
 import { COLLABORATOR_TERMINAL_CARD_MIME, type TerminalCardTransferPayload } from '../utils/terminalCards'
@@ -96,6 +106,7 @@ interface CanvasSurfaceProps {
 
 export interface CanvasSurfaceHandle {
   createTerminal: (provider?: TerminalProvider) => void
+  focusCanvas: () => void
   importDiagramSet: (envelope: CanvasDiagramEnvelope) => void
   importExcalidrawContent: (content: unknown, title?: string) => Promise<void>
   spawnEmbedTile: (url: string) => void
@@ -334,6 +345,10 @@ const ZOOM_IN_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd++' : 'Ctrl++'
 const ZOOM_OUT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+-' : 'Ctrl+-'
 const RESET_ZOOM_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+0' : 'Ctrl+0'
 const CREATE_CODEX_TERMINAL_SHORTCUT_KEY = 'Shift+C'
+const SEARCH_SHORTCUT_KEY = `${MODIFIER_KEY}+K / ${MODIFIER_KEY}+O`
+const ADD_WORKSPACE_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+O`
+const WORKSPACE_SWITCHER_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+W`
+const TOGGLE_DARK_MODE_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+D`
 const NOTE_VIEW_SCALE_MIN = 0.85
 const NOTE_VIEW_SCALE_MAX = 1.45
 const NOTE_VIEW_SCALE_STEP = 0.12
@@ -356,6 +371,26 @@ const QUICK_ACTION_ITEMS: Array<{ action: BoardTool; key: string; label: string 
   { action: 'note', key: 'N', label: 'Sticky note' },
   { action: 'box', key: 'B', label: 'Box' },
   { action: 'draw', key: 'D', label: 'Draw' }
+]
+const APP_SHORTCUT_ITEMS: Array<{ key: string; label: string }> = [
+  { key: SEARCH_SHORTCUT_KEY, label: 'Search files' },
+  { key: ADD_WORKSPACE_SHORTCUT_KEY, label: 'Add workspace' },
+  { key: WORKSPACE_SWITCHER_SHORTCUT_KEY, label: 'Switch workspace' },
+  { key: TOGGLE_DARK_MODE_SHORTCUT_KEY, label: 'Toggle theme' },
+  { key: FOCUS_NAVIGATOR_SHORTCUT_KEY, label: 'Focus explorer' },
+  { key: FOCUS_CANVAS_SHORTCUT_KEY, label: 'Focus canvas' }
+]
+const NAVIGATOR_SHORTCUT_ITEMS: Array<{ key: string; label: string }> = [
+  { key: '↑ / ↓', label: 'Move selection' },
+  { key: TREE_EXPAND_SHORTCUT_KEY, label: 'Expand folder' },
+  { key: TREE_COLLAPSE_SHORTCUT_KEY, label: 'Collapse folder' },
+  { key: TREE_EXPAND_ALL_SHORTCUT_KEY, label: 'Expand all folders' },
+  { key: TREE_COLLAPSE_ALL_SHORTCUT_KEY, label: 'Collapse all folders' },
+  { key: PLACE_ON_CANVAS_SHORTCUT_KEY, label: 'Place file on canvas' }
+]
+const PREVIEW_SHORTCUT_ITEMS: Array<{ key: string; label: string }> = [
+  { key: PLACE_ON_CANVAS_SHORTCUT_KEY, label: 'Place preview and return to canvas' },
+  { key: 'Esc', label: 'Close preview' }
 ]
 const DRAW_COLOR_ITEMS: Array<{
   color: TLDefaultColorStyle
@@ -3254,6 +3289,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       createTerminal: (provider = 'claude') => {
         createTerminalNearCenter(provider)
       },
+      focusCanvas: () => {
+        canvasActiveRef.current = true
+        containerRef.current?.focus()
+        editorRef.current?.focus()
+      },
       importDiagramSet: (envelope: CanvasDiagramEnvelope) => {
         importDiagramSet(envelope)
       },
@@ -4300,8 +4340,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     return (
       <div
         ref={containerRef}
+        tabIndex={0}
         className={clsx(
-          'canvas-surface relative h-full overflow-hidden bg-[var(--canvas-bg)] touch-none [overscroll-behavior:none]'
+          'canvas-surface relative h-full overflow-hidden bg-[var(--canvas-bg)] touch-none outline-none [overscroll-behavior:none]'
         )}
         onPointerDownCapture={(event) => {
           const target = event.target as HTMLElement
@@ -4349,7 +4390,61 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             </div>
             <div className="min-w-0 flex-1 self-stretch overflow-y-auto pr-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
               <div className="pt-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
-                Canvas Keys
+                Shortcut Guide
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {APP_SHORTCUT_ITEMS.map((shortcut) => (
+                  <div
+                    key={shortcut.label}
+                    className="flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-left"
+                  >
+                    <span className="min-w-0 flex-1 whitespace-normal text-[11px] font-semibold uppercase leading-[1.35] tracking-[0.08em] text-[var(--text-dim)]">
+                      {shortcut.label}
+                    </span>
+                    <span className="shrink-0 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-1)] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
+                      {shortcut.key}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+                Navigator
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {NAVIGATOR_SHORTCUT_ITEMS.map((shortcut) => (
+                  <div
+                    key={shortcut.label}
+                    className="flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-left"
+                  >
+                    <span className="min-w-0 flex-1 whitespace-normal text-[11px] font-semibold uppercase leading-[1.35] tracking-[0.08em] text-[var(--text-dim)]">
+                      {shortcut.label}
+                    </span>
+                    <span className="shrink-0 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-1)] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
+                      {shortcut.key}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+                Preview
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {PREVIEW_SHORTCUT_ITEMS.map((shortcut) => (
+                  <div
+                    key={shortcut.label}
+                    className="flex min-h-[2.75rem] items-center justify-between gap-3 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 py-2 text-left"
+                  >
+                    <span className="min-w-0 flex-1 whitespace-normal text-[11px] font-semibold uppercase leading-[1.35] tracking-[0.08em] text-[var(--text-dim)]">
+                      {shortcut.label}
+                    </span>
+                    <span className="shrink-0 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-1)] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
+                      {shortcut.key}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+                Canvas Tools
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2 pb-3">
                 {SHORTCUT_ITEMS.map((shortcut) => {
@@ -4424,6 +4519,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 <div>
                   <span className="font-semibold text-[var(--text)]">Send to a terminal:</span>{' '}
                   drag a file, image, video, PDF, spreadsheet, presentation, or frame bundle dot onto a terminal dot.
+                </div>
+                <div>
+                  <span className="font-semibold text-[var(--text)]">Remove selected tile:</span> press{' '}
+                  <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
+                    Backspace
+                  </span>{' '}
+                  or{' '}
+                  <span className="font-[var(--font-mono)] text-[10px] tracking-[0.04em] text-[var(--text)]">
+                    Delete
+                  </span>
+                  .
                 </div>
                 <div>
                   <span className="font-semibold text-[var(--text)]">Group bundle:</span> press{' '}

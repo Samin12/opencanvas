@@ -13,10 +13,18 @@ import logoMark from '../assets/claude-canvas-logo.svg'
 import { FileKindIcon, FileTree } from './FileTree'
 import { HoverTooltip } from './HoverTooltip'
 import { composeTooltipLabel } from '../utils/buttonTooltips'
+import {
+  FOCUS_CANVAS_SHORTCUT_KEY,
+  FOCUS_NAVIGATOR_SHORTCUT_KEY,
+  MODIFIER_KEY,
+  PLACE_ON_CANVAS_SHORTCUT_KEY,
+  TREE_COLLAPSE_ALL_SHORTCUT_KEY,
+  TREE_EXPAND_ALL_SHORTCUT_KEY,
+  TREE_COLLAPSE_SHORTCUT_KEY,
+  TREE_EXPAND_SHORTCUT_KEY,
+  WORKSPACE_SWITCHER_OPEN_EVENT
+} from '../utils/navigatorShortcuts'
 
-const IS_MAC_PLATFORM =
-  typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
-const MODIFIER_KEY = IS_MAC_PLATFORM ? 'Cmd' : 'Ctrl'
 const SEARCH_SHORTCUT_KEY = `${MODIFIER_KEY}+K / ${MODIFIER_KEY}+O`
 const SEARCH_SHORTCUT_HINT = `${MODIFIER_KEY}+K/O`
 const CREATE_NOTE_SHORTCUT_KEY = `${MODIFIER_KEY}+N`
@@ -25,10 +33,11 @@ const CREATE_CODEX_TERMINAL_SHORTCUT_KEY = 'Shift+C'
 const ADD_WORKSPACE_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+O`
 const TOGGLE_DARK_MODE_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+D`
 const WORKSPACE_SWITCHER_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+W`
+const IS_MAC_PLATFORM =
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
 const SIDEBAR_LEFT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2190' : null
 const SIDEBAR_RIGHT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2192' : null
 const SIDEBAR_TOGGLE_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2193' : null
-const WORKSPACE_SWITCHER_OPEN_EVENT = 'claude-canvas:open-workspace-switcher'
 
 function SearchIcon() {
   return (
@@ -282,10 +291,10 @@ function ActionIconButton({
           data-shortcut={shortcut ?? undefined}
           disabled={disabled}
           className={clsx(
-            'flex h-9 w-9 shrink-0 items-center justify-center rounded-[4px] border transition',
+            'flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] border transition',
             active
               ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
-              : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:bg-[var(--surface-1)] hover:text-[var(--text)]',
+              : 'border-[color:var(--line)] bg-[var(--nav-surface)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]',
             'disabled:cursor-not-allowed disabled:opacity-40',
             className
           )}
@@ -318,10 +327,10 @@ function HeaderIconButton({
         data-managed-tooltip="custom"
         data-shortcut={shortcut ?? undefined}
         className={clsx(
-          'flex h-8 w-8 shrink-0 items-center justify-center rounded-[4px] border transition',
+          'flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] border transition',
           active
             ? 'border-[color:var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
-            : 'border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:text-[var(--text)]'
+            : 'border-[color:var(--line)] bg-[var(--nav-surface)] text-[var(--text-dim)] hover:border-[color:var(--line-strong)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]'
         )}
         onClick={onClick}
       >
@@ -351,7 +360,7 @@ function PanelIconButton({
         data-managed-tooltip="custom"
         data-shortcut={shortcut ?? undefined}
         disabled={disabled}
-        className="flex h-7 w-7 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-7 w-7 items-center justify-center rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-40"
         onClick={onClick}
       >
         {children}
@@ -477,6 +486,7 @@ interface SidebarProps {
   activeTreePath: string | null
   config: AppConfig
   darkMode: boolean
+  focusNavigatorVersion: number
   loadingWorkspace: boolean
   onAddWorkspace: () => void
   onCopyWorkspacePath: () => void
@@ -515,6 +525,7 @@ function SidebarComponent({
   activeTreePath,
   config,
   darkMode,
+  focusNavigatorVersion,
   loadingWorkspace,
   onAddWorkspace,
   onCopyWorkspacePath,
@@ -552,6 +563,7 @@ function SidebarComponent({
   const [recentAscending, setRecentAscending] = useState(false)
   const [collapseAllVersion, setCollapseAllVersion] = useState(0)
   const [expandAllVersion, setExpandAllVersion] = useState(0)
+  const [treeFocusVersion, setTreeFocusVersion] = useState(0)
   const compactBrowserChrome = sidebarWidth < 340
   const normalizedFileQuery = fileQuery.trim().toLowerCase()
   const workspaceFiles = flattenWorkspaceFiles(workspaceTree)
@@ -623,21 +635,30 @@ function SidebarComponent({
     }
   }, [])
 
+  useEffect(() => {
+    if (focusNavigatorVersion === 0) {
+      return
+    }
+
+    setFileBrowserMode('tree')
+    setTreeFocusVersion((current) => current + 1)
+  }, [focusNavigatorVersion])
+
   return (
-    <aside className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-r border-[color:var(--line)] bg-[var(--surface-1)]">
-      <div className="relative shrink-0 border-b border-[color:var(--line)] px-3.5 pb-3 pt-[40px]">
+    <aside className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-r border-[color:var(--line)] bg-[var(--nav-panel)]">
+      <div className="relative shrink-0 border-b border-[color:var(--line)] px-3 pb-2.5 pt-[36px]">
         <div aria-hidden="true" className="app-drag-region absolute inset-x-0 top-0 h-10" />
-        <div className="app-drag-region flex items-start gap-2.5">
+        <div className="app-drag-region flex items-start gap-2">
           <img
             src={logoMark}
             alt="Open Canvas logo"
-            className="h-8 w-8 shrink-0 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)]"
+            className="h-7 w-7 shrink-0 rounded-[5px] border border-[color:var(--line)] bg-[var(--nav-surface)]"
           />
           <div className="min-w-0 flex-1 pt-0.5">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+            <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--text-faint)]">
               Navigator
             </div>
-            <h1 className="mt-0.5 font-[var(--font-display)] text-[1.15rem] font-semibold leading-[1.05] tracking-[-0.035em] text-[var(--text)]">
+            <h1 className="mt-0.5 truncate font-[var(--font-display)] text-[1rem] font-semibold leading-[1.05] tracking-[-0.03em] text-[var(--text)]">
               Open Canvas
             </h1>
           </div>
@@ -668,7 +689,7 @@ function SidebarComponent({
           </div>
         </div>
 
-        <div className="app-no-drag mt-3 space-y-2">
+        <div className="app-no-drag mt-2.5 space-y-2">
           <div className="flex items-stretch gap-2">
             <HoverTooltip
               label="Switch active workspace"
@@ -681,7 +702,7 @@ function SidebarComponent({
                   aria-label="Switch active workspace"
                   data-managed-tooltip="custom"
                   data-shortcut={WORKSPACE_SWITCHER_SHORTCUT_KEY}
-                  className="h-10 w-full appearance-none rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-3 pr-10 text-[13px] font-medium text-[var(--text)] outline-none transition focus:border-[color:var(--accent)]"
+                  className="h-9 w-full appearance-none rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] px-3 pr-10 text-[12px] font-medium text-[var(--text)] outline-none transition focus:border-[color:var(--accent)]"
                   value={config.activeWorkspace}
                   onChange={(event) => onSelectWorkspace(Number(event.target.value))}
                   disabled={config.workspaces.length === 0}
@@ -703,7 +724,7 @@ function SidebarComponent({
             </HoverTooltip>
             <HoverTooltip label="Add workspace folder" placement="bottom" shortcut={ADD_WORKSPACE_SHORTCUT_KEY}>
               <button
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:bg-[var(--surface-1)] hover:text-[var(--text)]"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]"
                 onClick={onAddWorkspace}
                 data-managed-tooltip="custom"
                 data-shortcut={ADD_WORKSPACE_SHORTCUT_KEY}
@@ -714,7 +735,7 @@ function SidebarComponent({
             </HoverTooltip>
             <HoverTooltip label="Remove active workspace" placement="bottom">
               <button
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:bg-[var(--surface-1)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] text-[var(--text-dim)] transition hover:border-[color:var(--line-strong)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-40"
                 onClick={onRemoveWorkspace}
                 disabled={!activeWorkspacePath}
                 data-managed-tooltip="custom"
@@ -725,13 +746,13 @@ function SidebarComponent({
             </HoverTooltip>
           </div>
 
-          <div className="flex items-center gap-2 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2.5 py-2 text-[12px] text-[var(--text-dim)]">
+          <div className="flex items-center gap-2 rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] px-2.5 py-2 text-[11px] text-[var(--text-dim)]">
             <div className="min-w-0 flex-1">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+              <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
                 Workspace root
               </div>
               <div
-                className="mt-0.5 truncate text-[12px] text-[var(--text-dim)]"
+                className="mt-0.5 truncate text-[11px] text-[var(--text-dim)]"
                 title={activeWorkspacePath ?? 'Add a folder to start building a spatial workspace.'}
               >
                 {activeWorkspacePath ?? 'Add a folder to start building a spatial workspace.'}
@@ -763,34 +784,34 @@ function SidebarComponent({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col bg-[var(--surface-1)]">
-        <div className="shrink-0 border-b border-[color:var(--line)] bg-[var(--surface-1)] px-3.5 py-3">
-          <div className="mb-2.5 flex items-center justify-between px-0.5">
+      <div className="flex min-h-0 flex-1 flex-col bg-[var(--nav-panel)]">
+        <div className="shrink-0 border-b border-[color:var(--line)] bg-[var(--nav-panel)] px-3 py-2.5">
+          <div className="mb-2 flex items-center justify-between px-0.5">
             <div className="flex items-center gap-2">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-faint)]">
                 Files
               </div>
             </div>
             {loadingWorkspace ? (
-              <div className="text-[11px] text-[var(--text-faint)]">Refreshing…</div>
+              <div className="text-[10px] text-[var(--text-faint)]">Refreshing…</div>
             ) : activeWorkspacePath ? (
-              <div className="rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
+              <div className="rounded-[999px] border border-[color:var(--line)] bg-[var(--nav-badge)] px-2 py-0.5 text-[9px] font-medium uppercase tracking-[0.12em] text-[var(--text-faint)]">
                 {workspaceFiles.length}
                 {compactBrowserChrome ? '' : ' Files'}
               </div>
             ) : null}
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] p-1">
+            <div className="flex items-center gap-1 rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] p-1">
               <HoverTooltip label="Show recent files">
                 <button
                   aria-label="Show recent files"
                   data-managed-tooltip="custom"
                   className={clsx(
-                    'flex h-8 w-8 items-center justify-center rounded-[3px] transition',
+                    'flex h-7 w-7 items-center justify-center rounded-[4px] transition',
                     fileBrowserMode === 'recent'
-                      ? 'bg-[var(--surface-2)] text-[var(--text)]'
-                      : 'text-[var(--text-faint)] hover:bg-[var(--surface-0)] hover:text-[var(--text)]'
+                      ? 'bg-[var(--nav-surface-hover)] text-[var(--text)]'
+                      : 'text-[var(--text-faint)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]'
                   )}
                   onClick={() => setFileBrowserMode('recent')}
                 >
@@ -802,10 +823,10 @@ function SidebarComponent({
                   aria-label="Show folder tree"
                   data-managed-tooltip="custom"
                   className={clsx(
-                    'flex h-8 w-8 items-center justify-center rounded-[3px] transition',
+                    'flex h-7 w-7 items-center justify-center rounded-[4px] transition',
                     fileBrowserMode === 'tree'
-                      ? 'bg-[var(--surface-2)] text-[var(--text)]'
-                      : 'text-[var(--text-faint)] hover:bg-[var(--surface-0)] hover:text-[var(--text)]'
+                      ? 'bg-[var(--nav-surface-hover)] text-[var(--text)]'
+                      : 'text-[var(--text-faint)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]'
                   )}
                   onClick={() => setFileBrowserMode('tree')}
                 >
@@ -823,10 +844,10 @@ function SidebarComponent({
                   aria-label="Sort recent files"
                   data-managed-tooltip="custom"
                   className={clsx(
-                    'flex h-8 w-8 items-center justify-center rounded-[3px] transition',
+                    'flex h-7 w-7 items-center justify-center rounded-[4px] transition',
                     fileBrowserMode === 'recent'
-                      ? 'bg-[var(--surface-2)] text-[var(--text)]'
-                      : 'text-[var(--text-faint)] hover:bg-[var(--surface-0)] hover:text-[var(--text)]'
+                      ? 'bg-[var(--nav-surface-hover)] text-[var(--text)]'
+                      : 'text-[var(--text-faint)] hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]'
                   )}
                   onClick={() => {
                     if (fileBrowserMode !== 'recent') {
@@ -847,23 +868,31 @@ function SidebarComponent({
               </HoverTooltip>
             </div>
             {fileBrowserMode === 'tree' ? (
-              <div className="flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] p-1">
-                <HoverTooltip label="Collapse all folders">
+              <div className="flex items-center gap-1 rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] p-1">
+                <HoverTooltip
+                  label="Collapse all folders"
+                  shortcut={TREE_COLLAPSE_ALL_SHORTCUT_KEY}
+                >
                   <button
                     aria-label="Collapse all folders"
                     data-managed-tooltip="custom"
-                    className="flex h-8 w-8 items-center justify-center rounded-[3px] text-[var(--text-faint)] transition hover:bg-[var(--surface-0)] hover:text-[var(--text)]"
+                    data-shortcut={TREE_COLLAPSE_ALL_SHORTCUT_KEY}
+                    className="flex h-7 w-7 items-center justify-center rounded-[4px] text-[var(--text-faint)] transition hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]"
                     disabled={!activeWorkspacePath}
                     onClick={() => setCollapseAllVersion((current) => current + 1)}
                   >
                     <CollapseTreeIcon />
                   </button>
                 </HoverTooltip>
-                <HoverTooltip label="Expand all folders">
+                <HoverTooltip
+                  label="Expand all folders"
+                  shortcut={TREE_EXPAND_ALL_SHORTCUT_KEY}
+                >
                   <button
                     aria-label="Expand all folders"
                     data-managed-tooltip="custom"
-                    className="flex h-8 w-8 items-center justify-center rounded-[3px] text-[var(--text-faint)] transition hover:bg-[var(--surface-0)] hover:text-[var(--text)]"
+                    data-shortcut={TREE_EXPAND_ALL_SHORTCUT_KEY}
+                    className="flex h-7 w-7 items-center justify-center rounded-[4px] text-[var(--text-faint)] transition hover:bg-[var(--nav-surface-hover)] hover:text-[var(--text)]"
                     disabled={!activeWorkspacePath}
                     onClick={() => setExpandAllVersion((current) => current + 1)}
                   >
@@ -877,7 +906,7 @@ function SidebarComponent({
                 <SearchIcon />
               </span>
               {!compactBrowserChrome ? (
-                <span className="pointer-events-none absolute right-3 top-1/2 flex h-5 min-w-[3.5rem] -translate-y-1/2 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-1)] px-1.5 text-[9px] font-medium leading-none text-[var(--text-faint)] opacity-80">
+                <span className="pointer-events-none absolute right-3 top-1/2 flex h-5 min-w-[3.5rem] -translate-y-1/2 items-center justify-center rounded-[4px] border border-[color:var(--line)] bg-[var(--nav-panel)] px-1.5 text-[9px] font-medium leading-none text-[var(--text-faint)] opacity-80">
                   {SEARCH_SHORTCUT_HINT}
                 </span>
               ) : null}
@@ -888,14 +917,25 @@ function SidebarComponent({
                 placeholder={searchPlaceholder}
                 title={composeTooltipLabel(searchFieldLabel, SEARCH_SHORTCUT_KEY)}
                 className={clsx(
-                  'h-10 w-full rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] pl-10 text-[13px] text-[var(--text)] outline-none transition placeholder:text-[var(--text-faint)] focus:border-[color:var(--accent)]',
+                  'h-9 w-full rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] pl-10 text-[12px] text-[var(--text)] outline-none transition placeholder:text-[var(--text-faint)] focus:border-[color:var(--accent)]',
                   compactBrowserChrome ? 'pr-3' : 'pr-[6.75rem]'
                 )}
               />
             </div>
           </div>
+          {activeWorkspacePath && fileBrowserMode === 'tree' ? (
+            <div className="mt-2 rounded-[6px] border border-[color:var(--line)] bg-[var(--nav-surface)] px-2.5 py-2 text-[10px] leading-4 text-[var(--text-faint)]">
+              <span className="text-[var(--text-dim)]">Drag files to the canvas.</span>{' '}
+              <span className="font-medium text-[var(--text)]">{FOCUS_NAVIGATOR_SHORTCUT_KEY}</span> focuses the
+              tree, <span className="font-medium text-[var(--text)]">{TREE_EXPAND_SHORTCUT_KEY}</span> /{' '}
+              <span className="font-medium text-[var(--text)]">{TREE_COLLAPSE_SHORTCUT_KEY}</span> open and close
+              folders, <span className="font-medium text-[var(--text)]">{PLACE_ON_CANVAS_SHORTCUT_KEY}</span> places
+              the selection, and <span className="font-medium text-[var(--text)]">{FOCUS_CANVAS_SHORTCUT_KEY}</span>{' '}
+              returns to the canvas.
+            </div>
+          ) : null}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[var(--surface-1)] px-3.5 py-3">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[var(--nav-panel)] px-2.5 py-2.5">
           {activeWorkspacePath ? (
             fileBrowserMode === 'recent' ? (
               workspaceFiles.length === 0 ? (
@@ -907,10 +947,10 @@ function SidebarComponent({
                   {recentGroups.map((group) => (
                     <section key={group.label}>
                       <div className="mb-2 flex items-center justify-between px-1">
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-faint)]">
+                        <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--text-faint)]">
                           {group.label}
                         </div>
-                        <div className="rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-0.5 text-[10px] font-medium leading-none text-[var(--text-faint)]">
+                        <div className="rounded-[999px] border border-[color:var(--line)] bg-[var(--nav-badge)] px-2 py-0.5 text-[9px] font-medium leading-none text-[var(--text-faint)]">
                           {group.files.length}
                         </div>
                       </div>
@@ -922,7 +962,7 @@ function SidebarComponent({
                               'flex w-full items-center gap-2.5 rounded-[4px] border border-transparent px-2.5 py-2 text-left transition',
                               activeTreePath === file.path
                                 ? 'border-[color:var(--line)] bg-[var(--surface-selected)] text-[var(--text)]'
-                                : 'text-[var(--text-dim)] hover:bg-[var(--surface-0)]'
+                                : 'text-[var(--text-dim)] hover:bg-[var(--nav-surface)]'
                             )}
                             onClick={() => onSelectNode(file)}
                             onDoubleClick={(event) => {
@@ -933,14 +973,14 @@ function SidebarComponent({
                           >
                             <FileKindIcon darkMode={darkMode} fileKind={file.fileKind} />
                             <div className="min-w-0 flex-1">
-                              <div className="truncate text-[13px] font-medium text-[var(--text)]">
+                              <div className="truncate text-[12px] font-medium text-[var(--text)]">
                                 {file.name}
                               </div>
-                              <div className="truncate text-[11px] text-[var(--text-faint)]">
+                              <div className="truncate text-[10px] text-[var(--text-faint)]">
                                 {relativeDirectoryLabel(activeWorkspacePath, file.path)}
                               </div>
                             </div>
-                            <div className="shrink-0 text-[11px] text-[var(--text-faint)]">
+                            <div className="shrink-0 text-[10px] text-[var(--text-faint)]">
                               {formatRecentTimestamp(file.updatedAt)}
                             </div>
                           </button>
@@ -960,6 +1000,7 @@ function SidebarComponent({
                 collapseAllVersion={collapseAllVersion}
                 darkMode={darkMode}
                 expandAllVersion={expandAllVersion}
+                focusVersion={treeFocusVersion}
                 nodes={workspaceTree}
                 onCreateWorkspaceDirectory={onCreateWorkspaceDirectory}
                 onCreateWorkspaceFile={onCreateWorkspaceFile}
@@ -985,8 +1026,8 @@ function SidebarComponent({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-[color:var(--line)] bg-[var(--surface-2)] px-3.5 py-3">
-        <div className="grid grid-cols-5 gap-2">
+      <div className="shrink-0 border-t border-[color:var(--line)] bg-[var(--nav-surface)] px-3 py-2.5">
+        <div className="grid grid-cols-5 gap-1.5">
           <ActionIconButton
             label="Search Workspace"
             onClick={onOpenSearch}
@@ -1037,6 +1078,7 @@ export const Sidebar = memo(SidebarComponent, (previous, next) => {
     previous.activeTreePath === next.activeTreePath &&
     previous.config === next.config &&
     previous.darkMode === next.darkMode &&
+    previous.focusNavigatorVersion === next.focusNavigatorVersion &&
     previous.loadingWorkspace === next.loadingWorkspace &&
     previous.sidebarCollapsed === next.sidebarCollapsed &&
     previous.sidebarSide === next.sidebarSide &&

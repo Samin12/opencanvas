@@ -1471,7 +1471,7 @@ function RichNoteEditor({
             : undefined
         }
         data-document-drop-target="true"
-        data-shortcut-lock="true"
+        data-shortcut-lock={variant === 'viewer' ? 'true' : undefined}
         onDragOverCapture={handleImageDragOver}
         onDropCapture={handleImageDrop}
         onKeyDownCapture={(event) => {
@@ -1485,7 +1485,20 @@ function RichNoteEditor({
         }}
         onPointerDown={(event) => {
           event.stopPropagation()
-          focusEditor()
+
+          if (variant === 'tile') {
+            event.preventDefault()
+            ;(document.activeElement as HTMLElement | null)?.blur?.()
+          } else {
+            focusEditor()
+          }
+        }}
+        onDoubleClick={(event) => {
+          event.stopPropagation()
+
+          if (variant === 'tile') {
+            focusEditor()
+          }
         }}
         onKeyDown={(event) => event.stopPropagation()}
         onWheel={(event) => {

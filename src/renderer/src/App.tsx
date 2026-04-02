@@ -33,14 +33,13 @@ import { hasExternalPathPayload } from './utils/externalDropPaths'
 import { extractPastedUrl } from './utils/embedTiles'
 import { keyboardShortcutsBlocked } from './utils/keyboard'
 import { installButtonTooltipSync } from './utils/buttonTooltips'
+import { WORKSPACE_SWITCHER_OPEN_EVENT } from './utils/navigatorShortcuts'
 
 const IS_MAC_PLATFORM =
   typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
 const SIDEBAR_LEFT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2190' : null
 const SIDEBAR_RIGHT_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+\u2192' : null
 const TOGGLE_DARK_MODE_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+Shift+D' : 'Ctrl+Shift+D'
-const WORKSPACE_SWITCHER_SHORTCUT_KEY = IS_MAC_PLATFORM ? 'Cmd+Shift+W' : 'Ctrl+Shift+W'
-const WORKSPACE_SWITCHER_OPEN_EVENT = 'claude-canvas:open-workspace-switcher'
 const INTERACTIVE_SHORTCUT_TARGET_SELECTOR =
   'button, [role="button"], a[href], input:not([type="hidden"]), select, textarea, summary'
 
@@ -327,6 +326,7 @@ export default function App() {
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [bootError, setBootError] = useState<string | null>(null)
   const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState<string | null>(null)
+  const [focusNavigatorVersion, setFocusNavigatorVersion] = useState(0)
   const [officeViewer, setOfficeViewer] = useState<OfficeViewerBootstrap | null>(null)
   const [terminalDependencies, setTerminalDependencies] = useState<TerminalDependencyState | null>(null)
   const [diagramTools, setDiagramTools] = useState<EnsureWorkspaceDiagramToolsResult | null>(null)
@@ -931,6 +931,29 @@ export default function App() {
         return
       }
 
+      if (!event.metaKey && !event.ctrlKey && !event.altKey && event.shiftKey) {
+        if (event.key.toLowerCase() === 'f') {
+          event.preventDefault()
+
+          if (sidebarCollapsed) {
+            setSidebarPlacement(sidebarSide, false)
+          }
+
+          setFocusNavigatorVersion((current) => current + 1)
+          return
+        }
+
+        if (event.code === 'Space') {
+          event.preventDefault()
+          setViewerFile(null)
+
+          window.requestAnimationFrame(() => {
+            canvasRef.current?.focusCanvas()
+          })
+          return
+        }
+      }
+
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'o') {
         event.preventDefault()
         void addWorkspace()
@@ -1002,7 +1025,15 @@ export default function App() {
 
         event.preventDefault()
         placeFileOnCanvas(fileToPlace)
-        setViewerFile(null)
+
+        if (viewerFile) {
+          setViewerFile(null)
+
+          window.requestAnimationFrame(() => {
+            canvasRef.current?.focusCanvas()
+          })
+        }
+
         return
       }
 
@@ -1998,12 +2029,13 @@ export default function App() {
         {sidebarCollapsed || sidebarSide === 'right' ? null : (
           <div
             style={{ width: sidebarWidth }}
-            className="min-h-0 min-w-[260px] max-w-[520px] opacity-100 transition-[width,opacity] duration-200"
+            className="min-h-0 min-w-[220px] max-w-[480px] opacity-100 transition-[width,opacity] duration-200"
           >
             <Sidebar
               activeTreePath={selectedTreePath}
               config={config}
               darkMode={darkMode}
+              focusNavigatorVersion={focusNavigatorVersion}
               loadingWorkspace={loadingWorkspace}
               onAddWorkspace={() => void addWorkspace()}
               onCopyWorkspacePath={() => void copyActiveWorkspacePath()}
@@ -2207,7 +2239,14 @@ export default function App() {
             onClose={() => setViewerFile(null)}
             onImportImageFile={importWorkspaceImageFile}
             officeViewer={officeViewer}
-            onPlaceOnCanvas={placeFileOnCanvas}
+            onPlaceOnCanvas={(file) => {
+              placeFileOnCanvas(file)
+              setViewerFile(null)
+
+              window.requestAnimationFrame(() => {
+                canvasRef.current?.focusCanvas()
+              })
+            }}
           />
           {workspaceError ? (
             <div
@@ -2237,12 +2276,13 @@ export default function App() {
         {sidebarCollapsed || sidebarSide === 'left' ? null : (
           <div
             style={{ width: sidebarWidth }}
-            className="min-h-0 min-w-[260px] max-w-[520px] opacity-100 transition-[width,opacity] duration-200"
+            className="min-h-0 min-w-[220px] max-w-[480px] opacity-100 transition-[width,opacity] duration-200"
           >
             <Sidebar
               activeTreePath={selectedTreePath}
               config={config}
               darkMode={darkMode}
+              focusNavigatorVersion={focusNavigatorVersion}
               loadingWorkspace={loadingWorkspace}
               onAddWorkspace={() => void addWorkspace()}
               onCopyWorkspacePath={() => void copyActiveWorkspacePath()}

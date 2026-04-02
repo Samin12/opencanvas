@@ -79,6 +79,39 @@ function ViewerOverlayComponent({
     setRefreshToken(0)
   }, [file?.path])
 
+  useEffect(() => {
+    if (!file) {
+      return
+    }
+
+    const previewFile = file
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
+        return
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        onClose()
+        return
+      }
+
+      if (event.shiftKey && event.key === 'Enter') {
+        event.preventDefault()
+        event.stopPropagation()
+        onPlaceOnCanvas(previewFile)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown, true)
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true)
+    }
+  }, [file, onClose, onPlaceOnCanvas])
+
   if (!file) {
     return null
   }
@@ -129,7 +162,6 @@ function ViewerOverlayComponent({
                 data-shortcut="Shift+Enter"
                 onClick={() => {
                   onPlaceOnCanvas(file)
-                  onClose()
                 }}
                 title={composeTooltipLabel('Add to canvas', 'Shift+Enter')}
               >

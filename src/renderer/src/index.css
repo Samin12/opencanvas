@@ -13,6 +13,11 @@
   --surface-selected: rgba(88, 96, 84, 0.1);
   --line: rgba(73, 79, 70, 0.12);
   --line-strong: rgba(73, 79, 70, 0.22);
+  --nav-panel: #eef0ea;
+  --nav-surface: #f7f8f2;
+  --nav-surface-hover: #eef1ea;
+  --nav-badge: rgba(87, 94, 82, 0.08);
+  --nav-tree-line: rgba(73, 79, 70, 0.12);
   --text: #1f211d;
   --text-dim: #5d625a;
   --text-faint: #8a8f86;
@@ -48,6 +53,11 @@
   --surface-selected: rgba(173, 180, 169, 0.12);
   --line: rgba(255, 255, 255, 0.08);
   --line-strong: rgba(255, 255, 255, 0.14);
+  --nav-panel: #1d2120;
+  --nav-surface: #212624;
+  --nav-surface-hover: #282d2b;
+  --nav-badge: rgba(255, 255, 255, 0.06);
+  --nav-tree-line: rgba(255, 255, 255, 0.055);
   --text: #f3f4ef;
   --text-dim: #c0c4bc;
   --text-faint: #8e938b;
