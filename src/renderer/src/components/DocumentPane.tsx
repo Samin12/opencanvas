@@ -8,8 +8,9 @@ import {
   type DragEvent as ReactDragEvent,
   type ReactNode
 } from 'react'
+import { createPortal } from 'react-dom'
 
-import type { Editor as TiptapEditor } from '@tiptap/core'
+import type { Editor as TiptapEditor, Range } from '@tiptap/core'
 import { Markdown } from '@tiptap/markdown'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { TaskList } from '@tiptap/extension-list'
@@ -29,7 +30,11 @@ import {
   relativeImagePath
 } from '../utils/markdownImages'
 import {
+  currentSlashCommandQuery,
+  MARKDOWN_SLASH_COMMAND_OPTIONS,
   MarkdownListItem,
+  runSlashCommand,
+  type SlashCommand,
   MarkdownShortcutExtension,
   MarkdownTaskItem
 } from '../utils/markdownShortcuts'
@@ -40,6 +45,9 @@ const MARKDOWN_PASTE_STRUCTURE_PATTERN =
 const NOTE_TILE_BASE_FONT_SIZE_PX = 17
 const NOTE_TILE_MIN_VIEW_SCALE = 0.85
 const NOTE_TILE_MAX_VIEW_SCALE = 1.45
+const SLASH_MENU_EDGE_PADDING = 12
+const SLASH_MENU_MAX_WIDTH = 296
+const SLASH_MENU_OFFSET = 12
 
 function emptyNoteEditorContent() {
   return {
@@ -150,6 +158,26 @@ function clampNoteViewScale(value: number | undefined) {
   }
 
   return Math.min(NOTE_TILE_MAX_VIEW_SCALE, Math.max(NOTE_TILE_MIN_VIEW_SCALE, value))
+}
+
+interface SlashMenuState {
+  anchorLeft: number
+  anchorTop: number
+  query: string
+  range: Range
+}
+
+function matchingSlashCommands(query: string) {
+  const normalizedQuery = query.trim().toLowerCase()
+
+  if (!normalizedQuery) {
+    return MARKDOWN_SLASH_COMMAND_OPTIONS
+  }
+
+  return MARKDOWN_SLASH_COMMAND_OPTIONS.filter((option) => {
+    const haystack = [option.title, ...option.aliases, ...option.keywords].join(' ').toLowerCase()
+    return haystack.includes(normalizedQuery)
+  })
 }
 
 interface DocumentPaneProps {
@@ -618,14 +646,73 @@ function RichNoteEditor({
   const latestDraftRef = useRef(normalizedInitialContent)
   const latestSavedRef = useRef(normalizedInitialContent)
   const editorHostRef = useRef<HTMLDivElement | null>(null)
+  const slashMenuRef = useRef<HTMLDivElement | null>(null)
   const measureFrameRef = useRef<number | null>(null)
   const saveRequestIdRef = useRef(0)
   const saveTimerRef = useRef<number | null>(null)
   const headingTimerRef = useRef<number | null>(null)
   const lastPublishedHeadingRef = useRef<string | null>(null)
+  const [slashMenuState, setSlashMenuState] = useState<SlashMenuState | null>(null)
+  const [slashMenuIndex, setSlashMenuIndex] = useState(0)
   const autoSizeEnabled =
     variant === 'tile' && noteSizingMode === 'auto' && Boolean(onNoteContentHeightChange)
   const resolvedNoteViewScale = variant === 'tile' ? clampNoteViewScale(noteViewScale) : 1
+  const slashMenuItems = matchingSlashCommands(slashMenuState?.query ?? '')
+  const activeSlashMenuItem =
+    slashMenuItems[slashMenuItems.length === 0 ? -1 : Math.min(slashMenuIndex, slashMenuItems.length - 1)] ??
+    null
+
+  function closeSlashMenu() {
+    setSlashMenuState(null)
+    setSlashMenuIndex(0)
+  }
+
+  function syncSlashMenu(activeEditor: TiptapEditor | null | undefined) {
+    if (!activeEditor) {
+      closeSlashMenu()
+      return
+    }
+
+    const slashQuery = currentSlashCommandQuery(activeEditor)
+
+    if (!slashQuery) {
+      closeSlashMenu()
+      return
+    }
+
+    const caretRect = activeEditor.view.coordsAtPos(slashQuery.range.to)
+    const maxLeft = Math.max(
+      SLASH_MENU_EDGE_PADDING,
+      window.innerWidth - SLASH_MENU_MAX_WIDTH - SLASH_MENU_EDGE_PADDING
+    )
+    const maxTop = Math.max(SLASH_MENU_EDGE_PADDING, window.innerHeight - 360)
+
+    setSlashMenuState({
+      anchorLeft: Math.min(Math.max(caretRect.left, SLASH_MENU_EDGE_PADDING), maxLeft),
+      anchorTop: Math.min(Math.max(caretRect.bottom + SLASH_MENU_OFFSET, SLASH_MENU_EDGE_PADDING), maxTop),
+      query: slashQuery.query,
+      range: slashQuery.range
+    })
+    setSlashMenuIndex(0)
+  }
+
+  function applySlashMenuCommand(command: SlashCommand) {
+    if (!editor || !slashMenuState) {
+      return false
+    }
+
+    const applied = runSlashCommand(command, editor.chain(), slashMenuState.range)
+
+    if (!applied) {
+      return false
+    }
+
+    closeSlashMenu()
+    scheduleContentMeasurement()
+    schedulePrimaryHeadingPublish(editor)
+
+    return true
+  }
 
   function scheduleContentMeasurement() {
     if (!autoSizeEnabled || !editor) {
@@ -982,6 +1069,37 @@ function RichNoteEditor({
           keydown: (_view: unknown, event: KeyboardEvent) => {
             event.stopPropagation()
 
+            if (slashMenuState) {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault()
+                setSlashMenuIndex((current) =>
+                  slashMenuItems.length === 0 ? 0 : (current + 1) % slashMenuItems.length
+                )
+                return true
+              }
+
+              if (event.key === 'ArrowUp') {
+                event.preventDefault()
+                setSlashMenuIndex((current) =>
+                  slashMenuItems.length === 0
+                    ? 0
+                    : (current - 1 + slashMenuItems.length) % slashMenuItems.length
+                )
+                return true
+              }
+
+              if ((event.key === 'Enter' || event.key === 'Tab') && activeSlashMenuItem) {
+                event.preventDefault()
+                return applySlashMenuCommand(activeSlashMenuItem.command)
+              }
+
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                closeSlashMenu()
+                return true
+              }
+            }
+
             if (event.key === 'Enter' && selectionInsidePrimaryHeading(editor)) {
               clearScheduledHeadingPublish()
               publishPrimaryHeading(editor)
@@ -1037,6 +1155,10 @@ function RichNoteEditor({
         queueSave(isEditorSemanticallyEmpty(activeEditor) ? '' : activeEditor.getMarkdown())
         scheduleContentMeasurement()
         schedulePrimaryHeadingPublish(activeEditor)
+        syncSlashMenu(activeEditor)
+      },
+      onSelectionUpdate: ({ editor: activeEditor }: { editor: TiptapEditor }) => {
+        syncSlashMenu(activeEditor)
       }
     },
     [filePath, variant]
@@ -1047,6 +1169,7 @@ function RichNoteEditor({
       latestDraftRef.current = initialContent
       latestSavedRef.current = normalizedInitialContent
       lastPublishedHeadingRef.current = null
+      closeSlashMenu()
       return
     }
 
@@ -1059,6 +1182,7 @@ function RichNoteEditor({
       onStatusChange('idle')
       lastPublishedHeadingRef.current = primaryHeadingFromEditor(editor)
       scheduleContentMeasurement()
+      syncSlashMenu(editor)
       return
     }
 
@@ -1066,6 +1190,7 @@ function RichNoteEditor({
       onStatusChange('idle')
       lastPublishedHeadingRef.current = primaryHeadingFromEditor(editor)
       scheduleContentMeasurement()
+      syncSlashMenu(editor)
       return
     }
 
@@ -1074,6 +1199,7 @@ function RichNoteEditor({
       onStatusChange('idle')
       lastPublishedHeadingRef.current = primaryHeadingFromEditor(editor)
       scheduleContentMeasurement()
+      syncSlashMenu(editor)
       return
     }
 
@@ -1092,13 +1218,25 @@ function RichNoteEditor({
       onStatusChange('idle')
       lastPublishedHeadingRef.current = primaryHeadingFromEditor(editor)
       scheduleContentMeasurement()
+      syncSlashMenu(editor)
       return
     }
 
     onStatusChange('saving')
     lastPublishedHeadingRef.current = primaryHeadingFromEditor(editor)
     scheduleContentMeasurement()
+    syncSlashMenu(editor)
   }, [editor, initialContent, normalizedInitialContent, onStatusChange])
+
+  useEffect(() => {
+    if (!slashMenuState) {
+      return
+    }
+
+    setSlashMenuIndex((current) =>
+      slashMenuItems.length === 0 ? 0 : Math.min(current, slashMenuItems.length - 1)
+    )
+  }, [slashMenuItems.length, slashMenuState])
 
   useEffect(() => {
     if (!autoSizeEnabled || !editor) {
@@ -1143,6 +1281,35 @@ function RichNoteEditor({
     contentElement.classList.toggle('overflow-y-hidden', autoSizeEnabled)
     contentElement.classList.toggle('overflow-y-auto', !autoSizeEnabled)
   }, [autoSizeEnabled, editor])
+
+  useEffect(() => {
+    if (!editor || !slashMenuState) {
+      return
+    }
+
+    const updateSlashMenuPosition = () => syncSlashMenu(editor)
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target
+
+      if (target instanceof Node) {
+        if (slashMenuRef.current?.contains(target) || editorHostRef.current?.contains(target)) {
+          return
+        }
+      }
+
+      closeSlashMenu()
+    }
+
+    window.addEventListener('resize', updateSlashMenuPosition)
+    window.addEventListener('scroll', updateSlashMenuPosition, true)
+    document.addEventListener('mousedown', handlePointerDown, true)
+
+    return () => {
+      window.removeEventListener('resize', updateSlashMenuPosition)
+      window.removeEventListener('scroll', updateSlashMenuPosition, true)
+      document.removeEventListener('mousedown', handlePointerDown, true)
+    }
+  }, [editor, slashMenuState])
 
   useLayoutEffect(() => {
     if (!editor || variant !== 'viewer') {
@@ -1237,6 +1404,68 @@ function RichNoteEditor({
       >
         <EditorContent editor={editor} className={clsx(autoSizeEnabled ? 'min-h-full' : 'h-full')} />
       </div>
+      {slashMenuState && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              ref={slashMenuRef}
+              className="fixed z-[420] w-[min(296px,calc(100vw-24px))] overflow-hidden rounded-[18px] border border-black/8 bg-[color:color-mix(in_srgb,var(--surface-overlay)_96%,transparent)] p-2 shadow-[0_20px_48px_rgba(0,0,0,0.26)] backdrop-blur-xl"
+              style={{
+                left: slashMenuState.anchorLeft,
+                top: slashMenuState.anchorTop
+              }}
+            >
+              <div className="px-2 pb-2 pt-1 text-[11px] font-medium text-[var(--text-faint)]">
+                {slashMenuState.query ? `Filter: ${slashMenuState.query}` : 'Type to filter'}
+              </div>
+              <div className="max-h-[320px] overflow-y-auto pr-1">
+                {slashMenuItems.length > 0 ? (
+                  slashMenuItems.map((item, index) => {
+                    const isActive = index === (activeSlashMenuItem ? slashMenuItems.indexOf(activeSlashMenuItem) : -1)
+
+                    return (
+                      <button
+                        key={item.command}
+                        type="button"
+                        className={clsx(
+                          'flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 text-left transition',
+                          isActive
+                            ? 'bg-[color:color-mix(in_srgb,var(--text)_10%,transparent)] text-[var(--text)]'
+                            : 'text-[var(--text-dim)] hover:bg-[color:color-mix(in_srgb,var(--text)_6%,transparent)] hover:text-[var(--text)]'
+                        )}
+                        onMouseDown={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          setSlashMenuIndex(index)
+                          applySlashMenuCommand(item.command)
+                        }}
+                        onPointerEnter={() => {
+                          setSlashMenuIndex(index)
+                        }}
+                      >
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] border border-white/8 bg-white/8 text-[13px] font-semibold tracking-[-0.02em] text-[var(--text)]">
+                          {item.badge}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[15px] font-semibold text-[inherit]">
+                            {item.title}
+                          </span>
+                          <span className="block truncate text-[11px] text-[var(--text-faint)]">
+                            /{item.aliases[0]}
+                          </span>
+                        </span>
+                      </button>
+                    )
+                  })
+                ) : (
+                  <div className="rounded-[14px] px-3 py-3 text-[13px] text-[var(--text-dim)]">
+                    No markdown actions match “{slashMenuState.query}”.
+                  </div>
+                )}
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </SurfaceFrame>
   )
 }

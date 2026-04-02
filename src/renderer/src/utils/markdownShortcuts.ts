@@ -4,7 +4,7 @@ import { Extension, InputRule, type ChainedCommands, type Editor, type Range } f
 import { ListItem, TaskItem, listHelpers } from '@tiptap/extension-list'
 import { TextSelection } from '@tiptap/pm/state'
 
-type SlashCommand =
+export type SlashCommand =
   | 'paragraph'
   | 'heading1'
   | 'heading2'
@@ -12,6 +12,9 @@ type SlashCommand =
   | 'heading4'
   | 'heading5'
   | 'heading6'
+  | 'bold'
+  | 'italic'
+  | 'strike'
   | 'bulletList'
   | 'orderedList'
   | 'taskList'
@@ -19,7 +22,17 @@ type SlashCommand =
   | 'codeBlock'
   | 'horizontalRule'
 
+export interface MarkdownSlashCommandOption {
+  aliases: string[]
+  badge: string
+  command: SlashCommand
+  keywords: string[]
+  title: string
+}
+
 const SLASH_COMMAND_ALIASES: Record<string, SlashCommand> = {
+  b: 'bold',
+  bold: 'bold',
   bullet: 'bulletList',
   bullets: 'bulletList',
   checklist: 'taskList',
@@ -34,6 +47,8 @@ const SLASH_COMMAND_ALIASES: Record<string, SlashCommand> = {
   h5: 'heading5',
   h6: 'heading6',
   hr: 'horizontalRule',
+  i: 'italic',
+  italic: 'italic',
   line: 'horizontalRule',
   list: 'bulletList',
   numbered: 'orderedList',
@@ -46,6 +61,8 @@ const SLASH_COMMAND_ALIASES: Record<string, SlashCommand> = {
   quote: 'blockquote',
   rule: 'horizontalRule',
   separator: 'horizontalRule',
+  strike: 'strike',
+  strikethrough: 'strike',
   task: 'taskList',
   text: 'paragraph',
   todo: 'taskList',
@@ -54,6 +71,7 @@ const SLASH_COMMAND_ALIASES: Record<string, SlashCommand> = {
 
 const SLASH_COMMAND_INPUT_PATTERN = /^\/([a-z0-9-]+)\s$/i
 const SLASH_COMMAND_ENTER_PATTERN = /^\/([a-z0-9-]+)\s*$/i
+const SLASH_COMMAND_MENU_PATTERN = /^\/([a-z0-9-]*)$/i
 const HORIZONTAL_RULE_MARKER_PATTERN = /^(?:---|___|\*\*\*)$/
 const TASK_LINE_ENTER_PATTERN = /^\s*(?:[-+*]\s+)?\[\s*(x|X)?\]\s+(.+)$/
 const OUTLINE_PARENT_NODE_NAMES = new Set(['bulletList', 'orderedList', 'taskList'])
@@ -61,7 +79,101 @@ const OUTLINE_ITEM_TYPES = ['taskItem', 'listItem'] as const
 
 type OutlineItemType = (typeof OUTLINE_ITEM_TYPES)[number]
 
-function resolveSlashCommand(rawCommand: string) {
+export const MARKDOWN_SLASH_COMMAND_OPTIONS: MarkdownSlashCommandOption[] = [
+  {
+    aliases: ['text', 'paragraph', 'p'],
+    badge: 'Aa',
+    command: 'paragraph',
+    keywords: ['body', 'plain', 'text'],
+    title: 'Text'
+  },
+  {
+    aliases: ['h1', 'heading1'],
+    badge: 'H1',
+    command: 'heading1',
+    keywords: ['heading', 'title'],
+    title: 'Heading 1'
+  },
+  {
+    aliases: ['h2', 'heading2'],
+    badge: 'H2',
+    command: 'heading2',
+    keywords: ['heading', 'subtitle'],
+    title: 'Heading 2'
+  },
+  {
+    aliases: ['h3', 'heading3'],
+    badge: 'H3',
+    command: 'heading3',
+    keywords: ['heading'],
+    title: 'Heading 3'
+  },
+  {
+    aliases: ['bold', 'b'],
+    badge: 'B',
+    command: 'bold',
+    keywords: ['strong', 'emphasis'],
+    title: 'Bold'
+  },
+  {
+    aliases: ['italic', 'i'],
+    badge: 'I',
+    command: 'italic',
+    keywords: ['emphasis', 'slanted'],
+    title: 'Italic'
+  },
+  {
+    aliases: ['strike', 'strikethrough'],
+    badge: 'S',
+    command: 'strike',
+    keywords: ['cross out'],
+    title: 'Strikethrough'
+  },
+  {
+    aliases: ['bullet', 'bullets', 'list', 'ul'],
+    badge: '•',
+    command: 'bulletList',
+    keywords: ['unordered', 'bullet list'],
+    title: 'Bullet List'
+  },
+  {
+    aliases: ['ordered', 'numbered', 'ol'],
+    badge: '1.',
+    command: 'orderedList',
+    keywords: ['number list', 'ordered list'],
+    title: 'Numbered List'
+  },
+  {
+    aliases: ['todo', 'task', 'checklist'],
+    badge: '[]',
+    command: 'taskList',
+    keywords: ['task list', 'checkbox'],
+    title: 'Todo List'
+  },
+  {
+    aliases: ['quote'],
+    badge: '❝',
+    command: 'blockquote',
+    keywords: ['blockquote', 'citation'],
+    title: 'Quote'
+  },
+  {
+    aliases: ['code', 'codeblock', 'pre'],
+    badge: '{}',
+    command: 'codeBlock',
+    keywords: ['snippet', 'preformatted'],
+    title: 'Code Block'
+  },
+  {
+    aliases: ['divider', 'rule', 'hr'],
+    badge: '—',
+    command: 'horizontalRule',
+    keywords: ['line', 'separator', 'divider'],
+    title: 'Divider'
+  }
+]
+
+export function resolveSlashCommand(rawCommand: string) {
   return SLASH_COMMAND_ALIASES[rawCommand.trim().toLowerCase()] ?? null
 }
 
@@ -111,7 +223,7 @@ function insertTaskList(
     .run()
 }
 
-function runSlashCommand(command: SlashCommand, chain: ChainedCommands, range: Range) {
+export function runSlashCommand(command: SlashCommand, chain: ChainedCommands, range: Range) {
   const next = chain.focus().deleteRange(range)
 
   switch (command) {
@@ -129,6 +241,12 @@ function runSlashCommand(command: SlashCommand, chain: ChainedCommands, range: R
       return next.setNode('heading', { level: 5 }).run()
     case 'heading6':
       return next.setNode('heading', { level: 6 }).run()
+    case 'bold':
+      return next.toggleBold().run()
+    case 'italic':
+      return next.toggleItalic().run()
+    case 'strike':
+      return next.toggleStrike().run()
     case 'bulletList':
       return next.toggleList('bulletList', 'listItem').run()
     case 'orderedList':
@@ -169,6 +287,25 @@ function currentShortcutRange(editor: Editor) {
       to: selection.from
     },
     text
+  }
+}
+
+export function currentSlashCommandQuery(editor: Editor) {
+  const shortcut = currentShortcutRange(editor)
+
+  if (!shortcut) {
+    return null
+  }
+
+  const slashCommandMatch = shortcut.text.match(SLASH_COMMAND_MENU_PATTERN)
+
+  if (!slashCommandMatch) {
+    return null
+  }
+
+  return {
+    query: (slashCommandMatch[1] ?? '').trim().toLowerCase(),
+    range: shortcut.range
   }
 }
 
