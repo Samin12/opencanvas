@@ -21,7 +21,7 @@ const require = createRequire(import.meta.url)
 const MAX_BUFFER_SIZE = 2_000_000
 const MAX_ACTIVITY_ITEMS = 240
 const ACTIVITY_REPLAY_SUPPRESSION_MS = 1_500
-const TMUX_HISTORY_LIMIT = '50000'
+const TMUX_HISTORY_LIMIT = '200000'
 const TMUX_SOCKET_NAME = process.env.OPEN_CANVAS_TMUX_SOCKET?.trim() || 'collaborator-clone'
 const TERMINAL_SESSIONS_DIRECTORY = join(APP_DIRECTORY, 'terminal-sessions')
 const TMUX_CONFIG_PATH = join(APP_DIRECTORY, 'tmux.conf')
@@ -31,7 +31,7 @@ const TERMINAL_START_COMMANDS: Record<TerminalProvider, string> = {
   claude: process.env.COLLABORATOR_CLAUDE_COMMAND ?? 'claude --dangerously-skip-permissions',
   codex: process.env.COLLABORATOR_CODEX_COMMAND ?? 'codex --dangerously-bypass-approvals-and-sandbox'
 }
-const TMUX_DEFAULT_TERMINAL_CANDIDATES = ['tmux-256color', 'screen-256color', 'xterm-256color']
+const TMUX_DEFAULT_TERMINAL = 'xterm-256color'
 const TMUX_BINARY_CANDIDATES = [
   process.env.COLLABORATOR_TMUX_BIN,
   'tmux',
@@ -48,11 +48,10 @@ set -g escape-time 0
 set -g history-limit ${TMUX_HISTORY_LIMIT}
 set -g default-terminal "${defaultTerminal}"
 set -g mouse off
-set -g alternate-screen off
-set -g scroll-on-clear on
 set -g focus-events on
 set -g allow-passthrough on
-set -g extended-keys on
+set -ga terminal-overrides ",${defaultTerminal}:Tc:smcup@:rmcup@"
+set-environment -g COLORTERM truecolor
 `
 }
 
@@ -678,10 +677,8 @@ function hasTerminfoEntry(name: string): boolean {
 }
 
 function resolveTmuxDefaultTerminal(): string {
-  for (const candidate of TMUX_DEFAULT_TERMINAL_CANDIDATES) {
-    if (hasTerminfoEntry(candidate)) {
-      return candidate
-    }
+  if (hasTerminfoEntry(TMUX_DEFAULT_TERMINAL)) {
+    return TMUX_DEFAULT_TERMINAL
   }
 
   return 'xterm-256color'
@@ -772,12 +769,17 @@ function configureTmuxServer(tmuxBinary: string, defaultTerminal: string): void 
   runTmuxCommand(tmuxBinary, ['set-option', '-g', 'history-limit', TMUX_HISTORY_LIMIT], defaultTerminal)
   runTmuxCommand(tmuxBinary, ['set-option', '-g', 'default-terminal', defaultTerminal], defaultTerminal)
   runTmuxCommand(tmuxBinary, ['set-option', '-g', 'mouse', 'off'], defaultTerminal)
-  runTmuxCommand(tmuxBinary, ['set-option', '-g', 'alternate-screen', 'off'], defaultTerminal)
-  runTmuxCommand(tmuxBinary, ['set-option', '-g', 'scroll-on-clear', 'on'], defaultTerminal)
   runTmuxCommand(tmuxBinary, ['set-option', '-g', 'focus-events', 'on'], defaultTerminal)
   runTmuxCommand(tmuxBinary, ['set-option', '-g', 'allow-passthrough', 'on'], defaultTerminal)
   runTmuxCommand(tmuxBinary, ['set-option', '-g', 'extended-keys', 'on'], defaultTerminal)
-  runTmuxCommand(tmuxBinary, ['set-option', '-gu', 'terminal-overrides'], defaultTerminal)
+  runTmuxCommand(
+    tmuxBinary,
+    ['set-option', '-g', 'terminal-overrides', `,${defaultTerminal}:Tc:smcup@:rmcup@`],
+    defaultTerminal
+  )
+  spawnSync(tmuxBinary, [...tmuxBaseArgs(defaultTerminal), 'set-environment', '-g', 'COLORTERM', 'truecolor'], {
+    stdio: 'ignore'
+  })
 }
 
 function primaryCommandName(command: string): string {

@@ -5235,104 +5235,35 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   className={tileBodyClassName}
                 >
                   {tile.type === 'term' ? (
-                    <div className="flex h-full min-h-0 flex-col gap-2">
-                      <div
-                        className="flex flex-wrap items-center gap-2 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-1)] px-2.5 py-2"
-                        data-terminal-control="true"
-                        onPointerDown={(event) => event.stopPropagation()}
-                      >
-                        {!hasLinkedContext ? (
-                          <div className="text-[11px] text-[var(--text-dim)]">
-                            {linkSourceTile
-                              ? 'Drop the dragged connector on this terminal dot to attach it.'
-                              : `Drag a file dot or a bundle dot into this terminal to build ${terminalProviderLabel(
-                                  terminalProviderForTile(tile)
-                                )} context.`}
-                          </div>
-                        ) : (
-                          <>
-                            {contextGroups.map((contextGroup) => (
-                              <div
-                                key={contextGroup.id}
-                                className="flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[10px] text-[var(--text-dim)]"
-                              >
-                                <span className="font-semibold uppercase tracking-[0.08em] text-[var(--text-faint)]">
-                                  Bundle
-                                </span>
-                                <span className="max-w-[120px] truncate text-[var(--text)]">
-                                  {contextGroup.label}
-                                </span>
-                                <span className="rounded-[4px] bg-[var(--surface-1)] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-[var(--text-faint)]">
-                                  {contextGroup.containedTiles.length}
-                                </span>
-                                <button
-                                  className="rounded-[4px] px-1 text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
-                                  title="Remove linked bundle"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    detachContextGroup(tile.id, contextGroup.id)
-                                  }}
-                                >
-                                  ×
-                                </button>
-                              </div>
-                            ))}
-                            {contextTiles.map((contextTile) => (
-                              <div
-                                key={contextTile.id}
-                                className="flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[10px] text-[var(--text-dim)]"
-                              >
-                                <span className="max-w-[120px] truncate">{contextTile.title}</span>
-                                <button
-                                  className="rounded-[4px] px-1 text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
-                                  title="Remove linked context"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    detachContextTile(tile.id, contextTile.id)
-                                  }}
-                                >
-                                  ×
-                                </button>
-                              </div>
-                            ))}
-                            <div className="text-[10px] text-[var(--text-faint)]">
-                              Linked resources stay attached and get prepended when you send the next
-                              prompt.
-                            </div>
-                          </>
-                        )}
-                      </div>
-
-                      <div className="min-h-0 flex-1">
-                        <TerminalPane
-                          contextPrompt={terminalContextPrompt}
-                          cwd={activeWorkspacePath}
-                          darkMode={darkMode}
-                          focusMode={
-                            selectedTileId === tile.id && focusedTerminal?.tileId === tile.id
-                              ? focusedTerminal.mode
-                              : null
-                          }
-                          isSelected={selectedTileIdSet.has(tile.id)}
-                          notifyOnComplete={Boolean(tile.terminalNotifyOnComplete)}
-                          onCreateMarkdownCard={(options) => createMarkdownCardForTerminal(tile.id, options)}
-                          onFocusModeChange={(mode) => {
-                            focusTerminal(tile.id, mode)
-                          }}
-                          onToggleNotifyOnComplete={(enabled) => {
-                            updateTile(
-                              tile.id,
-                              (currentTile) => ({
-                                ...currentTile,
-                                terminalNotifyOnComplete: enabled
-                              }),
-                              { immediate: true }
-                            )
-                          }}
-                          provider={terminalProviderForTile(tile)}
-                          sessionId={tile.sessionId as string}
-                        />
-                      </div>
+                    <div className="h-full min-h-0">
+                      <TerminalPane
+                        contextPrompt={terminalContextPrompt}
+                        cwd={activeWorkspacePath}
+                        darkMode={darkMode}
+                        focusMode={
+                          selectedTileId === tile.id && focusedTerminal?.tileId === tile.id
+                            ? focusedTerminal.mode
+                            : null
+                        }
+                        isSelected={selectedTileIdSet.has(tile.id)}
+                        notifyOnComplete={Boolean(tile.terminalNotifyOnComplete)}
+                        onCreateMarkdownCard={(options) => createMarkdownCardForTerminal(tile.id, options)}
+                        onFocusModeChange={(mode) => {
+                          focusTerminal(tile.id, mode)
+                        }}
+                        onToggleNotifyOnComplete={(enabled) => {
+                          updateTile(
+                            tile.id,
+                            (currentTile) => ({
+                              ...currentTile,
+                              terminalNotifyOnComplete: enabled
+                            }),
+                            { immediate: true }
+                          )
+                        }}
+                        provider={terminalProviderForTile(tile)}
+                        sessionId={tile.sessionId as string}
+                      />
                     </div>
                   ) : tile.type === 'embed' && tile.embedUrl ? (
                     <EmbedPane title={tile.title} url={tile.embedUrl} variant="tile" />
