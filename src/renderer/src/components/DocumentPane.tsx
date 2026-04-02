@@ -651,6 +651,9 @@ function RichNoteEditor({
   const latestSavedRef = useRef(normalizedInitialContent)
   const editorHostRef = useRef<HTMLDivElement | null>(null)
   const slashMenuRef = useRef<HTMLDivElement | null>(null)
+  const slashMenuStateRef = useRef<SlashMenuState | null>(null)
+  const slashMenuItemsRef = useRef(MARKDOWN_SLASH_COMMAND_OPTIONS)
+  const activeSlashMenuItemRef = useRef<(typeof MARKDOWN_SLASH_COMMAND_OPTIONS)[number] | null>(null)
   const measureFrameRef = useRef<number | null>(null)
   const saveRequestIdRef = useRef(0)
   const saveTimerRef = useRef<number | null>(null)
@@ -665,6 +668,9 @@ function RichNoteEditor({
   const activeSlashMenuItem =
     slashMenuItems[slashMenuItems.length === 0 ? -1 : Math.min(slashMenuIndex, slashMenuItems.length - 1)] ??
     null
+  slashMenuStateRef.current = slashMenuState
+  slashMenuItemsRef.current = slashMenuItems
+  activeSlashMenuItemRef.current = activeSlashMenuItem
 
   function closeSlashMenu() {
     setSlashMenuState(null)
@@ -713,11 +719,13 @@ function RichNoteEditor({
   }
 
   function applySlashMenuCommand(command: SlashCommand) {
-    if (!editor || !slashMenuState) {
+    const activeSlashMenuState = slashMenuStateRef.current
+
+    if (!editor || !activeSlashMenuState) {
       return false
     }
 
-    const applied = runSlashCommand(command, editor.chain(), slashMenuState.range)
+    const applied = runSlashCommand(command, editor.chain(), activeSlashMenuState.range)
 
     if (!applied) {
       return false
@@ -1085,11 +1093,11 @@ function RichNoteEditor({
           keydown: (_view: unknown, event: KeyboardEvent) => {
             event.stopPropagation()
 
-            if (slashMenuState) {
+            if (slashMenuStateRef.current) {
               if (event.key === 'ArrowDown') {
                 event.preventDefault()
                 setSlashMenuIndex((current) =>
-                  slashMenuItems.length === 0 ? 0 : (current + 1) % slashMenuItems.length
+                  slashMenuItemsRef.current.length === 0 ? 0 : (current + 1) % slashMenuItemsRef.current.length
                 )
                 return true
               }
@@ -1097,16 +1105,16 @@ function RichNoteEditor({
               if (event.key === 'ArrowUp') {
                 event.preventDefault()
                 setSlashMenuIndex((current) =>
-                  slashMenuItems.length === 0
+                  slashMenuItemsRef.current.length === 0
                     ? 0
-                    : (current - 1 + slashMenuItems.length) % slashMenuItems.length
+                    : (current - 1 + slashMenuItemsRef.current.length) % slashMenuItemsRef.current.length
                 )
                 return true
               }
 
-              if ((event.key === 'Enter' || event.key === 'Tab') && activeSlashMenuItem) {
+              if ((event.key === 'Enter' || event.key === 'Tab') && activeSlashMenuItemRef.current) {
                 event.preventDefault()
-                return applySlashMenuCommand(activeSlashMenuItem.command)
+                return applySlashMenuCommand(activeSlashMenuItemRef.current.command)
               }
 
               if (event.key === 'Escape') {
