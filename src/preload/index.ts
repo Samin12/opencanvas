@@ -63,6 +63,8 @@ const api: CollaboratorApi = {
     ipcRenderer.invoke('presentation:preview', filePath) as Promise<PresentationPreviewResult>,
   createTerminalSession: (options) =>
     ipcRenderer.invoke('terminal:create', options) as Promise<TerminalSessionSnapshot>,
+  syncTerminalContext: (sessionId: string, contextPrompt?: string) =>
+    ipcRenderer.invoke('terminal:sync-context', sessionId, contextPrompt) as Promise<void>,
   readTerminalActivity: (sessionId: string) =>
     ipcRenderer.invoke('terminal:activity', sessionId) as Promise<TerminalActivityItem[]>,
   readTerminalHistory: (sessionId: string, limit?: number) =>

@@ -189,13 +189,15 @@ function statusLabel(status: TerminalStatus, statusMessage: string | null) {
 }
 
 function TerminalPaneComponent(props: TerminalPaneProps) {
-  const { cwd, darkMode, focusMode, isSelected, onFocusModeChange, provider, sessionId } = props
+  const { contextPrompt, cwd, darkMode, focusMode, isSelected, onFocusModeChange, provider, sessionId } =
+    props
   const hostRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const flushTimerRef = useRef<number | null>(null)
   const reconnectTimerRef = useRef<number | null>(null)
   const bufferedChunksRef = useRef<string[]>([])
+  const contextPromptRef = useRef(contextPrompt)
   const isSelectedRef = useRef(isSelected)
   const [status, setStatus] = useState<TerminalStatus>('connecting')
   const [statusMessage, setStatusMessage] = useState<string | null>('Connecting terminal...')
@@ -210,6 +212,10 @@ function TerminalPaneComponent(props: TerminalPaneProps) {
   useEffect(() => {
     isSelectedRef.current = isSelected
   }, [isSelected])
+
+  useEffect(() => {
+    contextPromptRef.current = contextPrompt
+  }, [contextPrompt])
 
   useEffect(() => {
     const host = hostRef.current
@@ -451,6 +457,7 @@ function TerminalPaneComponent(props: TerminalPaneProps) {
 
         const snapshot = await window.collaborator.createTerminalSession({
           sessionId,
+          contextPrompt: contextPromptRef.current,
           cwd: cwd ?? undefined,
           provider,
           cols: term.cols,
@@ -552,6 +559,14 @@ function TerminalPaneComponent(props: TerminalPaneProps) {
   }, [cwd, provider, sessionId])
 
   useEffect(() => {
+    if (typeof window.collaborator.syncTerminalContext !== 'function') {
+      return
+    }
+
+    void window.collaborator.syncTerminalContext(sessionId, contextPrompt)
+  }, [contextPrompt, sessionId])
+
+  useEffect(() => {
     if (!hostRef.current) {
       return
     }
@@ -606,6 +621,7 @@ function TerminalPaneComponent(props: TerminalPaneProps) {
 
 export const TerminalPane = memo(TerminalPaneComponent, (previous, next) => {
   return (
+    previous.contextPrompt === next.contextPrompt &&
     previous.cwd === next.cwd &&
     previous.darkMode === next.darkMode &&
     previous.focusMode === next.focusMode &&

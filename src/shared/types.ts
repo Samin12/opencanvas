@@ -416,6 +416,7 @@ export interface CollaboratorApi {
   previewFileUrl: (filePath: string) => Promise<string>
   createTerminalSession: (options: {
     cols: number
+    contextPrompt?: string
     cwd?: string
     provider: TerminalProvider
     rows: number
@@ -441,5 +442,6 @@ export interface CollaboratorApi {
   openExternalUrl: (url: string) => Promise<void>
   releaseTerminalSession: (sessionId: string) => void
   resizeTerminalSession: (sessionId: string, cols: number, rows: number) => void
+  syncTerminalContext: (sessionId: string, contextPrompt?: string) => Promise<void>
   writeTerminalInput: (sessionId: string, data: string) => void
 }

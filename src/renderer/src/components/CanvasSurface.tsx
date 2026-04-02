@@ -2178,6 +2178,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
 
       const hasImageContext = contextTiles.some((tile) => tile.type === 'image')
+      const hasMarkdownContext = contextTiles.some((tile) => tile.type === 'note')
       const hasPdfContext = contextTiles.some((tile) => tile.type === 'pdf')
       const hasSpreadsheetContext = contextTiles.some((tile) => tile.type === 'spreadsheet')
       const hasPresentationContext = contextTiles.some((tile) => tile.type === 'presentation')
@@ -2212,6 +2213,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
       lines.push('')
       lines.push('Read the text and code files before responding.')
+
+      if (hasMarkdownContext) {
+        lines.push(
+          'For each linked markdown note, read the latest note contents and treat that file as an active working document for follow-up questions and edits.'
+        )
+      }
 
       if (hasImageContext) {
         lines.push('For each path marked (image), inspect that image before responding.')

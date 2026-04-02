@@ -36,6 +36,7 @@ import {
   readTerminalDependencyState,
   releaseTerminalSession,
   resizeTerminalSession,
+  syncTerminalContext,
   writeTerminalInput
 } from './terminals'
 import {
@@ -261,9 +262,21 @@ export function registerIpcHandlers(): void {
     'terminal:create',
     async (
       _event,
-      options: { cols: number; cwd?: string; provider: TerminalProvider; rows: number; sessionId: string }
+      options: {
+        cols: number
+        contextPrompt?: string
+        cwd?: string
+        provider: TerminalProvider
+        rows: number
+        sessionId: string
+      }
     ) =>
       createOrAttachTerminalSession(options)
+  )
+  ipcMain.handle(
+    'terminal:sync-context',
+    async (_event, sessionId: string, contextPrompt?: string) =>
+      syncTerminalContext(sessionId, contextPrompt)
   )
   ipcMain.handle('terminal:activity', async (_event, sessionId: string) => readTerminalActivity(sessionId))
   ipcMain.handle('terminal:history', async (_event, sessionId: string, limit?: number) =>

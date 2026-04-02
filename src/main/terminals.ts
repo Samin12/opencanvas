@@ -69,6 +69,7 @@ interface TerminalActivityParserState {
 interface ManagedTerminalSession {
   activities: TerminalActivityItem[]
   buffer: string
+  contextPrompt: string
   cwd: string
   parser: TerminalActivityParserState
   pty: nodePty.IPty
@@ -78,6 +79,7 @@ interface ManagedTerminalSession {
 }
 
 interface PersistedTerminalSessionMeta {
+  contextPrompt?: string
   createdAt: number
   cwd: string
   provider: TerminalProvider
@@ -183,6 +185,33 @@ function providerLabel(provider: TerminalProvider): string {
 
 function providerCommand(provider: TerminalProvider): string {
   return TERMINAL_START_COMMANDS[provider]
+}
+
+function normalizeContextPrompt(contextPrompt?: string): string {
+  return contextPrompt?.trim() ?? ''
+}
+
+function shellEscapeSingleArgument(value: string): string {
+  if (value.length === 0) {
+    return "''"
+  }
+
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`
+}
+
+function providerLaunchCommand(provider: TerminalProvider, initialPrompt?: string): string {
+  const command = providerCommand(provider)
+  const prompt = normalizeContextPrompt(initialPrompt)
+
+  if (prompt.length === 0) {
+    return command
+  }
+
+  if (provider === 'claude') {
+    return `${command} --append-system-prompt ${shellEscapeSingleArgument(prompt)}`
+  }
+
+  return command
 }
 
 function providerCommandName(provider: TerminalProvider): string {
@@ -702,6 +731,7 @@ function readPersistedTerminalSession(
       typeof parsed.tmuxSessionName === 'string'
     ) {
       return {
+        contextPrompt: typeof parsed.contextPrompt === 'string' ? parsed.contextPrompt : '',
         createdAt: typeof parsed.createdAt === 'number' ? parsed.createdAt : Date.now(),
         cwd: parsed.cwd,
         provider:
@@ -854,6 +884,7 @@ function shouldResetPersistedSession(
 }
 
 function persistTerminalSessionMeta(meta: {
+  contextPrompt?: string
   cwd: string
   provider: TerminalProvider
   sessionId: string
@@ -863,6 +894,7 @@ function persistTerminalSessionMeta(meta: {
   const now = Date.now()
 
   writePersistedTerminalSession({
+    contextPrompt: normalizeContextPrompt(meta.contextPrompt ?? existing?.contextPrompt),
     sessionId: meta.sessionId,
     cwd: meta.cwd,
     provider: meta.provider,
@@ -981,14 +1013,21 @@ export function readTerminalDependencyState(): TerminalDependencyState {
 
 export function createOrAttachTerminalSession(options: {
   cols: number
+  contextPrompt?: string
   cwd?: string
   provider: TerminalProvider
   rows: number
   sessionId: string
 }): TerminalSessionSnapshot {
+  const contextPrompt = normalizeContextPrompt(options.contextPrompt)
   const existing = sessions.get(options.sessionId)
 
   if (existing) {
+    if (existing.contextPrompt !== contextPrompt) {
+      existing.contextPrompt = contextPrompt
+      persistTerminalSessionMeta(existing)
+    }
+
     persistTerminalSessionMeta(existing)
     return {
       sessionId: existing.sessionId,
@@ -1051,6 +1090,7 @@ export function createOrAttachTerminalSession(options: {
     sessionId: options.sessionId,
     cwd,
     buffer: '',
+    contextPrompt,
     parser: makeParserState(),
     pty,
     provider,
@@ -1090,7 +1130,9 @@ export function createOrAttachTerminalSession(options: {
         return
       }
 
-      activeSession.pty.write(`${providerCommand(activeSession.provider)}\r`)
+      activeSession.pty.write(
+        `${providerLaunchCommand(activeSession.provider, activeSession.contextPrompt)}\r`
+      )
     }, 180)
   }
 
@@ -1110,6 +1152,36 @@ export function resizeTerminalSession(sessionId: string, cols: number, rows: num
   }
 
   session.pty.resize(sanitizeSize(cols, 80), sanitizeSize(rows, 24))
+}
+
+export function syncTerminalContext(sessionId: string, contextPrompt?: string): void {
+  const normalizedContextPrompt = normalizeContextPrompt(contextPrompt)
+  const session = sessions.get(sessionId)
+
+  if (session) {
+    if (session.contextPrompt === normalizedContextPrompt) {
+      return
+    }
+
+    session.contextPrompt = normalizedContextPrompt
+    persistTerminalSessionMeta(session)
+
+    return
+  }
+
+  const persisted = readPersistedTerminalSession(sessionId)
+
+  if (!persisted || persisted.contextPrompt === normalizedContextPrompt) {
+    return
+  }
+
+  persistTerminalSessionMeta({
+    contextPrompt: normalizedContextPrompt,
+    cwd: persisted.cwd,
+    provider: persisted.provider,
+    sessionId: persisted.sessionId,
+    tmuxSessionName: persisted.tmuxSessionName
+  })
 }
 
 export function writeTerminalInput(sessionId: string, data: string): void {
@@ -1139,6 +1211,7 @@ export function readTerminalActivity(sessionId: string): TerminalActivityItem[] 
   const hydratedSession: ManagedTerminalSession = {
     activities: [],
     buffer: '',
+    contextPrompt: persisted.contextPrompt ?? '',
     cwd: persisted.cwd,
     parser: makeParserState(),
     pty: null as unknown as nodePty.IPty,
