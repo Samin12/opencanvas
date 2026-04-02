@@ -29,12 +29,7 @@ const OPEN_CANVAS_BIN_DIRECTORY = join(APP_DIRECTORY, 'bin')
 const OPEN_CANVAS_CLI_SHIM_PATH = join(OPEN_CANVAS_BIN_DIRECTORY, 'open-canvas-cli')
 const TERMINAL_START_COMMANDS: Record<TerminalProvider, string> = {
   claude: process.env.COLLABORATOR_CLAUDE_COMMAND ?? 'claude --dangerously-skip-permissions',
-  codex:
-    process.env.COLLABORATOR_CODEX_COMMAND ?? 'codex --dangerously-bypass-approvals-and-sandbox',
-  t1code:
-    process.env.OPEN_CANVAS_T1CODE_COMMAND ??
-    process.env.COLLABORATOR_T1CODE_COMMAND ??
-    'bunx @maria_rcks/t1code'
+  codex: process.env.COLLABORATOR_CODEX_COMMAND ?? 'codex --dangerously-bypass-approvals-and-sandbox'
 }
 const TMUX_DEFAULT_TERMINAL_CANDIDATES = ['tmux-256color', 'screen-256color', 'xterm-256color']
 const TMUX_BINARY_CANDIDATES = [
@@ -184,10 +179,6 @@ function providerLabel(provider: TerminalProvider): string {
     return 'Codex'
   }
 
-  if (provider === 't1code') {
-    return 'T1Code'
-  }
-
   return 'Claude Code'
 }
 
@@ -212,10 +203,6 @@ function messageTitle(body: string, provider: TerminalProvider): string {
     return 'Codex Response'
   }
 
-  if (provider === 't1code') {
-    return 'T1Code Response'
-  }
-
   return 'Claude Response'
 }
 
@@ -234,7 +221,6 @@ function isClaudeUiBoundaryLine(trimmed: string): boolean {
     /^[─━]{8,}$/u.test(trimmed) ||
     /^claude code v/i.test(trimmed) ||
     /^codex cli\b/i.test(trimmed) ||
-    /^t1code\b/i.test(trimmed) ||
     /^opus\b/i.test(trimmed) ||
     /^esc to interrupt/i.test(trimmed) ||
     /^[/?] for shortcuts/i.test(trimmed)
@@ -724,9 +710,7 @@ function readPersistedTerminalSession(
         provider:
           parsed.provider === 'codex'
             ? 'codex'
-            : parsed.provider === 't1code'
-              ? 't1code'
-              : 'claude',
+            : 'claude',
         sessionId: parsed.sessionId,
         tmuxSessionName: parsed.tmuxSessionName,
         updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : Date.now()
@@ -767,6 +751,12 @@ function resolveTmuxBinary(): string | null {
 
 function runTmuxCommand(tmuxBinary: string, args: string[], defaultTerminal?: string): void {
   spawnSync(tmuxBinary, [...tmuxBaseArgs(defaultTerminal), ...args], { stdio: 'ignore' })
+}
+
+function killTmuxSession(tmuxBinary: string, tmuxSessionName: string, defaultTerminal?: string): void {
+  spawnSync(tmuxBinary, [...tmuxBaseArgs(defaultTerminal), 'kill-session', '-t', tmuxSessionName], {
+    stdio: 'ignore'
+  })
 }
 
 function tmuxTargetForSession(tmuxSessionName: string): string {
@@ -828,11 +818,11 @@ function tmuxSessionExists(tmuxBinary: string, tmuxSessionName: string): boolean
 function resolveSessionCwd(options: {
   cwd?: string
   sessionId: string
-}): string {
-  const persisted = readPersistedTerminalSession(options.sessionId)
+}, persisted?: PersistedTerminalSessionMeta | null): string {
+  const activePersistedSession = persisted ?? readPersistedTerminalSession(options.sessionId)
 
-  if (persisted?.cwd && existsSync(persisted.cwd)) {
-    return persisted.cwd
+  if (activePersistedSession?.cwd && existsSync(activePersistedSession.cwd)) {
+    return activePersistedSession.cwd
   }
 
   if (options.cwd && existsSync(options.cwd)) {
@@ -840,6 +830,25 @@ function resolveSessionCwd(options: {
   }
 
   return homedir()
+}
+
+function shouldResetPersistedSession(
+  options: {
+    cwd?: string
+    provider: TerminalProvider
+    sessionId: string
+  },
+  persisted: PersistedTerminalSessionMeta | null
+): boolean {
+  if (!persisted) {
+    return false
+  }
+
+  if (persisted.provider !== options.provider) {
+    return true
+  }
+
+  return Boolean(options.cwd && existsSync(options.cwd) && persisted.cwd !== options.cwd)
 }
 
 function persistTerminalSessionMeta(meta: {
@@ -922,7 +931,7 @@ function prependPathEntry(existingPath: string | undefined, entry: string): stri
   return [entry, ...parts.filter((part) => part !== entry)].join(delimiter)
 }
 
-function terminalEnvironment(shell: string): NodeJS.ProcessEnv {
+function terminalEnvironment(shell: string, provider?: TerminalProvider): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     COLORTERM: 'truecolor',
@@ -939,13 +948,18 @@ function terminalEnvironment(shell: string): NodeJS.ProcessEnv {
     env.OPEN_CANVAS_CLI_COMMAND = 'open-canvas-cli'
   }
 
+  if (provider) {
+    const commandBinary = resolveCommandBinary(providerCommandName(provider))
+
+    if (commandBinary) {
+      env.PATH = prependPathEntry(env.PATH, dirname(commandBinary))
+    }
+  }
+
   return env
 }
 
 export function readTerminalDependencyState(): TerminalDependencyState {
-  const t1codeCommand =
-    process.env.OPEN_CANVAS_T1CODE_COMMAND ?? process.env.COLLABORATOR_T1CODE_COMMAND
-
   return {
     tmuxInstalled: resolveTmuxBinary() !== null,
     providers: {
@@ -958,11 +972,6 @@ export function readTerminalDependencyState(): TerminalDependencyState {
         command: providerCommandName('codex'),
         installed: resolveCommandBinary(providerCommandName('codex')) !== null,
         label: 'Codex'
-      },
-      t1code: {
-        command: t1codeCommand ? providerCommandName('t1code') : 'Bun (bunx @maria_rcks/t1code)',
-        installed: resolveCommandBinary(providerCommandName('t1code')) !== null,
-        label: 'T1Code'
       }
     }
   }
@@ -988,7 +997,6 @@ export function createOrAttachTerminalSession(options: {
   }
 
   const tmuxBinary = resolveTmuxBinary()
-  const cwd = resolveSessionCwd(options)
   ensureNodePtyHelperPermissions()
 
   if (!tmuxBinary) {
@@ -997,26 +1005,42 @@ export function createOrAttachTerminalSession(options: {
 
   const defaultTerminal = resolveTmuxDefaultTerminal()
   configureTmuxServer(tmuxBinary, defaultTerminal)
-  const persisted = readPersistedTerminalSession(options.sessionId)
-  const provider = persisted?.provider ?? options.provider
-  const commandName = providerCommandName(provider)
+  let persisted = readPersistedTerminalSession(options.sessionId)
 
-  if (resolveCommandBinary(commandName) === null) {
+  if (persisted && shouldResetPersistedSession(options, persisted)) {
+    if (tmuxSessionExists(tmuxBinary, persisted.tmuxSessionName)) {
+      killTmuxSession(tmuxBinary, persisted.tmuxSessionName, defaultTerminal)
+    }
+
+    removePersistedTerminalSession(options.sessionId)
+    persisted = null
+  }
+
+  const provider = persisted?.provider ?? options.provider
+  const cwd = resolveSessionCwd(options, persisted)
+
+  const commandName = providerCommandName(provider)
+  const commandBinary = resolveCommandBinary(commandName)
+
+  if (commandBinary === null) {
     throw new Error(`${providerLabel(provider)} requires ${commandName}. Install it and restart the app.`)
   }
 
   const tmuxSessionName = persisted?.tmuxSessionName ?? tmuxSessionNameFor(options.sessionId)
   const sessionAlreadyExists = tmuxSessionExists(tmuxBinary, tmuxSessionName)
-  const shouldAutoLaunchProvider = !sessionAlreadyExists && Boolean(options.cwd && existsSync(options.cwd))
+  const shouldAutoLaunchProvider = !sessionAlreadyExists && existsSync(cwd)
+  const tmuxArgs = sessionAlreadyExists
+    ? [...tmuxBaseArgs(defaultTerminal), 'attach-session', '-t', tmuxSessionName]
+    : [...tmuxBaseArgs(defaultTerminal), 'new-session', '-s', tmuxSessionName, '-c', cwd]
   const pty = nodePty.spawn(
     tmuxBinary,
-    [...tmuxBaseArgs(defaultTerminal), 'new-session', '-A', '-s', tmuxSessionName, '-c', cwd],
+    tmuxArgs,
     {
       name: 'xterm-256color',
       cols: sanitizeSize(options.cols, 80),
       rows: sanitizeSize(options.rows, 24),
       cwd,
-      env: terminalEnvironment(defaultShell())
+      env: terminalEnvironment(defaultShell(), provider)
     }
   )
 
@@ -1042,6 +1066,11 @@ export function createOrAttachTerminalSession(options: {
 
   pty.onExit((event) => {
     broadcast(`terminal:exit:${session.sessionId}`, event)
+
+    if (sessions.get(session.sessionId) !== session) {
+      return
+    }
+
     sessions.delete(session.sessionId)
 
     if (!tmuxSessionExists(tmuxBinary, session.tmuxSessionName)) {

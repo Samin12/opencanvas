@@ -138,8 +138,6 @@ function sanitizeCanvasState(input: Partial<CanvasState> | undefined): CanvasSta
               tile.type === 'term'
                 ? tile.terminalProvider === 'codex'
                   ? 'codex'
-                  : tile.terminalProvider === 't1code'
-                    ? 't1code'
                   : 'claude'
                 : undefined
           }))

@@ -40,20 +40,12 @@ function terminalProviderUiLabel(provider: TerminalProvider) {
     return 'Codex'
   }
 
-  if (provider === 't1code') {
-    return 'T1Code'
-  }
-
   return 'Claude'
 }
 
 function terminalProviderFullLabel(provider: TerminalProvider) {
   if (provider === 'codex') {
     return 'Codex'
-  }
-
-  if (provider === 't1code') {
-    return 'T1Code'
   }
 
   return 'Claude Code'
@@ -268,6 +260,7 @@ function TerminalPaneComponent({
   const activityRequestIdRef = useRef(0)
   const completionAudioContextRef = useRef<AudioContext | null>(null)
   const lastCompletionChimeAtRef = useRef(0)
+  const notifyOnCompleteRef = useRef(notifyOnComplete)
   const pendingSelectionCardTextRef = useRef('')
   const terminalRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -311,7 +304,7 @@ function TerminalPaneComponent({
   }
 
   function maybePlayCompletionChime(activity: TerminalActivityItem) {
-    if (!notifyOnComplete || !shouldPlayCompletionChime(activity, provider)) {
+    if (!notifyOnCompleteRef.current || !shouldPlayCompletionChime(activity, provider)) {
       return
     }
 
@@ -586,6 +579,10 @@ function TerminalPaneComponent({
   }
 
   useEffect(() => {
+    notifyOnCompleteRef.current = notifyOnComplete
+  }, [notifyOnComplete])
+
+  useEffect(() => {
     const body = bodyRef.current
 
     if (!body) {
@@ -631,7 +628,7 @@ function TerminalPaneComponent({
       macOptionIsMeta: true,
       scrollOnEraseInDisplay: true,
       scrollOnUserInput: false,
-      scrollback: 20000,
+      scrollback: 20_000,
       smoothScrollDuration: 0,
       theme: terminalTheme(darkMode)
     })
@@ -776,7 +773,7 @@ function TerminalPaneComponent({
       fitRef.current = null
       syncScrollMetrics(null)
     }
-  }, [cwd, notifyOnComplete, provider, sessionId])
+  }, [cwd, provider, sessionId])
 
   useEffect(() => {
     syncTerminalWheelAttributes(hostRef.current, terminalWheelActive)

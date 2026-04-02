@@ -10,7 +10,7 @@ export type TileType =
   | 'embed'
 
 export type FileKind = 'note' | 'code' | 'image' | 'video' | 'pdf' | 'spreadsheet' | 'presentation'
-export type TerminalProvider = 'claude' | 'codex' | 't1code'
+export type TerminalProvider = 'claude' | 'codex'
 export type OfficeDocumentKind = 'spreadsheet' | 'presentation'
 export type OfficeViewerStatus = 'ready' | 'unreachable' | 'disabled'
 

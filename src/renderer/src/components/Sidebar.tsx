@@ -22,7 +22,6 @@ const SEARCH_SHORTCUT_HINT = `${MODIFIER_KEY}+K/O`
 const CREATE_NOTE_SHORTCUT_KEY = `${MODIFIER_KEY}+N`
 const CREATE_TERMINAL_SHORTCUT_KEY = 'Shift+T'
 const CREATE_CODEX_TERMINAL_SHORTCUT_KEY = 'Shift+C'
-const CREATE_T1CODE_TERMINAL_SHORTCUT_KEY = null
 const ADD_WORKSPACE_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+O`
 const TOGGLE_DARK_MODE_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+D`
 const WORKSPACE_SWITCHER_SHORTCUT_KEY = `${MODIFIER_KEY}+Shift+W`
@@ -155,18 +154,6 @@ function CodexTerminalIcon() {
       <path d="M5.1 6.2L3.9 8L5.1 9.8" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M10.9 6.2L12.1 8L10.9 9.8" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M8.95 5.95L7.05 10.05" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function T1CodeTerminalIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4.5 w-4.5 fill-none stroke-current stroke-[1.35]">
-      <rect x="2" y="2.5" width="12" height="11" rx="2" />
-      <path d="M4.5 5.35H7.35" strokeLinecap="round" />
-      <path d="M5.9 5.35V10.65" strokeLinecap="round" />
-      <path d="M8.95 6.2L10.85 5.35V10.65" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M12 10.65H8.85" strokeLinecap="round" />
     </svg>
   )
 }
@@ -586,7 +573,6 @@ function SidebarComponent({
   const tmuxReady = terminalDependencies?.tmuxInstalled ?? false
   const claudeReady = tmuxReady && Boolean(terminalDependencies?.providers.claude.installed)
   const codexReady = tmuxReady && Boolean(terminalDependencies?.providers.codex.installed)
-  const t1codeReady = tmuxReady && Boolean(terminalDependencies?.providers.t1code.installed)
   const claudeTerminalLabel = !terminalDependencies
     ? 'Loading terminal requirements'
     : !tmuxReady
@@ -601,13 +587,6 @@ function SidebarComponent({
       : codexReady
         ? 'New Codex Terminal'
         : `Install ${terminalDependencies.providers.codex.command} to create Codex terminals`
-  const t1codeTerminalLabel = !terminalDependencies
-    ? 'Loading terminal requirements'
-    : !tmuxReady
-      ? 'Install tmux to create terminals'
-      : t1codeReady
-        ? 'New T1Code Terminal'
-        : `Install ${terminalDependencies.providers.t1code.command} to create T1Code terminals`
 
   useEffect(() => {
     function openWorkspaceSwitcher() {
@@ -1007,20 +986,13 @@ function SidebarComponent({
       </div>
 
       <div className="shrink-0 border-t border-[color:var(--line)] bg-[var(--surface-2)] px-3.5 py-3">
-        <div className="grid grid-cols-6 gap-2">
+        <div className="grid grid-cols-5 gap-2">
           <ActionIconButton
             label="Search Workspace"
             onClick={onOpenSearch}
             shortcut={SEARCH_SHORTCUT_KEY}
           >
             <SearchIcon />
-          </ActionIconButton>
-          <ActionIconButton
-            label="Add Workspace"
-            onClick={onAddWorkspace}
-            shortcut={ADD_WORKSPACE_SHORTCUT_KEY}
-          >
-            <AddWorkspaceIcon />
           </ActionIconButton>
           <ActionIconButton
             disabled={!activeWorkspacePath}
@@ -1045,14 +1017,6 @@ function SidebarComponent({
             shortcut={CREATE_CODEX_TERMINAL_SHORTCUT_KEY}
           >
             <CodexTerminalIcon />
-          </ActionIconButton>
-          <ActionIconButton
-            disabled={!activeWorkspacePath || !t1codeReady}
-            label={t1codeTerminalLabel}
-            onClick={() => onCreateTerminal('t1code')}
-            shortcut={CREATE_T1CODE_TERMINAL_SHORTCUT_KEY}
-          >
-            <T1CodeTerminalIcon />
           </ActionIconButton>
           <ActionIconButton
             active={darkMode}

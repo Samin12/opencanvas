@@ -49,10 +49,6 @@ function terminalProviderLabel(provider: TerminalProvider) {
     return 'Codex'
   }
 
-  if (provider === 't1code') {
-    return 'T1Code'
-  }
-
   return 'Claude Code'
 }
 

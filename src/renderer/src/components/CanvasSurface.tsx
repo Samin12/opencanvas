@@ -756,20 +756,12 @@ function terminalProviderForTile(tile: CanvasTile | null | undefined): TerminalP
     return 'codex'
   }
 
-  if (tile?.terminalProvider === 't1code') {
-    return 't1code'
-  }
-
   return 'claude'
 }
 
 function terminalProviderLabel(provider: TerminalProvider) {
   if (provider === 'codex') {
     return 'Codex'
-  }
-
-  if (provider === 't1code') {
-    return 'T1Code'
   }
 
   return 'Claude Code'
@@ -780,10 +772,6 @@ function titleForTerminal(tiles: CanvasTile[], provider: TerminalProvider) {
     tiles.filter((tile) => tile.type === 'term' && terminalProviderForTile(tile) === provider).length + 1
   if (provider === 'codex') {
     return `Codex ${count}`
-  }
-
-  if (provider === 't1code') {
-    return `T1Code ${count}`
   }
 
   return `Claude ${count}`
@@ -4742,17 +4730,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                 const isTileGroupSelected = isTileSelected && multiSelectedTiles
                 const isTilePointerHovered = hoveredTileId === tile.id
                 const isTileHovered = hoveredTileId === tile.id && !isTileSelected
-                const terminalProvider = tile.type === 'term' ? terminalProviderForTile(tile) : null
-                const isMinimalTerminalTile = tile.type === 'term' && terminalProvider === 't1code'
                 const showFloatingTileChrome =
-                  isMinimalTerminalTile
-                    ? isTileSelected || isTilePointerHovered
-                    : tile.type === 'term' || isRenamingThisTile || isTileSelected || isTilePointerHovered
+                  tile.type !== 'term' && (isRenamingThisTile || isTileSelected || isTilePointerHovered)
                 const tileBodyClassName =
                   tile.type === 'term'
-                    ? isMinimalTerminalTile
-                      ? 'h-full'
-                      : 'h-[calc(100%-37px)]'
+                    ? 'h-[calc(100%-37px)]'
                     : tile.type === 'note' ||
                         tile.type === 'embed' ||
                         tileFileKind === 'image' ||
@@ -4787,10 +4769,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                           : isTileGroupSelected
                             ? 'border-[color:rgba(100,181,246,0.82)] shadow-[0_0_0_1px_rgba(100,181,246,0.58),0_8px_18px_rgba(0,0,0,0.24)]'
                           : isTileHovered
-                              ? 'border-[color:rgba(100,181,246,0.42)] shadow-[0_0_0_1px_rgba(100,181,246,0.26),0_8px_18px_rgba(0,0,0,0.22)]'
-                              : isMinimalTerminalTile
-                                ? 'border-transparent shadow-[0_16px_36px_rgba(0,0,0,0.28)]'
-                                : 'border-[color:var(--line)]',
+                            ? 'border-[color:rgba(100,181,246,0.42)] shadow-[0_0_0_1px_rgba(100,181,246,0.26),0_8px_18px_rgba(0,0,0,0.22)]'
+                            : 'border-[color:var(--line)]',
                       isPendingLinkSource && 'border-[color:var(--link-line)]'
                     )}
                     style={{
@@ -4879,7 +4859,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                     }}
                   />
                 ) : null}
-                {tile.type === 'term' && !isMinimalTerminalTile ? (
+                {tile.type === 'term' ? (
                   <div
                     className="flex items-center justify-between rounded-t-[4px] border-b border-[color:var(--line)] bg-[var(--surface-1)] px-2.5 py-1.5"
                     onPointerDown={(event) => {
@@ -5159,75 +5139,73 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
                   className={tileBodyClassName}
                 >
                   {tile.type === 'term' ? (
-                    <div className={clsx('flex h-full min-h-0 flex-col', isMinimalTerminalTile ? '' : 'gap-2')}>
-                      {isMinimalTerminalTile ? null : (
-                        <div
-                          className="flex flex-wrap items-center gap-2 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-1)] px-2.5 py-2"
-                          data-terminal-control="true"
-                          onPointerDown={(event) => event.stopPropagation()}
-                        >
-                          {!hasLinkedContext ? (
-                            <div className="text-[11px] text-[var(--text-dim)]">
-                              {linkSourceTile
-                                ? 'Drop the dragged connector on this terminal dot to attach it.'
-                                : `Drag a file dot or a bundle dot into this terminal to build ${terminalProviderLabel(
-                                    terminalProviderForTile(tile)
-                                  )} context.`}
-                            </div>
-                          ) : (
-                            <>
-                              {contextGroups.map((contextGroup) => (
-                                <div
-                                  key={contextGroup.id}
-                                  className="flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[10px] text-[var(--text-dim)]"
+                    <div className="flex h-full min-h-0 flex-col gap-2">
+                      <div
+                        className="flex flex-wrap items-center gap-2 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-1)] px-2.5 py-2"
+                        data-terminal-control="true"
+                        onPointerDown={(event) => event.stopPropagation()}
+                      >
+                        {!hasLinkedContext ? (
+                          <div className="text-[11px] text-[var(--text-dim)]">
+                            {linkSourceTile
+                              ? 'Drop the dragged connector on this terminal dot to attach it.'
+                              : `Drag a file dot or a bundle dot into this terminal to build ${terminalProviderLabel(
+                                  terminalProviderForTile(tile)
+                                )} context.`}
+                          </div>
+                        ) : (
+                          <>
+                            {contextGroups.map((contextGroup) => (
+                              <div
+                                key={contextGroup.id}
+                                className="flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[10px] text-[var(--text-dim)]"
+                              >
+                                <span className="font-semibold uppercase tracking-[0.08em] text-[var(--text-faint)]">
+                                  Bundle
+                                </span>
+                                <span className="max-w-[120px] truncate text-[var(--text)]">
+                                  {contextGroup.label}
+                                </span>
+                                <span className="rounded-[4px] bg-[var(--surface-1)] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-[var(--text-faint)]">
+                                  {contextGroup.containedTiles.length}
+                                </span>
+                                <button
+                                  className="rounded-[4px] px-1 text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                                  title="Remove linked bundle"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    detachContextGroup(tile.id, contextGroup.id)
+                                  }}
                                 >
-                                  <span className="font-semibold uppercase tracking-[0.08em] text-[var(--text-faint)]">
-                                    Bundle
-                                  </span>
-                                  <span className="max-w-[120px] truncate text-[var(--text)]">
-                                    {contextGroup.label}
-                                  </span>
-                                  <span className="rounded-[4px] bg-[var(--surface-1)] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-[var(--text-faint)]">
-                                    {contextGroup.containedTiles.length}
-                                  </span>
-                                  <button
-                                    className="rounded-[4px] px-1 text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
-                                    title="Remove linked bundle"
-                                    onClick={(event) => {
-                                      event.stopPropagation()
-                                      detachContextGroup(tile.id, contextGroup.id)
-                                    }}
-                                  >
-                                    ×
-                                  </button>
-                                </div>
-                              ))}
-                              {contextTiles.map((contextTile) => (
-                                <div
-                                  key={contextTile.id}
-                                  className="flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[10px] text-[var(--text-dim)]"
-                                >
-                                  <span className="max-w-[120px] truncate">{contextTile.title}</span>
-                                  <button
-                                    className="rounded-[4px] px-1 text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
-                                    title="Remove linked context"
-                                    onClick={(event) => {
-                                      event.stopPropagation()
-                                      detachContextTile(tile.id, contextTile.id)
-                                    }}
-                                  >
-                                    ×
-                                  </button>
-                                </div>
-                              ))}
-                              <div className="text-[10px] text-[var(--text-faint)]">
-                                Linked resources stay attached and get prepended when you send the next
-                                prompt.
+                                  ×
+                                </button>
                               </div>
-                            </>
-                          )}
-                        </div>
-                      )}
+                            ))}
+                            {contextTiles.map((contextTile) => (
+                              <div
+                                key={contextTile.id}
+                                className="flex items-center gap-1 rounded-[4px] border border-[color:var(--line)] bg-[var(--surface-0)] px-2 py-1 text-[10px] text-[var(--text-dim)]"
+                              >
+                                <span className="max-w-[120px] truncate">{contextTile.title}</span>
+                                <button
+                                  className="rounded-[4px] px-1 text-[var(--text-faint)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                                  title="Remove linked context"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    detachContextTile(tile.id, contextTile.id)
+                                  }}
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                            <div className="text-[10px] text-[var(--text-faint)]">
+                              Linked resources stay attached and get prepended when you send the next
+                              prompt.
+                            </div>
+                          </>
+                        )}
+                      </div>
 
                       <div className="min-h-0 flex-1">
                         <TerminalPane
