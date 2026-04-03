@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 
@@ -8,8 +8,10 @@ export const APP_DIRECTORY =
     ? process.env.OPEN_CANVAS_APP_DIRECTORY
     : join(homedir(), '.collaborator-clone')
 export const CONFIG_PATH = join(APP_DIRECTORY, 'config.json')
+const CONFIG_PREVIOUS_PATH = join(APP_DIRECTORY, 'config.previous.json')
 const WORKSPACE_METADATA_DIRECTORY = '.claude-canvas'
 const WORKSPACE_CANVAS_STATE_FILE = 'canvas.json'
+const WORKSPACE_CANVAS_PREVIOUS_STATE_FILE = 'canvas.previous.json'
 const DIAGRAM_INBOX_DIRECTORY = join(WORKSPACE_METADATA_DIRECTORY, 'diagram-inbox')
 const DIAGRAM_REQUESTS_DIRECTORY = join(DIAGRAM_INBOX_DIRECTORY, 'requests')
 const DIAGRAM_INDEX_PATH = join(DIAGRAM_INBOX_DIRECTORY, 'index.json')
@@ -76,9 +78,77 @@ async function readJson(targetPath, fallback) {
   }
 }
 
-async function writeJson(targetPath, value) {
+async function readJsonResult(targetPath, fallback) {
+  try {
+    const content = await readFile(targetPath, 'utf8')
+
+    try {
+      return {
+        kind: 'ok',
+        value: JSON.parse(content)
+      }
+    } catch (error) {
+      return {
+        kind: 'invalid',
+        value: fallback,
+        error
+      }
+    }
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return {
+        kind: 'missing',
+        value: fallback
+      }
+    }
+
+    return {
+      kind: 'invalid',
+      value: fallback,
+      error
+    }
+  }
+}
+
+async function preservePreviousFile(targetPath, previousPath, nextContent) {
+  try {
+    const currentContent = await readFile(targetPath, 'utf8')
+
+    if (currentContent === nextContent) {
+      return
+    }
+
+    await ensureParentDirectory(previousPath)
+    await writeFile(previousPath, currentContent, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return
+    }
+
+    throw error
+  }
+}
+
+async function preserveCorruptFile(sourcePath, corruptPath) {
+  try {
+    await ensureParentDirectory(corruptPath)
+    await copyFile(sourcePath, corruptPath)
+  } catch {
+    // Best effort, keep going if the corrupt payload cannot be copied.
+  }
+}
+
+async function writeJson(targetPath, value, options = {}) {
   await ensureParentDirectory(targetPath)
-  await writeFile(targetPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+  const content = `${JSON.stringify(value, null, 2)}\n`
+
+  if (options.previousPath) {
+    await preservePreviousFile(targetPath, options.previousPath, content)
+  }
+
+  const tempPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`
+  await writeFile(tempPath, content, 'utf8')
+  await rename(tempPath, targetPath)
 }
 
 export function sanitizeConfig(input) {
@@ -109,14 +179,33 @@ export function sanitizeConfig(input) {
 
 export async function loadConfig() {
   await mkdir(APP_DIRECTORY, { recursive: true })
-  const config = sanitizeConfig(await readJson(CONFIG_PATH, DEFAULT_CONFIG))
-  await writeJson(CONFIG_PATH, config)
-  return config
+  const result = await readJsonResult(CONFIG_PATH, DEFAULT_CONFIG)
+
+  if (result.kind === 'missing') {
+    await writeJson(CONFIG_PATH, DEFAULT_CONFIG)
+    return DEFAULT_CONFIG
+  }
+
+  if (result.kind === 'invalid') {
+    await preserveCorruptFile(CONFIG_PATH, join(APP_DIRECTORY, `config.corrupt-${Date.now()}.json`))
+
+    const backup = await readJsonResult(CONFIG_PREVIOUS_PATH, DEFAULT_CONFIG)
+
+    if (backup.kind === 'ok') {
+      const restored = sanitizeConfig(backup.value)
+      await writeJson(CONFIG_PATH, restored)
+      return restored
+    }
+
+    throw new Error('The Open Canvas config is corrupted and no previous backup exists.')
+  }
+
+  return sanitizeConfig(result.value)
 }
 
 export async function saveConfig(config) {
   const sanitized = sanitizeConfig(config)
-  await writeJson(CONFIG_PATH, sanitized)
+  await writeJson(CONFIG_PATH, sanitized, { previousPath: CONFIG_PREVIOUS_PATH })
   return sanitized
 }
 
@@ -351,10 +440,36 @@ export async function readCanvasState(workspacePath) {
     return EMPTY_CANVAS_STATE
   }
 
-  return readJson(
-    join(workspacePath, WORKSPACE_METADATA_DIRECTORY, WORKSPACE_CANVAS_STATE_FILE),
-    EMPTY_CANVAS_STATE
+  const targetPath = join(workspacePath, WORKSPACE_METADATA_DIRECTORY, WORKSPACE_CANVAS_STATE_FILE)
+  const previousPath = join(
+    workspacePath,
+    WORKSPACE_METADATA_DIRECTORY,
+    WORKSPACE_CANVAS_PREVIOUS_STATE_FILE
   )
+  const result = await readJsonResult(targetPath, EMPTY_CANVAS_STATE)
+
+  if (result.kind === 'missing') {
+    await writeJson(targetPath, EMPTY_CANVAS_STATE)
+    return EMPTY_CANVAS_STATE
+  }
+
+  if (result.kind === 'invalid') {
+    await preserveCorruptFile(
+      targetPath,
+      join(workspacePath, WORKSPACE_METADATA_DIRECTORY, `canvas.corrupt-${Date.now()}.json`)
+    )
+
+    const backup = await readJsonResult(previousPath, EMPTY_CANVAS_STATE)
+
+    if (backup.kind === 'ok') {
+      await writeJson(targetPath, backup.value)
+      return backup.value
+    }
+
+    throw new Error(`The workspace canvas is corrupted at ${targetPath} and no backup exists.`)
+  }
+
+  return result.value
 }
 
 export function defaultQueueIndex() {
@@ -571,7 +686,14 @@ export async function clearCanvas(workspaceSelection) {
 
   await writeJson(
     join(workspacePath, WORKSPACE_METADATA_DIRECTORY, WORKSPACE_CANVAS_STATE_FILE),
-    EMPTY_CANVAS_STATE
+    EMPTY_CANVAS_STATE,
+    {
+      previousPath: join(
+        workspacePath,
+        WORKSPACE_METADATA_DIRECTORY,
+        WORKSPACE_CANVAS_PREVIOUS_STATE_FILE
+      )
+    }
   )
 
   return { workspacePath }
@@ -649,7 +771,14 @@ export async function addFileToCanvas({
 
   await writeJson(
     join(resolvedWorkspacePath, WORKSPACE_METADATA_DIRECTORY, WORKSPACE_CANVAS_STATE_FILE),
-    nextCanvasState
+    nextCanvasState,
+    {
+      previousPath: join(
+        resolvedWorkspacePath,
+        WORKSPACE_METADATA_DIRECTORY,
+        WORKSPACE_CANVAS_PREVIOUS_STATE_FILE
+      )
+    }
   )
 
   return {
@@ -698,7 +827,14 @@ export async function addUrlToCanvas({
 
   await writeJson(
     join(resolvedWorkspacePath, WORKSPACE_METADATA_DIRECTORY, WORKSPACE_CANVAS_STATE_FILE),
-    nextCanvasState
+    nextCanvasState,
+    {
+      previousPath: join(
+        resolvedWorkspacePath,
+        WORKSPACE_METADATA_DIRECTORY,
+        WORKSPACE_CANVAS_PREVIOUS_STATE_FILE
+      )
+    }
   )
 
   return {
